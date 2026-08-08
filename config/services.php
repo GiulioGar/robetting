@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 return [
 
@@ -33,6 +33,11 @@ return [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),
             'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
         ],
+    ],
+
+    'football_data_org' => [
+        'api_key'  => env('FOOTBALL_DATA_ORG_API_KEY'),
+        'base_url' => env('FOOTBALL_DATA_ORG_BASE_URL', 'https://api.football-data.org/v4'),
     ],
 
 ];
