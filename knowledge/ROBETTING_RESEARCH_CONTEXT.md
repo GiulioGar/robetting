@@ -1,161 +1,511 @@
-# Robetting Research Context
-
-> File di orientamento rapido. Prima di prendere decisioni quantitative su Robetting, leggere questo file e poi aprire la scheda tecnica pertinente.
+# ROBETTING RESEARCH CONTEXT
 
 ## 1. Obiettivo scientifico
 
-Robetting deve produrre **previsioni probabilistiche pre-match misurabili e riproducibili**.
+Robetting deve produrre probabilità pre-match riproducibili, calibrate e misurabili.
 
-Il primo obiettivo non è massimizzare il numero di pronostici indovinati e non è trovare immediatamente value bet. È ottenere probabilità utili e ben valutate.
+Il sistema non deve limitarsi a generare etichette come:
 
-## 2. Separazione architetturale stabilita
+```text
+HOME
+OVER
+BTTS YES
+```
 
-### Prediction Engine
+ma deve produrre probabilità esplicite per i mercati analizzati.
 
-Input: dati calcistici disponibili prima del calcio d'inizio.
+## 2. Architettura metodologica
 
-Output: probabilità del modello Robetting.
+Separazione obbligatoria:
 
-### Odds / Market Engine
+```text
+PREDICTION ENGINE
+→ probabilità Robetting
 
-Input: quote disponibili e relativo timestamp.
+MARKET ENGINE
+→ quote
+→ implied probabilities
+→ de-vig
+→ fair market probabilities
 
-Output: probabilità implicite e, quando possibile, stima delle probabilità di mercato al netto del margine.
+VALUE ENGINE
+→ confronto tra probabilità Robetting e prezzo
+```
 
-### Value Engine
+Il Prediction Engine non deve dipendere obbligatoriamente dalle quote.
 
-Confronta le probabilità Robetting con quelle di mercato.
+## 3. Principi consolidati
 
-Il Prediction Engine deve poter funzionare senza quote bookmaker.
+### No data leakage
 
-## 3. Principi obbligatori
+Per una prediction generata al tempo `T`, il modello può utilizzare solo dati disponibili prima di `T`.
 
-### 3.1 No data leakage
+Ogni prediction deve avere:
 
-Per una previsione generata al tempo `T`, possono essere utilizzate soltanto informazioni disponibili a `T`.
+```text
+generated_at
+data_cutoff_at
+model_version
+```
 
-Non utilizzare retroattivamente:
+Le prediction storiche non devono essere ricalcolate con versioni successive del modello.
 
-- statistiche prodotte dopo il kickoff;
-- classifiche finali;
-- rating aggiornati con il match da prevedere;
-- quote future rispetto al timestamp della prediction;
-- aggregati stagionali che includono eventi successivi.
+### Probabilità prima dell'accuracy
 
-Ogni feature futura dovrà poter essere calcolata **as-of** un timestamp.
+La qualità principale del modello va valutata tramite:
 
-### 3.2 Versionare i modelli
+```text
+Log Loss
+Brier Score
+Calibration
+```
 
-Ogni famiglia/modifica rilevante deve avere una versione identificabile, ad esempio:
+Per 1X2 si aggiunge:
 
-- `RB-P-001` — Independent Poisson baseline
-- `RB-DC-001` — Dixon-Coles baseline
-- `RB-BP-001` — Bivariate Poisson baseline
+```text
+RPS
+```
 
-Ogni prediction destinata al backtest deve poter essere collegata alla versione del modello e al cutoff dei dati.
+come metrica secondaria.
 
-### 3.3 Baseline prima della complessità
+L'hit rate non è una metrica primaria.
 
-Machine learning avanzato non è assunto come superiore.
+### Backtest temporale
 
-Percorso iniziale:
+Evitare random train/test split per match forecasting.
 
-1. Independent Poisson
-2. Dixon-Coles
-3. Bivariate Poisson / alternative count models
-4. Rating (Elo e varianti) come modello o feature
-5. Feature aggiuntive motivate dai dati
-6. ML / ensemble soltanto tramite confronto out-of-sample
+Usare:
 
-### 3.4 Valutare probabilità, non soltanto esiti
+```text
+walk-forward
+rolling-origin
+chronological holdout
+```
 
-Accuracy, hit rate o percentuale di pronostici corretti non sono sufficienti.
+### Modelli versionati
 
-Usare almeno metriche probabilistiche e diagnostiche di calibrazione. Vedi `evaluation/probabilistic-evaluation.md`.
+Esempi:
 
-### 3.5 Mercato come benchmark
+```text
+RB-P-001
+RB-DC-001
+RB-BP-001
+RB-ELO-001
+```
 
-Le probabilità di mercato sono un benchmark importante, ma non devono contaminare una baseline che vogliamo valutare come modello puramente sportivo, salvo esperimenti esplicitamente market-informed.
+Ogni modifica significativa crea una nuova versione o un nuovo esperimento.
 
-## 4. Stato iniziale dei modelli
+## 4. Goal models
 
-| Modello | Stato | Ruolo previsto |
-|---|---|---|
-| Independent Poisson | CANDIDATE | baseline minima |
-| Dixon-Coles | CANDIDATE | prima baseline calcistica seria |
-| Bivariate Poisson | CANDIDATE | confronto sulla dipendenza dei punteggi |
-| Elo | CANDIDATE | rating dinamico / feature |
-| ML / ensemble | HYPOTHESIS | fase successiva |
+### RB-P-001 — Independent Poisson
 
-Nessuno dei modelli sopra è ancora dichiarato modello di produzione dalla knowledge base.
+Fonte principale:
 
-## 5. Mercati iniziali
+```text
+Maher (1982)
+```
 
-Una distribuzione congiunta dei gol può essere trasformata in probabilità coerenti per più mercati, fra cui:
+Ruolo:
 
-- 1X2;
-- Over/Under;
-- BTTS;
-- correct score;
-- team totals;
-- handicap, se la rappresentazione è sufficientemente completa.
+```text
+baseline statistica obbligatoria
+```
 
-Questo rende i modelli di score una baseline particolarmente utile per Robetting.
+Concetti:
 
-## 6. Dati iniziali utili
+```text
+attack strength
+defence strength
+home effect
+lambda_home
+lambda_away
+score probability matrix
+```
 
-Per i modelli score-based di base sono sufficienti almeno:
+Mercati derivabili:
 
-- data/ora partita;
-- competition/season;
-- home team;
-- away team;
-- home goals;
-- away goals.
+```text
+1X2
+Over/Under
+BTTS
+Correct Score
+```
 
-Dati aggiuntivi possono essere introdotti soltanto dopo aver definito come vengono calcolati senza leakage.
+Non include nella prima versione:
 
-Fonti utili già identificate:
+```text
+xG
+shots
+odds
+Elo
+H2H
+ML features
+```
 
-- Football-Data.co.uk: risultati, statistiche di match e quote storiche;
-- StatsBomb Open Data: event data pubblici per ricerca e sperimentazione;
-- dati canonici già importati in Robetting.
+### RB-DC-001 — Dixon-Coles
 
-## 7. Regole per feature engineering
+Fonte principale:
 
-Non assumere che una feature sia utile perché intuitivamente calcistica.
+```text
+Dixon & Coles (1997)
+```
 
-Esempi da trattare come ipotesi, non come verità:
+Estende il Poisson con:
 
-- ultime 5 partite;
-- head-to-head;
-- possesso;
-- tiri in porta;
-- streak W/D/L;
-- posizione di classifica.
+```text
+low-score correction
+rho
+time weighting
+```
 
-Ogni feature deve dimostrare valore out-of-sample e non deve introdurre leakage.
+La correzione riguarda principalmente:
 
-## 8. Regola temporale
+```text
+0-0
+0-1
+1-0
+1-1
+```
 
-Preferire validazione temporale (walk-forward / rolling-origin / train-past-test-future) a split casuali quando si valutano modelli pre-match.
+Stato:
 
-## 9. Domande aperte prioritarie
+```text
+candidate baseline model
+```
 
-- Quanta storia deve utilizzare un modello?
-- Meglio parametri per singola lega o struttura multi-league?
-- Come gestire promosse/neopromosse e squadre con pochi dati?
-- Quale forma di time decay usare?
-- Home advantage globale, per lega, per stagione o dinamico?
-- Quanto sono stabili attack/defence strengths nel tempo?
-- Come confrontare correttamente modelli con output diversi?
-- Qual è il benchmark bookmaker appropriato: opening, timestamped o closing?
-- Quale metodo usare per rimuovere il margine dalle quote nei diversi mercati?
+Non ancora production model.
 
-## 10. Criterio decisionale Robetting
+### RB-BP-001 — Bivariate Poisson
 
-Una tecnica entra nel sistema perché migliora un obiettivo misurabile o risolve un problema dimostrato, non perché è più sofisticata.
+Fonte principale:
 
-Flusso preferito:
+```text
+Karlis & Ntzoufras (2003)
+```
 
-`SOURCE -> KNOWLEDGE NOTE -> HYPOTHESIS -> EXPERIMENT -> OUT-OF-SAMPLE RESULT -> DECISION -> MODEL VERSION`
+Introduce:
+
+```text
+shared latent Poisson component
+positive score dependence
+lambda3
+```
+
+Ruolo:
+
+```text
+research comparison model
+```
+
+Da implementare dopo Poisson e Dixon-Coles.
+
+## 5. Team strength
+
+### RB-ELO-001 — Elo
+
+Fonte principale:
+
+```text
+Hvattum & Arntzen (2010)
+```
+
+Ruolo:
+
+```text
+dynamic team-strength representation
+```
+
+Non è un goal model.
+
+La differenza Elo può essere usata come covariata in un modello probabilistico.
+
+Open questions:
+
+```text
+K factor
+home advantage
+season carry-over
+promoted-team initialization
+goal-difference weighting
+```
+
+### RB-TIME-001 — Time decay / dynamic strength
+
+Fonti principali:
+
+```text
+Dixon & Coles (1997)
+Crowder et al. (2002)
+Ley et al.
+```
+
+Principio adottato:
+
+```text
+TEAM STRENGTH IS TIME-DEPENDENT
+```
+
+Ma:
+
+```text
+NOT ALL MODELS MUST USE THE SAME DECAY
+```
+
+Per Poisson/Dixon-Coles:
+
+```text
+exponential decay = candidate
+```
+
+Per Elo:
+
+```text
+K-driven update = primary recency mechanism
+```
+
+Per future xG features:
+
+```text
+rolling / exponential aggregation = candidate
+```
+
+## 6. Expected Goals
+
+Fonte:
+
+```text
+peer-reviewed xG research
+StatsBomb/Hudl documentation
+```
+
+Principio:
+
+```text
+xG is a shot-level probability model
+```
+
+Quindi:
+
+```text
+shots != xG
+shots on target != xG
+```
+
+Ruolo attuale:
+
+```text
+future analytics / feature layer
+```
+
+Non requisito per i primi goal models.
+
+Possibile research baseline:
+
+```text
+RB-XG-LR-001
+```
+
+con logistic regression e shot-level event data.
+
+StatsBomb Open Data è considerato:
+
+```text
+research/prototyping source
+```
+
+non automaticamente production source.
+
+## 7. Evaluation
+
+Fonti principali:
+
+```text
+Gneiting & Raftery (2007)
+Constantinou & Fenton
+Wheatcroft
+```
+
+Metriche standard:
+
+```text
+PRIMARY:
+Log Loss
+Brier Score
+Calibration
+
+SECONDARY 1X2:
+RPS
+```
+
+RPS non viene considerato "migliore" in senso assoluto.
+
+I modelli devono essere confrontati sullo stesso sample out-of-sample.
+
+## 8. Market probabilities
+
+Le quote non sono probabilità fair.
+
+Pipeline:
+
+```text
+odds
+→ 1 / odds
+→ raw implied probabilities
+→ booksum / overround
+→ de-vig
+→ estimated fair market probabilities
+```
+
+Baseline:
+
+```text
+MARKET-MULT-001
+```
+
+Metodo:
+
+```text
+multiplicative normalization
+```
+
+Alternative da testare:
+
+```text
+Additive
+Shin
+Power
+```
+
+Principio:
+
+```text
+de-vig probability
+!=
+true probability
+```
+
+È una stima.
+
+Il timestamp delle quote deve essere conservato.
+
+Confrontare quando possibile:
+
+```text
+same-time market benchmark
+```
+
+separatamente da:
+
+```text
+closing market benchmark
+```
+
+## 9. Value Engine
+
+Solo dopo la validazione probabilistica.
+
+Definizioni:
+
+```text
+probability edge
+=
+P_RB - P_market
+```
+
+Expected Value:
+
+```text
+EV
+=
+P_RB * decimal_odds - 1
+```
+
+Un EV positivo non dimostra automaticamente una reale opportunità.
+
+Dipende dalla qualità della probability estimate.
+
+## 10. Ordine degli esperimenti
+
+Sequenza corrente:
+
+```text
+EXP-P-001
+Independent Poisson baseline
+
+EXP-TIME-001
+historical window / time decay
+
+EXP-DC-001
+Dixon-Coles vs Poisson
+
+EXP-DC-TIME-001
+Dixon-Coles decay calibration
+
+EXP-BP-001
+Bivariate Poisson
+
+EXP-ELO-001
+Elo
+
+EXP-XG-001
+shot-level xG prototype
+
+EXP-XG-TEAM-001
+xG features for pre-match modelling
+
+EXP-MKT-DEVIG-001
+market de-vig comparison
+```
+
+## 11. Domande aperte principali
+
+- Quanti anni di storico usare?
+- Qual è la half-life ottimale per lega?
+- Un modello per lega o multi-league?
+- Come inizializzare le neopromosse?
+- Home advantage globale, per lega o dinamico?
+- Come trattare i cambi di stagione?
+- Quanto valore aggiunge Elo a Dixon-Coles?
+- Quanto valore aggiunge xG rispetto ai gol?
+- Quale metodo de-vig è meglio calibrato?
+- Quanto il mercato closing è superiore ai modelli Robetting?
+- Quali miglioramenti sono stabili across seasons?
+
+## 12. Regola decisionale
+
+Non promuovere un modello perché:
+
+```text
+ha preso più partite
+```
+
+o:
+
+```text
+ha avuto ROI positivo in un singolo periodo
+```
+
+Una promozione richiede evidenza out-of-sample su:
+
+```text
+Log Loss
+Brier
+Calibration
+stabilità temporale
+```
+
+e solo successivamente valutazione economica.
+
+## 13. Fonte canonica
+
+I dettagli completi sono nei file:
+
+```text
+knowledge/models/
+knowledge/team-strength/
+knowledge/features/
+knowledge/evaluation/
+knowledge/betting/
+```
+
+Questo file deve restare sintetico e fungere da mappa per ChatGPT, Claude e sviluppatori.

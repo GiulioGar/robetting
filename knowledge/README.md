@@ -1,53 +1,154 @@
 # Robetting Knowledge Base
 
-Questa cartella è la knowledge base scientifica e tecnica condivisa del progetto Robetting.
+Questa cartella contiene la knowledge base tecnica e scientifica condivisa di Robetting.
 
-## Scopo
+Obiettivo: mantenere in un unico punto fonti, modelli, decisioni metodologiche, ipotesi di ricerca ed esperimenti, in modo che ChatGPT, Claude e chi lavora sul repository possano usare lo stesso contesto.
 
-Deve essere consultata da sviluppatori e assistenti AI prima di prendere decisioni su:
+## Struttura
 
-- modelli di previsione calcistica;
-- feature engineering;
-- stima delle probabilità;
-- backtesting;
-- calibrazione;
-- quote e probabilità implicite;
-- value betting;
-- simulazioni.
+```text
+knowledge/
+├── README.md
+├── ROBETTING_RESEARCH_CONTEXT.md
+├── AI_USAGE.md
+├── models/
+│   ├── poisson.md
+│   ├── dixon-coles.md
+│   └── bivariate-poisson.md
+├── team-strength/
+│   ├── elo.md
+│   └── time-decay-dynamic-strength.md
+├── features/
+│   └── expected-goals.md
+├── evaluation/
+│   ├── probabilistic-evaluation.md
+│   └── rps.md
+├── betting/
+│   └── market-probabilities.md
+├── simulation/
+├── sources/
+└── templates/
+```
 
-Non è documentazione Laravel e non viene letta automaticamente dall'applicazione.
-È conoscenza di progetto versionata insieme al codice.
+## Principi di utilizzo
 
-## Ordine di lettura per AI
+1. Le fonti originali hanno priorità sulle sintesi.
+2. Le decisioni di Robetting devono essere separate dalle conclusioni dei paper.
+3. Nessun modello è considerato "migliore" senza backtest cronologico out-of-sample.
+4. Vietato usare dati futuri rispetto al kickoff (`data leakage`).
+5. Prediction Engine, Market Engine e Value Engine restano separati.
+6. Le probabilità vengono valutate con scoring rules e calibrazione, non solo con hit rate.
+7. Ogni modello, feature e trasformazione di mercato deve essere versionata.
+8. Le ipotesi restano ipotesi finché non vengono testate.
 
-1. `ROBETTING_RESEARCH_CONTEXT.md`
-2. Il file tematico pertinente (`models/`, `evaluation/`, `betting/`, ecc.)
-3. `sources/registry.md` per verificare le fonti
-4. Gli eventuali esperimenti in `experiments/`
+## Stato attuale della ricerca
 
-## Regola fondamentale
+### Goal models
 
-Le note di questa knowledge base NON trasformano una fonte in una verità assoluta. Distinguere sempre:
+| ID | Modello | Stato |
+|---|---|---|
+| RB-P-001 | Independent Poisson / Maher | Baseline obbligatoria |
+| RB-DC-001 | Dixon-Coles | Candidato principale |
+| RB-BP-001 | Bivariate Poisson | Research candidate |
 
-- **ESTABLISHED**: decisione già adottata nel progetto;
-- **EVIDENCE**: risultato sostenuto da fonti;
-- **CANDIDATE**: approccio promettente ma da confrontare;
-- **HYPOTHESIS**: ipotesi da testare;
-- **REJECTED**: approccio testato e scartato.
+### Team strength
 
-Una modifica importante a un modello deve essere accompagnata, quando possibile, da un esperimento riproducibile.
+| ID | Modello / concetto | Stato |
+|---|---|---|
+| RB-ELO-001 | Elo | Research candidate |
+| RB-TIME-001 | Time decay / dynamic strength | Principio metodologico |
 
-## Struttura iniziale
+### Features
 
-- `models/poisson.md`
-- `models/dixon-coles.md`
-- `models/bivariate-poisson.md`
-- `models/elo.md`
-- `evaluation/probabilistic-evaluation.md`
-- `betting/market-probabilities.md`
-- `simulation/monte-carlo.md`
-- `sources/registry.md`
-- `templates/source-note.md`
-- `templates/experiment.md`
+| ID | Feature / modello | Stato |
+|---|---|---|
+| RB-XG-RESEARCH-001 | Expected Goals | Future analytics / feature layer |
 
-Questa base crescerà soltanto quando nuove fonti o nuovi esperimenti aggiungeranno informazione utile a Robetting.
+### Evaluation
+
+Metriche attualmente adottate:
+
+```text
+PRIMARY
+- Log Loss
+- Brier Score
+- Calibration
+
+SECONDARY 1X2
+- Ranked Probability Score (RPS)
+```
+
+### Market probabilities
+
+Baseline iniziale:
+
+```text
+MARKET-MULT-001
+```
+
+Pipeline:
+
+```text
+decimal odds
+→ inverse odds
+→ booksum
+→ de-vig
+→ fair market probabilities
+```
+
+La normalizzazione moltiplicativa è solo il baseline; Shin, Power e altri metodi restano da confrontare.
+
+## Ordine di sviluppo raccomandato
+
+```text
+1. RB-P-001
+2. RB-DC-001
+3. RB-BP-001
+4. Elo research track
+5. Time-decay experiments
+6. xG research
+7. Market benchmark
+8. Value Engine
+```
+
+## Regola per nuove fonti
+
+Ogni nuova fonte deve essere classificata come:
+
+```text
+PRIMARY
+paper / fonte accademica originale
+
+SECONDARY
+documentazione tecnica autorevole
+
+PRACTICAL
+blog / libreria / implementazione
+
+UNVERIFIED
+idea da verificare
+```
+
+Una fonte non diventa automaticamente una decisione di progetto.
+
+## Regola per gli esperimenti
+
+Ogni esperimento dovrebbe avere almeno:
+
+```text
+experiment_id
+hypothesis
+dataset
+data_cutoff policy
+model versions
+metrics
+results
+decision
+```
+
+## Fonte canonica
+
+La cartella `knowledge/` nel repository Git è la fonte canonica.
+
+Claude dovrebbe leggerla direttamente dal repository.
+ChatGPT dovrebbe consultarla dal repository GitHub o dai file caricati quando necessario.

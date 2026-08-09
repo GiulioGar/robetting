@@ -1,0 +1,15 @@
+./CLAUDE_KNOWLEDGE_INSTRUCTIONS.md
+./FILES.txt
+./knowledge/AI_USAGE.md
+./knowledge/README.md
+./knowledge/ROBETTING_RESEARCH_CONTEXT.md
+./knowledge/betting/market-probabilities.md
+./knowledge/evaluation/probabilistic-evaluation.md
+./knowledge/models/bivariate-poisson.md
+./knowledge/models/dixon-coles.md
+./knowledge/models/elo.md
+./knowledge/models/poisson.md
+./knowledge/simulation/monte-carlo.md
+./knowledge/sources/registry.md
+./knowledge/templates/experiment.md
+./knowledge/templates/source-note.md
