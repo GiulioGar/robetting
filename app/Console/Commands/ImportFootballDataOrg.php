@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Services\DataSources\FootballDataOrg\FootballDataOrgClient;
 use App\Services\DataSources\FootballDataOrg\FootballDataOrgImporter;
+use App\Services\Matches\CanonicalMatchResolver;
 use Illuminate\Console\Command;
 
 class ImportFootballDataOrg extends Command
@@ -32,12 +33,12 @@ class ImportFootballDataOrg extends Command
         $dryRun          = (bool) $this->option('dry-run');
         $limit           = $this->option('limit') !== null ? (int) $this->option('limit') : null;
 
-        $client = new FootballDataOrgClient(
+        $client   = new FootballDataOrgClient(
             config('services.football_data_org.base_url'),
             $apiKey,
         );
-
-        $importer = new FootballDataOrgImporter($client, $this->output);
+        $resolver = new CanonicalMatchResolver();
+        $importer = new FootballDataOrgImporter($client, $resolver, $this->output);
 
         try {
             $result = $importer->import($competitionCode, $season, [
@@ -57,11 +58,11 @@ class ImportFootballDataOrg extends Command
         }
 
         $this->table(
-            ['Entity', 'Created', 'Updated', 'Skipped'],
+            ['Entity', 'Created', 'Linked', 'Updated', 'Skipped'],
             [
-                ['Countries', $result['countries']['created'], $result['countries']['updated'], '—'],
-                ['Teams',     $result['teams']['created'],     $result['teams']['updated'],     '—'],
-                ['Matches',   $result['matches']['created'],   $result['matches']['updated'],   $result['matches']['skipped']],
+                ['Countries', $result['countries']['created'], '—', $result['countries']['updated'], '—'],
+                ['Teams',     $result['teams']['created'],     '—', $result['teams']['updated'],     '—'],
+                ['Matches',   $result['matches']['created'],   $result['matches']['linked'], $result['matches']['updated'], $result['matches']['skipped']],
             ]
         );
 

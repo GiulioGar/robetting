@@ -6,12 +6,12 @@ use App\Models\Competition;
 use App\Models\CompetitionExternalId;
 use App\Models\Country;
 use App\Models\DataSource;
-use App\Models\FootballMatch;
-use App\Models\MatchExternalId;
 use App\Models\Season;
 use App\Models\SeasonExternalId;
 use App\Models\Team;
 use App\Models\TeamExternalId;
+use App\Services\Matches\CanonicalMatchResolver;
+use App\Services\Matches\MatchFieldPolicy;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -36,12 +36,13 @@ class FootballDataOrgImporter
     private array $result = [
         'countries' => ['created' => 0, 'updated' => 0],
         'teams'     => ['created' => 0, 'updated' => 0],
-        'matches'   => ['created' => 0, 'updated' => 0, 'skipped' => 0],
+        'matches'   => ['created' => 0, 'linked' => 0, 'updated' => 0, 'skipped' => 0],
     ];
 
     public function __construct(
-        private readonly FootballDataOrgClient $client,
-        private readonly OutputInterface $output,
+        private readonly FootballDataOrgClient  $client,
+        private readonly CanonicalMatchResolver $matchResolver,
+        private readonly OutputInterface        $output,
     ) {}
 
     public function import(string $competitionCode, int $season, array $options = []): array
@@ -93,8 +94,9 @@ class FootballDataOrgImporter
 
             $this->processMatches($matches, $competition, $seasonObj, $teamIdMap, $dataSource);
             $this->output->writeln(sprintf(
-                "[INFO]  Matches: %d created, %d updated, %d skipped",
+                "[INFO]  Matches: %d created, %d linked, %d updated, %d skipped",
                 $this->result['matches']['created'],
+                $this->result['matches']['linked'],
                 $this->result['matches']['updated'],
                 $this->result['matches']['skipped'],
             ));
@@ -438,25 +440,18 @@ class FootballDataOrgImporter
             'away_score_penalties' => $scores['pen_away'],
         ];
 
-        DB::transaction(function () use ($fdoMatchId, $matchFields, $source) {
-            $extId = MatchExternalId::where('data_source_id', $source->id)
-                ->where('external_id', $fdoMatchId)
-                ->first();
-
-            if ($extId) {
-                FootballMatch::where('id', $extId->match_id)->update($matchFields);
-                $this->result['matches']['updated']++;
-            } else {
-                $match = FootballMatch::create($matchFields);
-                MatchExternalId::create([
-                    'match_id'       => $match->id,
-                    'data_source_id' => $source->id,
-                    'external_id'    => $fdoMatchId,
-                    'external_name'  => null,
-                ]);
-                $this->result['matches']['created']++;
-            }
-        });
+        $resolved = $this->matchResolver->resolve(
+            $competition->id,
+            $season->id,
+            $homeTeamId,
+            $awayTeamId,
+            $source,
+            $fdoMatchId,
+            $matchFields,
+            MatchFieldPolicy::forFdo(),
+            "fdo match {$fdoMatchId}",
+        );
+        $this->result['matches'][$resolved->action]++;
     }
 
     private function mapStatus(string $fdoStatus, string $matchId): string

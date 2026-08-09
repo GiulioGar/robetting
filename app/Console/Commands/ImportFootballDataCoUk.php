@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Services\DataSources\FootballDataCoUk\FootballDataCoUkImporter;
 use App\Services\DataSources\FootballDataCoUk\TeamResolver;
+use App\Services\Matches\CanonicalMatchResolver;
 use Illuminate\Console\Command;
 
 class ImportFootballDataCoUk extends Command
@@ -58,9 +59,10 @@ class ImportFootballDataCoUk extends Command
 
         // --- Build services ---
 
-        $aliases  = require config_path('team-aliases/football-data-co-uk.php');
-        $resolver = new TeamResolver($aliases, FootballDataCoUkImporter::SOURCE_SLUG);
-        $importer = new FootballDataCoUkImporter($resolver, $this->output);
+        $aliases       = require config_path('team-aliases/football-data-co-uk.php');
+        $teamResolver  = new TeamResolver($aliases, FootballDataCoUkImporter::SOURCE_SLUG);
+        $matchResolver = new CanonicalMatchResolver();
+        $importer      = new FootballDataCoUkImporter($teamResolver, $matchResolver, $this->output);
 
         // --- Run import ---
 
