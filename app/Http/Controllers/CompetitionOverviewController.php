@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Competition;
+use App\Models\CompetitionSeasonZone;
 use App\Models\FootballMatch;
 use App\Models\Season;
 use App\Services\Analytics\LeagueStandingsCalculator;
@@ -72,7 +73,7 @@ class CompetitionOverviewController extends Controller
                 ->get();
             $standings = LeagueStandingsCalculator::calculate($allSeasonMatches);
 
-            $zones      = $this->resolveZones($competition->slug, (int) $seasonModel->year_start);
+            $zones      = $this->resolveZones($seasonModel->id);
             $zoneMap    = $zones['map'];
             $zoneLegend = $zones['legend'];
         }
@@ -166,13 +167,14 @@ class CompetitionOverviewController extends Controller
         return $current['matchday'];
     }
 
-    private function resolveZones(string $slug, int $yearStart): array
+    private function resolveZones(int $seasonId): array
     {
-        // Access via PHP array key to avoid dot-notation issues with integer keys.
-        $slugConfig = config("competition_zones.{$slug}", []);
-        $zones      = $slugConfig[$yearStart]['zones'] ?? [];
+        $zones = CompetitionSeasonZone::where('season_id', $seasonId)
+            ->orderBy('sort_order')
+            ->orderBy('from_position')
+            ->get();
 
-        if (empty($zones)) {
+        if ($zones->isEmpty()) {
             return ['map' => [], 'legend' => []];
         }
 
@@ -181,14 +183,24 @@ class CompetitionOverviewController extends Controller
         $seen   = [];
 
         foreach ($zones as $zone) {
-            // Legend: one entry per type, in priority order.
-            if (! in_array($zone['type'], $seen, true)) {
-                $legend[] = $zone;
-                $seen[]   = $zone['type'];
+            // Normalise to array so the Blade template is unchanged.
+            $entry = [
+                'type'      => $zone->type,
+                'label'     => $zone->label,
+                'css_class' => $zone->css_class,
+                'color'     => $zone->color,
+                'status'    => $zone->status,
+            ];
+
+            // Legend: one entry per type, in sort_order priority.
+            if (! in_array($zone->type, $seen, true)) {
+                $legend[] = $entry;
+                $seen[]   = $zone->type;
             }
+
             // Map: first matching zone wins for each position.
-            for ($pos = (int) $zone['from']; $pos <= (int) $zone['to']; $pos++) {
-                $map[$pos] ??= $zone;
+            for ($pos = (int) $zone->from_position; $pos <= (int) $zone->to_position; $pos++) {
+                $map[$pos] ??= $entry;
             }
         }
 

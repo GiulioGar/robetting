@@ -169,7 +169,11 @@
 @endif
 
 <div class="mt-5">
-    <h2 class="fs-5 fw-semibold mb-3">Classifica</h2>
+    <div class="d-flex align-items-baseline justify-content-between mb-3">
+        <h2 class="fs-5 fw-semibold mb-0">Classifica</h2>
+        <a href="{{ route('competitions.seasons.zones.index', ['competition' => $competition->slug, 'season' => $season->year_start]) }}"
+           class="small text-muted">Gestisci fasce</a>
+    </div>
     <div class="card">
         <div class="table-responsive">
             <table class="table table-sm table-hover mb-0 align-middle">
