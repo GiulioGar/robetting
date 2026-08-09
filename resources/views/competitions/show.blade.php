@@ -155,4 +155,52 @@
     </div>
 </div>
 
+
+{{-- Standings (league format only) --}}
+@if($standings !== null)
+<div class="mt-5">
+    <h2 class="fs-5 fw-semibold mb-3">Classifica</h2>
+    <div class="card">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th class="text-center ps-3" style="width:40px">#</th>
+                        <th>Squadra</th>
+                        <th class="text-center">PG</th>
+                        <th class="text-center">V</th>
+                        <th class="text-center">N</th>
+                        <th class="text-center">P</th>
+                        <th class="text-center">GF</th>
+                        <th class="text-center">GS</th>
+                        <th class="text-center">DR</th>
+                        <th class="text-center fw-bold pe-3">PT</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach($standings as $row)
+                    {{-- data-position allows future zone CSS (Champions, Europa, relegation) --}}
+                    <tr data-position="{{ $row['position'] }}">
+                        <td class="text-center text-muted small ps-3">{{ $row['position'] }}</td>
+                        <td class="fw-semibold">{{ $row['name'] }}</td>
+                        <td class="text-center">{{ $row['played'] }}</td>
+                        <td class="text-center">{{ $row['wins'] }}</td>
+                        <td class="text-center">{{ $row['draws'] }}</td>
+                        <td class="text-center">{{ $row['losses'] }}</td>
+                        <td class="text-center">{{ $row['goals_for'] }}</td>
+                        <td class="text-center">{{ $row['goals_against'] }}</td>
+                        <td class="text-center">{{ $row['goal_difference'] >= 0 ? '+' . $row['goal_difference'] : $row['goal_difference'] }}</td>
+                        <td class="text-center fw-bold pe-3">{{ $row['points'] }}</td>
+                    </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <p class="text-muted small mt-2">
+        Ordinamento: PT → DR → GF → nome. Scontri diretti non considerati.
+    </p>
+</div>
+@endif
+
 @endsection

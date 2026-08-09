@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Competition;
 use App\Models\FootballMatch;
 use App\Models\Season;
+use App\Services\Analytics\LeagueStandingsCalculator;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -60,6 +61,16 @@ class CompetitionOverviewController extends Controller
             ->orderBy('kickoff_at', 'asc')
             ->get();
 
+        $standings = null;
+        if ($competition->format === 'league') {
+            $allSeasonMatches = FootballMatch::with(['homeTeam:id,name', 'awayTeam:id,name'])
+                ->where('competition_id', $competition->id)
+                ->where('season_id', $seasonModel->id)
+                ->select(['id', 'home_team_id', 'away_team_id', 'status', 'home_score_ft', 'away_score_ft'])
+                ->get();
+            $standings = LeagueStandingsCalculator::calculate($allSeasonMatches);
+        }
+
         return view('competitions.show', [
             'competition'     => $competition,
             'season'          => $seasonModel,
@@ -69,6 +80,7 @@ class CompetitionOverviewController extends Controller
             'maxMatchday'     => $maxMatchday,
             'window'          => $window,
             'matches'         => $matches,
+            'standings'       => $standings,
         ]);
     }
 
