@@ -158,6 +158,16 @@
 
 {{-- Standings (league format only) --}}
 @if($standings !== null)
+
+{{-- Zone row indicators: one border-left color per zone type, generated from config --}}
+@if(!empty($zoneLegend))
+<style>
+@foreach($zoneLegend as $z)
+.{{ $z['css_class'] }} td:first-child { border-left: 3px solid {{ $z['color'] }}; }
+@endforeach
+</style>
+@endif
+
 <div class="mt-5">
     <h2 class="fs-5 fw-semibold mb-3">Classifica</h2>
     <div class="card">
@@ -179,8 +189,9 @@
                 </thead>
                 <tbody>
                     @foreach($standings as $row)
-                    {{-- data-position allows future zone CSS (Champions, Europa, relegation) --}}
-                    <tr data-position="{{ $row['position'] }}">
+                    @php $zone = $zoneMap[$row['position']] ?? null; @endphp
+                    <tr data-position="{{ $row['position'] }}"
+                        @if($zone) data-zone="{{ $zone['type'] }}" class="{{ $zone['css_class'] }}" @endif>
                         <td class="text-center text-muted small ps-3">{{ $row['position'] }}</td>
                         <td class="fw-semibold">{{ $row['name'] }}</td>
                         <td class="text-center">{{ $row['played'] }}</td>
@@ -197,7 +208,20 @@
             </table>
         </div>
     </div>
-    <p class="text-muted small mt-2">
+
+    {{-- Zone legend --}}
+    @if(!empty($zoneLegend))
+    <div class="d-flex flex-wrap gap-3 mt-2">
+        @foreach($zoneLegend as $z)
+        <span class="small text-muted d-flex align-items-center gap-1">
+            <span style="display:inline-block;width:10px;height:10px;background-color:{{ $z['color'] }};border-radius:2px;flex-shrink:0"></span>
+            {{ $z['label'] }}
+        </span>
+        @endforeach
+    </div>
+    @endif
+
+    <p class="text-muted small mt-1">
         Ordinamento: PT → DR → GF → nome. Scontri diretti non considerati.
     </p>
 </div>

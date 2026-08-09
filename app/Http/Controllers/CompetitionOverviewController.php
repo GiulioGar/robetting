@@ -61,7 +61,9 @@ class CompetitionOverviewController extends Controller
             ->orderBy('kickoff_at', 'asc')
             ->get();
 
-        $standings = null;
+        $standings  = null;
+        $zoneMap    = [];
+        $zoneLegend = [];
         if ($competition->format === 'league') {
             $allSeasonMatches = FootballMatch::with(['homeTeam:id,name', 'awayTeam:id,name'])
                 ->where('competition_id', $competition->id)
@@ -69,6 +71,10 @@ class CompetitionOverviewController extends Controller
                 ->select(['id', 'home_team_id', 'away_team_id', 'status', 'home_score_ft', 'away_score_ft'])
                 ->get();
             $standings = LeagueStandingsCalculator::calculate($allSeasonMatches);
+
+            $zones      = $this->resolveZones($competition->slug, (int) $seasonModel->year_start);
+            $zoneMap    = $zones['map'];
+            $zoneLegend = $zones['legend'];
         }
 
         return view('competitions.show', [
@@ -81,6 +87,8 @@ class CompetitionOverviewController extends Controller
             'window'          => $window,
             'matches'         => $matches,
             'standings'       => $standings,
+            'zoneMap'         => $zoneMap,
+            'zoneLegend'      => $zoneLegend,
         ]);
     }
 
@@ -156,6 +164,35 @@ class CompetitionOverviewController extends Controller
         }
 
         return $current['matchday'];
+    }
+
+    private function resolveZones(string $slug, int $yearStart): array
+    {
+        // Access via PHP array key to avoid dot-notation issues with integer keys.
+        $slugConfig = config("competition_zones.{$slug}", []);
+        $zones      = $slugConfig[$yearStart]['zones'] ?? [];
+
+        if (empty($zones)) {
+            return ['map' => [], 'legend' => []];
+        }
+
+        $map    = [];
+        $legend = [];
+        $seen   = [];
+
+        foreach ($zones as $zone) {
+            // Legend: one entry per type, in priority order.
+            if (! in_array($zone['type'], $seen, true)) {
+                $legend[] = $zone;
+                $seen[]   = $zone['type'];
+            }
+            // Map: first matching zone wins for each position.
+            for ($pos = (int) $zone['from']; $pos <= (int) $zone['to']; $pos++) {
+                $map[$pos] ??= $zone;
+            }
+        }
+
+        return ['map' => $map, 'legend' => $legend];
     }
 
     private function resolveMatchdayWindow(int $seasonId, int $matchday): array
