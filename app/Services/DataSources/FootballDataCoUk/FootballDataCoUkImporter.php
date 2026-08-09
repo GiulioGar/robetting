@@ -26,7 +26,7 @@ class FootballDataCoUkImporter
 
     private array $result = [
         'teams'   => ['created' => 0, 'updated' => 0],
-        'matches' => ['created' => 0, 'updated' => 0, 'skipped' => 0],
+        'matches' => ['created' => 0, 'linked' => 0, 'updated' => 0, 'skipped' => 0],
     ];
 
     public function __construct(
@@ -93,8 +93,9 @@ class FootballDataCoUkImporter
 
             $this->processMatches($rows, $competition, $seasonObj, $teamIdMap, $dataSource, $season);
             $this->output->writeln(sprintf(
-                "[INFO]  Matches: %d created, %d updated, %d skipped",
+                "[INFO]  Matches: %d created, %d linked, %d updated, %d skipped",
                 $this->result['matches']['created'],
+                $this->result['matches']['linked'],
                 $this->result['matches']['updated'],
                 $this->result['matches']['skipped'],
             ));
@@ -419,15 +420,31 @@ class FootballDataCoUkImporter
             'venue_name'           => null,
         ];
 
-        DB::transaction(function () use ($matchKey, $matchFields, $source) {
+        DB::transaction(function () use (
+            $matchKey, $matchFields, $source,
+            $competition, $season, $homeTeamId, $awayTeamId,
+            $kickoffUtc, $homeCSV, $awayCSV,
+        ): void {
+            // Step 1: already imported by this source — apply field updates
             $extId = MatchExternalId::where('data_source_id', $source->id)
                 ->where('external_id', $matchKey)
                 ->first();
 
             if ($extId) {
-                FootballMatch::where('id', $extId->match_id)->update($matchFields);
+                $match = FootballMatch::find($extId->match_id);
+                $this->applyFieldUpdates($match, $matchFields, $matchKey);
                 $this->result['matches']['updated']++;
-            } else {
+                return;
+            }
+
+            // Step 2: cross-source canonical lookup
+            $candidates = FootballMatch::where('competition_id', $competition->id)
+                ->where('season_id', $season->id)
+                ->where('home_team_id', $homeTeamId)
+                ->where('away_team_id', $awayTeamId)
+                ->get();
+
+            if ($candidates->count() === 0) {
                 $match = FootballMatch::create($matchFields);
                 MatchExternalId::create([
                     'match_id'       => $match->id,
@@ -436,8 +453,102 @@ class FootballDataCoUkImporter
                     'external_name'  => null,
                 ]);
                 $this->result['matches']['created']++;
+
+            } elseif ($candidates->count() === 1) {
+                $match = $candidates->first();
+                $this->checkKickoffMismatch($match, $kickoffUtc, $matchKey, $homeCSV, $awayCSV);
+                $this->applyFieldUpdates($match, $matchFields, $matchKey);
+                MatchExternalId::create([
+                    'match_id'       => $match->id,
+                    'data_source_id' => $source->id,
+                    'external_id'    => $matchKey,
+                    'external_name'  => null,
+                ]);
+                $this->result['matches']['linked']++;
+
+            } else {
+                Log::warning('football-data-co-uk: multiple canonical candidates — skipping', [
+                    'match_key'      => $matchKey,
+                    'competition_id' => $competition->id,
+                    'season_id'      => $season->id,
+                    'home_team_id'   => $homeTeamId,
+                    'away_team_id'   => $awayTeamId,
+                    'candidates'     => $candidates->pluck('id')->all(),
+                ]);
+                $this->result['matches']['skipped']++;
             }
         });
+    }
+
+    // -------------------------------------------------------------------------
+    // Cross-source resolution helpers
+    // -------------------------------------------------------------------------
+
+    private function checkKickoffMismatch(
+        FootballMatch $match,
+        Carbon $incomingKickoff,
+        string $matchKey,
+        string $homeCSV,
+        string $awayCSV,
+    ): void {
+        if ($match->kickoff_at === null) {
+            return;
+        }
+
+        $canonicalKickoff = $match->kickoff_at->copy()->utc();
+        $diffMinutes      = (int) abs($canonicalKickoff->diffInMinutes($incomingKickoff));
+
+        if ($diffMinutes > config('imports.kickoff_mismatch_warning_minutes', 15)) {
+            Log::warning('football-data-co-uk: kickoff mismatch', [
+                'match_key'         => $matchKey,
+                'match_id'          => $match->id,
+                'home'              => $homeCSV,
+                'away'              => $awayCSV,
+                'canonical_kickoff' => $canonicalKickoff->toIso8601String(),
+                'incoming_kickoff'  => $incomingKickoff->toIso8601String(),
+                'diff_minutes'      => $diffMinutes,
+                'source'            => self::SOURCE_SLUG,
+            ]);
+        }
+    }
+
+    private function applyFieldUpdates(FootballMatch $match, array $incoming, string $matchKey): void
+    {
+        $updates = [];
+
+        // kickoff_at: FDCUK writes only if canonical is NULL
+        if ($match->kickoff_at === null && $incoming['kickoff_at'] !== null) {
+            $updates['kickoff_at']       = $incoming['kickoff_at'];
+            $updates['kickoff_timezone'] = $incoming['kickoff_timezone'];
+        }
+
+        // status: write only if canonical is NULL or 'unknown'
+        if (in_array($match->status, [null, 'unknown'], true) && isset($incoming['status'])) {
+            $updates['status'] = $incoming['status'];
+        }
+
+        // scores: fill NULLs; warn and do not overwrite on conflict
+        foreach (['home_score_ht', 'away_score_ht', 'home_score_ft', 'away_score_ft'] as $field) {
+            $canonical   = $match->{$field} !== null ? (int) $match->{$field} : null;
+            $incomingVal = $incoming[$field] ?? null;
+
+            if ($canonical === null && $incomingVal !== null) {
+                $updates[$field] = $incomingVal;
+            } elseif ($canonical !== null && $incomingVal !== null && $canonical !== $incomingVal) {
+                Log::warning('football-data-co-uk: score mismatch — not overwriting', [
+                    'match_key' => $matchKey,
+                    'match_id'  => $match->id,
+                    'field'     => $field,
+                    'canonical' => $canonical,
+                    'incoming'  => $incomingVal,
+                    'source'    => self::SOURCE_SLUG,
+                ]);
+            }
+        }
+
+        if (!empty($updates)) {
+            $match->fill($updates)->save();
+        }
     }
 
     // -------------------------------------------------------------------------

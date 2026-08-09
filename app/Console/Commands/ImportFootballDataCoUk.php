@@ -81,20 +81,10 @@ class ImportFootballDataCoUk extends Command
         $this->line($dryRun ? '<fg=yellow>--- DRY-RUN summary (nothing persisted) ---</>' : '--- Import summary ---');
 
         $this->table(
-            ['Entity', 'Created', 'Updated', 'Skipped'],
+            ['Entity', 'Created', 'Linked', 'Updated', 'Skipped'],
             [
-                [
-                    'Teams (mappings)',
-                    $result['teams']['created'],
-                    $result['teams']['updated'],
-                    '—',
-                ],
-                [
-                    'Matches',
-                    $result['matches']['created'],
-                    $result['matches']['updated'],
-                    $result['matches']['skipped'],
-                ],
+                ['Teams (mappings)', $result['teams']['created'], '—', $result['teams']['updated'], '—'],
+                ['Matches', $result['matches']['created'], $result['matches']['linked'], $result['matches']['updated'], $result['matches']['skipped']],
             ],
         );
 
