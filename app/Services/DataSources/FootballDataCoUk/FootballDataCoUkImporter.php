@@ -5,6 +5,8 @@ namespace App\Services\DataSources\FootballDataCoUk;
 use App\Models\Competition;
 use App\Models\CompetitionExternalId;
 use App\Models\DataSource;
+use App\Models\FootballMatch;
+use App\Models\MatchStatistic;
 use App\Models\Season;
 use App\Models\SeasonExternalId;
 use App\Models\TeamExternalId;
@@ -25,8 +27,9 @@ class FootballDataCoUkImporter
     ];
 
     private array $result = [
-        'teams'   => ['created' => 0, 'updated' => 0],
-        'matches' => ['created' => 0, 'linked' => 0, 'updated' => 0, 'skipped' => 0],
+        'teams'      => ['created' => 0, 'updated' => 0],
+        'matches'    => ['created' => 0, 'linked' => 0, 'updated' => 0, 'skipped' => 0],
+        'statistics' => ['created' => 0, 'updated' => 0, 'skipped' => 0],
     ];
 
     public function __construct(
@@ -99,6 +102,12 @@ class FootballDataCoUkImporter
                 $this->result['matches']['linked'],
                 $this->result['matches']['updated'],
                 $this->result['matches']['skipped'],
+            ));
+            $this->output->writeln(sprintf(
+                "[INFO]  Statistics: %d created, %d updated, %d skipped (all-null)",
+                $this->result['statistics']['created'],
+                $this->result['statistics']['updated'],
+                $this->result['statistics']['skipped'],
             ));
 
             if ($dryRun) {
@@ -433,6 +442,52 @@ class FootballDataCoUkImporter
             "fdcuk match {$matchKey}",
         );
         $this->result['matches'][$resolved->action]++;
+
+        if ($resolved->match !== null) {
+            try {
+                $this->processStatistics($resolved->match, $source, $row);
+            } catch (\Throwable $e) {
+                Log::warning("football-data-co-uk: statistics failed [{$matchKey}]: {$e->getMessage()}");
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Statistics processing
+    // -------------------------------------------------------------------------
+
+    private function processStatistics(FootballMatch $match, DataSource $source, array $row): void
+    {
+        $statsFields = array_filter([
+            'home_shots'           => $this->parseScore($row['HS']  ?? ''),
+            'away_shots'           => $this->parseScore($row['AS']  ?? ''),
+            'home_shots_on_target' => $this->parseScore($row['HST'] ?? ''),
+            'away_shots_on_target' => $this->parseScore($row['AST'] ?? ''),
+            'home_fouls'           => $this->parseScore($row['HF']  ?? ''),
+            'away_fouls'           => $this->parseScore($row['AF']  ?? ''),
+            'home_corners'         => $this->parseScore($row['HC']  ?? ''),
+            'away_corners'         => $this->parseScore($row['AC']  ?? ''),
+            'home_yellow_cards'    => $this->parseScore($row['HY']  ?? ''),
+            'away_yellow_cards'    => $this->parseScore($row['AY']  ?? ''),
+            'home_red_cards'       => $this->parseScore($row['HR']  ?? ''),
+            'away_red_cards'       => $this->parseScore($row['AR']  ?? ''),
+        ], fn ($v) => $v !== null);
+
+        if (empty($statsFields)) {
+            $this->result['statistics']['skipped']++;
+            return;
+        }
+
+        $statistic = MatchStatistic::updateOrCreate(
+            ['match_id' => $match->id, 'data_source_id' => $source->id],
+            $statsFields,
+        );
+
+        if ($statistic->wasRecentlyCreated) {
+            $this->result['statistics']['created']++;
+        } else {
+            $this->result['statistics']['updated']++;
+        }
     }
 
     // -------------------------------------------------------------------------

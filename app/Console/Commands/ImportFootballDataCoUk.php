@@ -85,8 +85,9 @@ class ImportFootballDataCoUk extends Command
         $this->table(
             ['Entity', 'Created', 'Linked', 'Updated', 'Skipped'],
             [
-                ['Teams (mappings)', $result['teams']['created'], '—', $result['teams']['updated'], '—'],
-                ['Matches', $result['matches']['created'], $result['matches']['linked'], $result['matches']['updated'], $result['matches']['skipped']],
+                ['Teams (mappings)', $result['teams']['created'],      '—',                             $result['teams']['updated'],      '—'],
+                ['Matches',          $result['matches']['created'],    $result['matches']['linked'],     $result['matches']['updated'],    $result['matches']['skipped']],
+                ['Statistics',       $result['statistics']['created'], '—',                             $result['statistics']['updated'], $result['statistics']['skipped']],
             ],
         );
 
