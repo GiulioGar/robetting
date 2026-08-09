@@ -354,9 +354,9 @@ class FootballDataCoUkImporter
             throw new \RuntimeException("Missing Date or Time");
         }
 
-        // Parse kickoff — source timezone is Europe/Rome, store as UTC
+        // Parse kickoff — source timezone is Europe/London, store as UTC
         try {
-            $kickoffLocal = Carbon::createFromFormat('d/m/Y H:i', $dateStr . ' ' . $timeStr, 'Europe/Rome');
+            $kickoffLocal = Carbon::createFromFormat('d/m/Y H:i', $dateStr . ' ' . $timeStr, 'Europe/London');
             if ($kickoffLocal === false) {
                 throw new \RuntimeException("createFromFormat returned false");
             }
@@ -405,7 +405,7 @@ class FootballDataCoUkImporter
             'home_team_id'         => $homeTeamId,
             'away_team_id'         => $awayTeamId,
             'kickoff_at'           => $kickoffUtc,
-            'kickoff_timezone'     => 'Europe/Rome',
+            'kickoff_timezone'     => 'Europe/London',
             'status'               => $this->determineStatus($ftHome, $ftAway, $kickoffUtc),
             'home_score_ht'        => $htHome,
             'away_score_ht'        => $htAway,
