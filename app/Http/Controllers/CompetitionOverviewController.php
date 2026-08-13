@@ -6,7 +6,10 @@ use App\Models\Competition;
 use App\Models\CompetitionSeasonZone;
 use App\Models\FootballMatch;
 use App\Models\Season;
+use App\Services\Analytics\CompetitionMarketTrendsCalculator;
+use App\Services\Analytics\CompetitionStatisticsCalculator;
 use App\Services\Analytics\LeagueStandingsCalculator;
+use App\Services\Matches\PreferredMatchStatisticResolver;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -62,16 +65,31 @@ class CompetitionOverviewController extends Controller
             ->orderBy('kickoff_at', 'asc')
             ->get();
 
-        $standings  = null;
-        $zoneMap    = [];
-        $zoneLegend = [];
+        $standings   = null;
+        $zoneMap     = [];
+        $zoneLegend  = [];
+        $statistics  = null;
+        $marketTrends = null;
         if ($competition->format === 'league') {
             $allSeasonMatches = FootballMatch::with(['homeTeam:id,name', 'awayTeam:id,name'])
                 ->where('competition_id', $competition->id)
                 ->where('season_id', $seasonModel->id)
-                ->select(['id', 'home_team_id', 'away_team_id', 'status', 'home_score_ft', 'away_score_ft'])
+                ->select([
+                    'id', 'home_team_id', 'away_team_id', 'status',
+                    'home_score_ft', 'away_score_ft', 'home_score_ht', 'away_score_ht',
+                    'kickoff_at',
+                ])
                 ->get();
             $standings = LeagueStandingsCalculator::calculate($allSeasonMatches);
+
+            // Only finished matches can have gameplay stats worth resolving.
+            $finishedMatchIds = $allSeasonMatches
+                ->where('status', 'finished')
+                ->pluck('id');
+            $preferredStats = PreferredMatchStatisticResolver::forMatchIds($finishedMatchIds);
+
+            $statistics   = CompetitionStatisticsCalculator::calculate($allSeasonMatches, $standings, $preferredStats);
+            $marketTrends = CompetitionMarketTrendsCalculator::calculate($allSeasonMatches);
 
             $zones      = $this->resolveZones($seasonModel->id);
             $zoneMap    = $zones['map'];
@@ -90,6 +108,8 @@ class CompetitionOverviewController extends Controller
             'standings'       => $standings,
             'zoneMap'         => $zoneMap,
             'zoneLegend'      => $zoneLegend,
+            'statistics'      => $statistics,
+            'marketTrends'    => $marketTrends,
         ]);
     }
 
