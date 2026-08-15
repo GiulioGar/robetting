@@ -414,15 +414,15 @@
             <div class="row text-center">
                 <div class="col-4">
                     <div class="fw-bold fs-5">{{ $pct($marketTrends['result_1x2']['home']['percentage']) }}</div>
-                    <div class="text-muted small">Casa ({{ $marketTrends['result_1x2']['home']['count'] }})</div>
+                    <div class="text-muted small">Casa ({{ $marketTrends['result_1x2']['home']['count'] }}/{{ $marketTrends['result_1x2']['home']['total'] }})</div>
                 </div>
                 <div class="col-4">
                     <div class="fw-bold fs-5">{{ $pct($marketTrends['result_1x2']['draw']['percentage']) }}</div>
-                    <div class="text-muted small">Pareggio ({{ $marketTrends['result_1x2']['draw']['count'] }})</div>
+                    <div class="text-muted small">Pareggio ({{ $marketTrends['result_1x2']['draw']['count'] }}/{{ $marketTrends['result_1x2']['draw']['total'] }})</div>
                 </div>
                 <div class="col-4">
                     <div class="fw-bold fs-5">{{ $pct($marketTrends['result_1x2']['away']['percentage']) }}</div>
-                    <div class="text-muted small">Trasferta ({{ $marketTrends['result_1x2']['away']['count'] }})</div>
+                    <div class="text-muted small">Trasferta ({{ $marketTrends['result_1x2']['away']['count'] }}/{{ $marketTrends['result_1x2']['away']['total'] }})</div>
                 </div>
             </div>
         </div>
@@ -434,11 +434,11 @@
             <div class="row text-center">
                 <div class="col-6">
                     <div class="fw-bold fs-5">{{ $pct($marketTrends['btts']['yes']['percentage']) }}</div>
-                    <div class="text-muted small">GG ({{ $marketTrends['btts']['yes']['count'] }})</div>
+                    <div class="text-muted small">GG ({{ $marketTrends['btts']['yes']['count'] }}/{{ $marketTrends['btts']['yes']['total'] }})</div>
                 </div>
                 <div class="col-6">
                     <div class="fw-bold fs-5">{{ $pct($marketTrends['btts']['no']['percentage']) }}</div>
-                    <div class="text-muted small">NG ({{ $marketTrends['btts']['no']['count'] }})</div>
+                    <div class="text-muted small">NG ({{ $marketTrends['btts']['no']['count'] }}/{{ $marketTrends['btts']['no']['total'] }})</div>
                 </div>
             </div>
         </div>
@@ -461,11 +461,11 @@
                         <td class="ps-3">{{ $label }}</td>
                         <td class="text-center">
                             {{ $pct($marketTrends['full_time_goals']['over_' . $key]['percentage']) }}
-                            <span class="text-muted small">({{ $marketTrends['full_time_goals']['over_' . $key]['count'] }})</span>
+                            <span class="text-muted small">({{ $marketTrends['full_time_goals']['over_' . $key]['count'] }}/{{ $marketTrends['full_time_goals']['over_' . $key]['total'] }})</span>
                         </td>
                         <td class="text-center pe-3">
                             {{ $pct($marketTrends['full_time_goals']['under_' . $key]['percentage']) }}
-                            <span class="text-muted small">({{ $marketTrends['full_time_goals']['under_' . $key]['count'] }})</span>
+                            <span class="text-muted small">({{ $marketTrends['full_time_goals']['under_' . $key]['count'] }}/{{ $marketTrends['full_time_goals']['under_' . $key]['total'] }})</span>
                         </td>
                     </tr>
                     @endforeach
@@ -494,11 +494,11 @@
                         <td class="ps-3">{{ $label }}</td>
                         <td class="text-center">
                             {{ $pct($marketTrends['half_time_goals']['over_' . $key . '_ht']['percentage']) }}
-                            <span class="text-muted small">({{ $marketTrends['half_time_goals']['over_' . $key . '_ht']['count'] }})</span>
+                            <span class="text-muted small">({{ $marketTrends['half_time_goals']['over_' . $key . '_ht']['count'] }}/{{ $marketTrends['half_time_goals']['over_' . $key . '_ht']['total'] }})</span>
                         </td>
                         <td class="text-center pe-3">
                             {{ $pct($marketTrends['half_time_goals']['under_' . $key . '_ht']['percentage']) }}
-                            <span class="text-muted small">({{ $marketTrends['half_time_goals']['under_' . $key . '_ht']['count'] }})</span>
+                            <span class="text-muted small">({{ $marketTrends['half_time_goals']['under_' . $key . '_ht']['count'] }}/{{ $marketTrends['half_time_goals']['under_' . $key . '_ht']['total'] }})</span>
                         </td>
                     </tr>
                     @endforeach
@@ -513,11 +513,11 @@
             <div class="row text-center">
                 <div class="col-6">
                     <div class="fw-bold fs-5">{{ $pct($marketTrends['btts_half_time']['yes']['percentage']) }}</div>
-                    <div class="text-muted small">GG HT ({{ $marketTrends['btts_half_time']['yes']['count'] }})</div>
+                    <div class="text-muted small">GG HT ({{ $marketTrends['btts_half_time']['yes']['count'] }}/{{ $marketTrends['btts_half_time']['yes']['total'] }})</div>
                 </div>
                 <div class="col-6">
                     <div class="fw-bold fs-5">{{ $pct($marketTrends['btts_half_time']['no']['percentage']) }}</div>
-                    <div class="text-muted small">NG HT ({{ $marketTrends['btts_half_time']['no']['count'] }})</div>
+                    <div class="text-muted small">NG HT ({{ $marketTrends['btts_half_time']['no']['count'] }}/{{ $marketTrends['btts_half_time']['no']['total'] }})</div>
                 </div>
             </div>
         </div>
