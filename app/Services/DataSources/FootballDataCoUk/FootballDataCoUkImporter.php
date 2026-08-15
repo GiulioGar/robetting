@@ -47,6 +47,10 @@ class FootballDataCoUkImporter
         // 1. Parse CSV
         $rows = $this->parseCsv($filePath);
 
+        if (empty($rows)) {
+            throw new \RuntimeException("CSV file has no data rows: {$filePath}");
+        }
+
         if ($limit !== null) {
             $rows = array_slice($rows, 0, $limit);
             $this->output->writeln("[INFO]  Limiting to first {$limit} rows");

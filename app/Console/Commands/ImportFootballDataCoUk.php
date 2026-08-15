@@ -10,7 +10,7 @@ use Illuminate\Console\Command;
 class ImportFootballDataCoUk extends Command
 {
     protected $signature = 'import:football-data-co-uk
-        {file : Absolute or relative path to the CSV file}
+        {file : Path under storage/app/imports/football-data-co-uk/ (e.g. 2526/E0.csv), or an absolute/CWD-relative path}
         {--season= : Season in YYYY-YYYY format (e.g. 2025-2026) — required}
         {--competition-slug= : Canonical slug if competition not yet linked to this source (e.g. serie-a)}
         {--dry-run : Run without persisting changes}
@@ -18,9 +18,23 @@ class ImportFootballDataCoUk extends Command
 
     protected $description = 'Import match data from a football-data.co.uk CSV file';
 
+    /**
+     * Official convention: storage/app/imports/football-data-co-uk/{season}/{division}.csv
+     * e.g. 2526/E0.csv. Falls back to the given path as-is (absolute, or
+     * relative to CWD) so existing full-path usage keeps working unchanged.
+     */
+    private function resolveFilePath(string $input): string
+    {
+        if (file_exists($input)) {
+            return $input;
+        }
+
+        return storage_path('app/imports/football-data-co-uk/' . $input);
+    }
+
     public function handle(): int
     {
-        $filePath = $this->argument('file');
+        $filePath = $this->resolveFilePath($this->argument('file'));
         $season   = $this->option('season');
 
         // --- Validate inputs ---
