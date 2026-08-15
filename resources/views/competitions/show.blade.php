@@ -115,7 +115,7 @@
                         {{ $kickoffRome?->format('H:i') ?? '–' }}
                     </td>
                     <td class="text-end fw-semibold">
-                        {{ $match->homeTeam->name }}
+                        <a href="{{ route('teams.show', $match->home_team_id) }}" class="link-body-emphasis text-decoration-none">{{ $match->homeTeam->name }}</a>
                     </td>
                     <td class="text-center px-3">
                         @if($hasScore)
@@ -127,7 +127,7 @@
                         @endif
                     </td>
                     <td class="fw-semibold">
-                        {{ $match->awayTeam->name }}
+                        <a href="{{ route('teams.show', $match->away_team_id) }}" class="link-body-emphasis text-decoration-none">{{ $match->awayTeam->name }}</a>
                     </td>
                     <td class="text-center pe-3">
                         @if($match->status === 'finished')
@@ -197,7 +197,9 @@
                     <tr data-position="{{ $row['position'] }}"
                         @if($zone) data-zone="{{ $zone['type'] }}" class="{{ $zone['css_class'] }}" @endif>
                         <td class="text-center text-muted small ps-3">{{ $row['position'] }}</td>
-                        <td class="fw-semibold">{{ $row['name'] }}</td>
+                        <td class="fw-semibold">
+                            <a href="{{ route('teams.show', $row['team_id']) }}" class="link-body-emphasis text-decoration-none">{{ $row['name'] }}</a>
+                        </td>
                         <td class="text-center">{{ $row['played'] }}</td>
                         <td class="text-center">{{ $row['wins'] }}</td>
                         <td class="text-center">{{ $row['draws'] }}</td>

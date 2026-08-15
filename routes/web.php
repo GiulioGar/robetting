@@ -2,11 +2,15 @@
 
 use App\Http\Controllers\CompetitionOverviewController;
 use App\Http\Controllers\CompetitionSeasonZoneController;
+use App\Http\Controllers\TeamController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
     return view('welcome');
 });
+
+Route::get('/teams/{team}', [TeamController::class, 'show'])
+    ->name('teams.show');
 
 Route::get('/competitions/{competition:slug}', [CompetitionOverviewController::class, 'index'])
     ->name('competitions.show');
