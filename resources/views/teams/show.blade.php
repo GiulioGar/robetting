@@ -276,7 +276,9 @@
                         <td class="text-end fw-semibold">
                             <a href="{{ route('teams.show', $m->home_team_id) }}" class="link-body-emphasis text-decoration-none">{{ $m->homeTeam->name }}</a>
                         </td>
-                        <td class="text-center fw-bold">{{ $m->home_score_ft }} – {{ $m->away_score_ft }}</td>
+                        <td class="text-center fw-bold">
+                            <a href="{{ route('matches.show', $m->id) }}" class="link-body-emphasis text-decoration-none">{{ $m->home_score_ft }} – {{ $m->away_score_ft }}</a>
+                        </td>
                         <td class="fw-semibold">
                             <a href="{{ route('teams.show', $m->away_team_id) }}" class="link-body-emphasis text-decoration-none">{{ $m->awayTeam->name }}</a>
                         </td>

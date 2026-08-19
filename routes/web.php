@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\CompetitionOverviewController;
 use App\Http\Controllers\CompetitionSeasonZoneController;
+use App\Http\Controllers\MatchController;
 use App\Http\Controllers\TeamController;
 use Illuminate\Support\Facades\Route;
 
@@ -11,6 +12,9 @@ Route::get('/', function () {
 
 Route::get('/teams/{team}', [TeamController::class, 'show'])
     ->name('teams.show');
+
+Route::get('/matches/{match}', [MatchController::class, 'show'])
+    ->name('matches.show');
 
 Route::get('/competitions/{competition:slug}', [CompetitionOverviewController::class, 'index'])
     ->name('competitions.show');

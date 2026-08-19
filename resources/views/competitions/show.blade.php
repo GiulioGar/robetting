@@ -119,7 +119,7 @@
                     </td>
                     <td class="text-center px-3">
                         @if($hasScore)
-                            <span class="fw-bold">{{ $match->home_score_ft }} – {{ $match->away_score_ft }}</span>
+                            <a href="{{ route('matches.show', $match->id) }}" class="fw-bold link-body-emphasis text-decoration-none">{{ $match->home_score_ft }} – {{ $match->away_score_ft }}</a>
                         @elseif($match->status === 'live')
                             <span class="text-danger fw-bold">Live</span>
                         @else
