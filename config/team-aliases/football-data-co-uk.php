@@ -89,4 +89,23 @@ return [
     'Union Berlin'  => '1. FC Union Berlin',
     'Werder Bremen' => 'SV Werder Bremen',
     'Wolfsburg'     => 'VfL Wolfsburg',
+
+    // Ligue 1 (France)
+    'Angers'      => 'Angers SCO',
+    'Auxerre'     => 'AJ Auxerre',
+    'Brest'       => 'Stade Brestois 29',
+    'Le Havre'    => 'Le Havre AC',
+    'Lens'        => 'Racing Club de Lens',
+    'Lille'       => 'Lille OSC',
+    'Lorient'     => 'FC Lorient',
+    'Lyon'        => 'Olympique Lyonnais',
+    'Marseille'   => 'Olympique de Marseille',
+    'Metz'        => 'FC Metz',
+    'Monaco'      => 'AS Monaco FC',
+    'Nantes'      => 'FC Nantes',
+    'Nice'        => 'OGC Nice',
+    'Paris SG'    => 'Paris Saint-Germain FC',
+    'Rennes'      => 'Stade Rennais FC 1901',
+    'Strasbourg'  => 'RC Strasbourg Alsace',
+    'Toulouse'    => 'Toulouse FC',
 ];
