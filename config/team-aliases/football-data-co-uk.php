@@ -70,4 +70,23 @@ return [
     'Valencia'    => 'Valencia CF',
     'Vallecano'   => 'Rayo Vallecano de Madrid',
     'Villarreal'  => 'Villarreal CF',
+
+    // Bundesliga (Germany)
+    'Augsburg'      => 'FC Augsburg',
+    'Bayern Munich' => 'FC Bayern München',
+    'Dortmund'      => 'Borussia Dortmund',
+    'Ein Frankfurt' => 'Eintracht Frankfurt',
+    'FC Koln'       => '1. FC Köln',
+    'Freiburg'      => 'SC Freiburg',
+    'Hamburg'       => 'Hamburger SV',
+    'Heidenheim'    => '1. FC Heidenheim 1846',
+    'Hoffenheim'    => 'TSG 1899 Hoffenheim',
+    'Leverkusen'    => 'Bayer 04 Leverkusen',
+    "M'gladbach"    => 'Borussia Mönchengladbach',
+    'Mainz'         => '1. FSV Mainz 05',
+    'St Pauli'      => 'FC St. Pauli 1910',
+    'Stuttgart'     => 'VfB Stuttgart',
+    'Union Berlin'  => '1. FC Union Berlin',
+    'Werder Bremen' => 'SV Werder Bremen',
+    'Wolfsburg'     => 'VfL Wolfsburg',
 ];
