@@ -123,7 +123,7 @@
                         @elseif($match->status === 'live')
                             <span class="text-danger fw-bold">Live</span>
                         @else
-                            <span class="text-muted">–</span>
+                            <a href="{{ route('matches.show', $match->id) }}" class="text-muted text-decoration-none">–</a>
                         @endif
                     </td>
                     <td class="fw-semibold">

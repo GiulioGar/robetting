@@ -41,7 +41,7 @@
                 <span class="badge bg-{{ $isHome ? 'primary' : 'secondary' }} ms-2">{{ $isHome ? 'Casa' : 'Trasferta' }}</span>
             </div>
             <div class="text-muted small">
-                {{ $kickoffRome?->format('d/m/Y H:i') ?? '–' }}
+                <a href="{{ route('matches.show', $nextMatch->id) }}" class="text-muted text-decoration-none">{{ $kickoffRome?->format('d/m/Y H:i') ?? '–' }}</a>
             </div>
         </div>
         @else
