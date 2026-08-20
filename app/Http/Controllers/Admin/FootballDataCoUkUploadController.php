@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Competition;
 use App\Models\Season;
+use App\Services\Imports\HistoricalSeasonImportService;
 use Carbon\Carbon;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Http\RedirectResponse;
@@ -16,11 +17,17 @@ use Illuminate\View\View;
 use ZipArchive;
 
 /**
- * Raw file manager for football-data.co.uk CSV/ZIP uploads.
+ * Raw file manager + upload-triggered import entry point for
+ * football-data.co.uk CSV/ZIP files.
  *
- * Deliberately does NOT touch the database or call FootballDataCoUkImporter —
- * it only places files under storage/app/imports/football-data-co-uk/{season}/
- * so they can be imported separately, later, via the existing artisan command.
+ * File placement and DB import stay two distinct steps internally: this
+ * class still never parses FDO/FDCUK data itself — after a file is safely
+ * saved under storage/app/imports/football-data-co-uk/{season}/, it only
+ * *delegates* to HistoricalSeasonImportService (the same orchestrator the
+ * CLI command and the manual "Reimporta stagione" button use) once the
+ * season directory has all 5 core CSVs. A single-file upload that leaves
+ * the directory incomplete just saves the file and does not trigger an
+ * import — see coreFilesStatus().
  */
 class FootballDataCoUkUploadController extends Controller
 {
@@ -58,10 +65,12 @@ class FootballDataCoUkUploadController extends Controller
             'allCoreFilesPresent' => !in_array(false, array_column($coreFiles, 'present'), true),
             'dbAlreadyPresent'    => $this->seasonHasDbData($seasonOptions[$selectedSeason]),
             'importReport'        => session('import_report'),
+            'importMissingCore'   => session('import_missing_core'),
+            'importTriggerError'  => session('import_trigger_error'),
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request, HistoricalSeasonImportService $importService): RedirectResponse
     {
         $seasonOptions = $this->seasonOptions();
 
@@ -82,25 +91,81 @@ class FootballDataCoUkUploadController extends Controller
                 return back()->withErrors(['upload' => "Il file .csv ha un tipo di contenuto inatteso ({$mime})."])->withInput();
             }
 
-            return $this->handleCsvUpload($file, $season, $seasonLabel);
-        }
-
-        if ($extension === 'zip') {
+            $result = $this->handleCsvUpload($file, $season);
+        } elseif ($extension === 'zip') {
             if (!in_array($mime, self::ZIP_MIME_ALLOWLIST, true)) {
                 return back()->withErrors(['upload' => "Il file .zip ha un tipo di contenuto inatteso ({$mime})."])->withInput();
             }
 
-            return $this->handleZipUpload($file, $season, $seasonLabel);
+            $result = $this->handleZipUpload($file, $season);
+        } else {
+            return back()->withErrors(['upload' => 'Estensione non supportata. Sono accettati solo .csv e .zip.'])->withInput();
         }
 
-        return back()->withErrors(['upload' => 'Estensione non supportata. Sono accettati solo .csv e .zip.'])->withInput();
+        // Upload failed structurally (invalid CSV, unsafe ZIP entry, ...): stop
+        // here, nothing was saved, so no import must start.
+        if ($result instanceof RedirectResponse) {
+            return $result;
+        }
+
+        return $this->finalizeUploadAndMaybeImport($season, $seasonLabel, $result, $importService);
+    }
+
+    /**
+     * Upload has already been saved to disk at this point. Filesystem and DB
+     * import remain two distinct steps: this only checks whether the season
+     * directory is now complete (all 5 core CSVs), and if so delegates the
+     * real import to HistoricalSeasonImportService — same call the manual
+     * "Reimporta stagione" button and the CLI command make, nothing
+     * duplicated here.
+     *
+     * @param  list<array{filename: string, div: string, rows: int, status: string}>  $uploadedFiles
+     */
+    private function finalizeUploadAndMaybeImport(
+        string $season,
+        string $seasonLabel,
+        array $uploadedFiles,
+        HistoricalSeasonImportService $importService,
+    ): RedirectResponse {
+        $this->flashReport($season, $seasonLabel, $uploadedFiles);
+
+        $coreFiles   = $this->coreFilesStatus($season);
+        $missingCore = array_values(array_filter($coreFiles, fn (array $f) => !$f['present']));
+
+        if (!empty($missingCore)) {
+            session()->flash('import_missing_core', $missingCore);
+
+            return redirect()->route('admin.imports.football-data-co-uk.index', ['season' => $season]);
+        }
+
+        // Synchronous local import: 5 leagues x FDO dry-run+real can exceed the
+        // default 30s max_execution_time, especially if FDO rate-limits (429 ->
+        // sleep(Retry-After)). Raised only for this one request, not php.ini —
+        // temporary until this moves to a queued job.
+        set_time_limit(900);
+
+        try {
+            $importReport = $importService->import($season, false);
+            session()->flash('import_report', $importReport);
+        } catch (\Throwable $e) {
+            // Unresolved teams / per-league failures are already reported inside
+            // $importReport itself (status 'failed') — this catch is only for
+            // truly unexpected errors. Upload has already succeeded and is not
+            // rolled back: filesystem and DB are two distinct steps.
+            session()->flash('import_trigger_error', "Errore inatteso durante l'import automatico: " . $e->getMessage());
+        }
+
+        return redirect()->route('admin.imports.football-data-co-uk.index', ['season' => $season]);
     }
 
     // -------------------------------------------------------------------------
     // CSV upload
     // -------------------------------------------------------------------------
 
-    private function handleCsvUpload(UploadedFile $file, string $season, string $seasonLabel): RedirectResponse
+    /**
+     * @return RedirectResponse|list<array{filename: string, div: string, rows: int, status: string}>
+     */
+    private function handleCsvUpload(UploadedFile $file, string $season): RedirectResponse|array
     {
         $filename = basename($file->getClientOriginalName());
 
@@ -122,18 +187,19 @@ class FootballDataCoUkUploadController extends Controller
 
         $file->move($targetDir, $filename);
 
-        $this->flashReport($season, $seasonLabel, [
+        return [
             ['filename' => $filename, 'div' => $inspection['div'], 'rows' => $inspection['rows'], 'status' => $status],
-        ]);
-
-        return redirect()->route('admin.imports.football-data-co-uk.index', ['season' => $season]);
+        ];
     }
 
     // -------------------------------------------------------------------------
     // ZIP upload
     // -------------------------------------------------------------------------
 
-    private function handleZipUpload(UploadedFile $file, string $season, string $seasonLabel): RedirectResponse
+    /**
+     * @return RedirectResponse|list<array{filename: string, div: string, rows: int, status: string}>
+     */
+    private function handleZipUpload(UploadedFile $file, string $season): RedirectResponse|array
     {
         $tempDir = storage_path('app/tmp/fdcuk-uploads/' . (string) Str::uuid());
         $this->files->ensureDirectoryExists($tempDir);
@@ -208,9 +274,7 @@ class FootballDataCoUkUploadController extends Controller
 
                 usort($reportFiles, fn (array $a, array $b) => strcmp($a['filename'], $b['filename']));
 
-                $this->flashReport($season, $seasonLabel, $reportFiles);
-
-                return redirect()->route('admin.imports.football-data-co-uk.index', ['season' => $season]);
+                return $reportFiles;
             } finally {
                 $zip->close();
             }
