@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Competition;
+use App\Models\Season;
 use Carbon\Carbon;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Http\RedirectResponse;
@@ -45,11 +47,17 @@ class FootballDataCoUkUploadController extends Controller
             $selectedSeason = $this->currentSeasonValue();
         }
 
+        $coreFiles = $this->coreFilesStatus($selectedSeason);
+
         return view('admin.imports.football-data-co-uk.index', [
-            'seasonOptions'  => $seasonOptions,
-            'selectedSeason' => $selectedSeason,
-            'existingFiles'  => $this->listExistingFiles($selectedSeason),
-            'report'         => session('upload_report'),
+            'seasonOptions'       => $seasonOptions,
+            'selectedSeason'      => $selectedSeason,
+            'existingFiles'       => $this->listExistingFiles($selectedSeason),
+            'report'              => session('upload_report'),
+            'coreFiles'           => $coreFiles,
+            'allCoreFilesPresent' => !in_array(false, array_column($coreFiles, 'present'), true),
+            'dbAlreadyPresent'    => $this->seasonHasDbData($seasonOptions[$selectedSeason]),
+            'importReport'        => session('import_report'),
         ]);
     }
 
@@ -390,6 +398,47 @@ class FootballDataCoUkUploadController extends Controller
     private function seasonDir(string $season): string
     {
         return storage_path(self::IMPORTS_SUBPATH . '/' . $season);
+    }
+
+    // -------------------------------------------------------------------------
+    // Import-readiness display (read-only — no import logic here, see
+    // HistoricalSeasonImportService for the actual orchestration)
+    // -------------------------------------------------------------------------
+
+    /**
+     * @return list<array{div: string, name: string, filename: string, present: bool}>
+     */
+    private function coreFilesStatus(string $season): array
+    {
+        $leagues   = require config_path('imports/football-data-co-uk-leagues.php');
+        $slugs     = array_column($leagues, 'slug');
+        $names     = Competition::whereIn('slug', $slugs)->pluck('name', 'slug');
+        $seasonDir = $this->seasonDir($season);
+
+        $files = [];
+        foreach ($leagues as $div => $cfg) {
+            $files[] = [
+                'div'      => $div,
+                'name'     => $names[$cfg['slug']] ?? $cfg['slug'],
+                'filename' => $cfg['fdcuk_file'],
+                'present'  => is_file($seasonDir . DIRECTORY_SEPARATOR . $cfg['fdcuk_file']),
+            ];
+        }
+
+        return $files;
+    }
+
+    /**
+     * Diagnostic only — never used to gate whether a reimport is allowed.
+     */
+    private function seasonHasDbData(string $seasonLabel): bool
+    {
+        $leagues = require config_path('imports/football-data-co-uk-leagues.php');
+        $slugs   = array_column($leagues, 'slug');
+
+        return Season::where('name', $seasonLabel)
+            ->whereHas('competition', fn ($q) => $q->whereIn('slug', $slugs))
+            ->exists();
     }
 
     /**

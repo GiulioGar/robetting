@@ -22,6 +22,74 @@
         </div>
     @endif
 
+    @if ($importReport)
+        <div class="card mb-4 border-{{ $importReport['status'] === 'success' ? 'success' : 'danger' }}">
+            <div class="card-header {{ $importReport['status'] === 'success' ? 'bg-success-subtle' : 'bg-danger-subtle' }}">
+                Report import — stagione {{ $importReport['season'] }} ({{ $importReport['season_code'] }}) —
+                {{ strtoupper($importReport['status']) }}
+            </div>
+            <div class="card-body">
+                @foreach ($importReport['leagues'] as $league)
+                    <div class="mb-3 pb-3 border-bottom">
+                        <h3 class="h6 mb-2">
+                            {{ $league['slug'] }} ({{ $league['div'] }} / FDO {{ $league['fdo_code'] }})
+                            @if ($league['status'] === 'success')
+                                <span class="badge text-bg-success">completato</span>
+                            @elseif ($league['status'] === 'failed')
+                                <span class="badge text-bg-danger">import interrotto</span>
+                            @else
+                                <span class="badge text-bg-secondary">non eseguita</span>
+                            @endif
+                        </h3>
+
+                        @if ($league['status'] === 'skipped')
+                            <p class="text-muted small mb-0">
+                                Non eseguita — batch fermato per un errore in una lega precedente.
+                            </p>
+                        @elseif ($league['status'] === 'failed')
+                            <p class="mb-1 small"><strong>Step:</strong> {{ $league['failed_step'] }}</p>
+                            <pre class="small bg-light p-2 mb-0" style="white-space: pre-wrap;">{{ $league['error'] }}</pre>
+                        @else
+                            @if ($league['fdo']['real'] ?? null)
+                                @php $fdo = $league['fdo']['real']; @endphp
+                                <p class="mb-1 small">
+                                    <strong>FDO</strong> —
+                                    teams created: {{ $fdo['teams']['created'] }}, existing: {{ $fdo['teams']['updated'] }};
+                                    matches created: {{ $fdo['matches']['created'] }},
+                                    linked: {{ $fdo['matches']['linked'] }},
+                                    updated: {{ $fdo['matches']['updated'] }},
+                                    skipped: {{ $fdo['matches']['skipped'] }}
+                                </p>
+                            @endif
+                            @if ($league['fdcuk']['real'] ?? null)
+                                @php $fdcuk = $league['fdcuk']['real']; @endphp
+                                <p class="mb-1 small">
+                                    <strong>FDCUK</strong> —
+                                    matches created: {{ $fdcuk['matches']['created'] }},
+                                    linked: {{ $fdcuk['matches']['linked'] }},
+                                    updated: {{ $fdcuk['matches']['updated'] }};
+                                    statistics created: {{ $fdcuk['statistics']['created'] }},
+                                    updated: {{ $fdcuk['statistics']['updated'] }},
+                                    skipped: {{ $fdcuk['statistics']['skipped'] }}
+                                </p>
+                            @endif
+                            @if ($league['verification'] ?? null)
+                                @php $v = $league['verification']; @endphp
+                                <p class="mb-0 small">
+                                    <strong>Verification</strong> —
+                                    matches: {{ $v['match_count'] ?? '—' }},
+                                    statistics: {{ $v['match_statistics_count'] ?? '—' }},
+                                    duplicate pairs: {{ $v['duplicate_pairs'] ?? '—' }},
+                                    duplicate statistics: {{ $v['duplicate_statistics'] ?? '—' }}
+                                </p>
+                            @endif
+                        @endif
+                    </div>
+                @endforeach
+            </div>
+        </div>
+    @endif
+
     @if ($report)
         <div class="card mb-4 border-success">
             <div class="card-header bg-success-subtle">Report upload</div>
@@ -122,6 +190,92 @@
             </tbody>
         </table>
     @endif
+
+    <h2 class="h5 mb-3 mt-5">Import stagione</h2>
+
+    @error('import')
+        <div class="alert alert-danger">{{ $message }}</div>
+    @enderror
+
+    <div class="card mb-5">
+        <div class="card-body">
+            <p class="mb-2">
+                Stagione: <strong>{{ $seasonOptions[$selectedSeason] }}</strong><br>
+                Directory: <code>{{ $selectedSeason }}</code><br>
+                Stato DB:
+                @if ($dbAlreadyPresent)
+                    <span class="badge text-bg-info">Già presente nel DB</span>
+                @else
+                    <span class="badge text-bg-secondary">Non importata</span>
+                @endif
+            </p>
+
+            <table class="table table-sm mb-3">
+                <thead>
+                    <tr>
+                        <th>Lega</th>
+                        <th>File core</th>
+                        <th>Stato</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach ($coreFiles as $f)
+                        <tr>
+                            <td>{{ $f['name'] }}</td>
+                            <td><code>{{ $f['filename'] }}</code></td>
+                            <td>
+                                @if ($f['present'])
+                                    <span class="badge text-bg-success">presente</span>
+                                @else
+                                    <span class="badge text-bg-danger">mancante</span>
+                                @endif
+                            </td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+
+            <p class="text-muted small">
+                Puoi rieseguire l'import dopo aver aggiornato i CSV. Gli importer aggiornano/collegano
+                i dati esistenti senza creare duplicati.
+            </p>
+
+            <form method="POST"
+                  action="{{ route('admin.imports.football-data-co-uk.import', ['season' => $selectedSeason]) }}"
+                  id="seasonImportForm">
+                @csrf
+                <button type="submit" id="seasonImportBtn" class="btn btn-primary" @disabled(!$allCoreFilesPresent)>
+                    Importa stagione {{ $seasonOptions[$selectedSeason] }}
+                </button>
+                @unless ($allCoreFilesPresent)
+                    <span class="text-danger small ms-2">Carica tutti i 5 file core prima di poter importare.</span>
+                @endunless
+            </form>
+        </div>
+    </div>
+
+    <script>
+        (function () {
+            const seasonImportForm = document.getElementById('seasonImportForm');
+            const seasonImportBtn  = document.getElementById('seasonImportBtn');
+            const seasonImportLabel = @json($seasonOptions[$selectedSeason]);
+
+            if (seasonImportForm) {
+                seasonImportForm.addEventListener('submit', function (e) {
+                    const confirmed = confirm(
+                        'Importare/reimportare i dati della stagione ' + seasonImportLabel + '?\n' +
+                        'L\'operazione può richiedere alcuni minuti.'
+                    );
+                    if (!confirmed) {
+                        e.preventDefault();
+                        return;
+                    }
+                    seasonImportBtn.disabled = true;
+                    seasonImportBtn.textContent = 'Importazione in corso...';
+                });
+            }
+        })();
+    </script>
 
     <script>
         (function () {
