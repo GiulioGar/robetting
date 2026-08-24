@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\FootballDataCoUkSeasonImportController;
 use App\Http\Controllers\Admin\FootballDataCoUkUploadController;
+use App\Http\Controllers\Admin\LiveScoreSyncController;
 use App\Http\Controllers\CompetitionOverviewController;
 use App\Http\Controllers\CompetitionSeasonZoneController;
 use App\Http\Controllers\HomeController;
@@ -48,4 +49,7 @@ Route::prefix('admin/imports')->name('admin.imports.')->middleware(EnsureLocalEn
 
     Route::post('football-data-co-uk/{season}/import', FootballDataCoUkSeasonImportController::class)
         ->name('football-data-co-uk.import');
+
+    Route::post('sync-live-scores', LiveScoreSyncController::class)
+        ->name('sync-live-scores');
 });

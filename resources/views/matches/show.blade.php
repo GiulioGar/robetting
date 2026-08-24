@@ -62,7 +62,11 @@
 <div class="mt-4">
     <h2 class="fs-5 fw-semibold mb-3">Statistiche match</h2>
     @if($matchStatistic === null)
-    <p class="text-muted">Statistiche non disponibili per questa partita.</p>
+        @if(in_array($match->status, ['finished', 'live'], true))
+        <p class="text-muted">Statistiche in aggiornamento.</p>
+        @else
+        <p class="text-muted">Statistiche non disponibili per questa partita.</p>
+        @endif
     @else
     @php
         $rows = [
@@ -99,6 +103,7 @@
     @endif
 </div>
 
+@if($match->status !== 'finished')
 {{-- C. Forma prima del match --}}
 <div class="mt-4">
     <h2 class="fs-5 fw-semibold mb-3">Forma prima del match</h2>
@@ -350,5 +355,6 @@
     </div>
     @endif
 </div>
+@endif
 
 @endsection

@@ -67,6 +67,7 @@ class FootballDataCoUkUploadController extends Controller
             'importReport'        => session('import_report'),
             'importMissingCore'   => session('import_missing_core'),
             'importTriggerError'  => session('import_trigger_error'),
+            'syncReport'          => session('sync_report'),
         ]);
     }
 

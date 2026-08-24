@@ -22,6 +22,51 @@
         </div>
     @endif
 
+    <h2 class="h5 mb-3">Aggiornamento live</h2>
+
+    <p class="text-muted small">
+        Controlla football-data.org solo per le competizioni con una partita iniziata nelle ultime ore
+        (in base al <code>kickoff_at</code> già salvato) e aggiorna risultati/stato. Non serve alcun CSV.
+        In attesa di automatizzarlo con uno scheduler di sistema, per ora va lanciato manualmente.
+    </p>
+
+    @if ($syncReport)
+        <div class="card mb-3 border-{{ $syncReport['status'] === 'success' ? 'success' : ($syncReport['status'] === 'idle' ? 'secondary' : 'danger') }}">
+            <div class="card-header {{ $syncReport['status'] === 'success' ? 'bg-success-subtle' : ($syncReport['status'] === 'idle' ? 'bg-light' : 'bg-danger-subtle') }}">
+                Aggiornamento live — {{ strtoupper($syncReport['status']) }}
+            </div>
+            <div class="card-body">
+                @if ($syncReport['status'] === 'idle')
+                    <p class="mb-0 text-muted small">Nessuna partita in corso al momento — nessuna chiamata API effettuata.</p>
+                @else
+                    @foreach ($syncReport['leagues'] as $league)
+                        <p class="mb-1 small">
+                            <strong>{{ $league['slug'] }}</strong> —
+                            @if ($league['status'] === 'success')
+                                <span class="badge text-bg-success">ok</span>
+                                match aggiornati: {{ $league['result']['matches']['updated'] }},
+                                collegati: {{ $league['result']['matches']['linked'] }},
+                                creati: {{ $league['result']['matches']['created'] }}
+                            @else
+                                <span class="badge text-bg-danger">{{ $league['status'] }}</span>
+                                {{ $league['error'] }}
+                            @endif
+                        </p>
+                    @endforeach
+                @endif
+            </div>
+        </div>
+    @endif
+
+    @error('sync')
+        <div class="alert alert-danger">{{ $message }}</div>
+    @enderror
+
+    <form method="POST" action="{{ route('admin.imports.sync-live-scores') }}" class="mb-5">
+        @csrf
+        <button type="submit" class="btn btn-outline-primary">Aggiorna ora</button>
+    </form>
+
     @if ($report)
         <div class="card mb-4 border-success">
             <div class="card-header bg-success-subtle">Upload — completato</div>

@@ -115,6 +115,45 @@ class FootballDataOrgImporter
         return $this->result;
     }
 
+    /**
+     * Lightweight refresh for a competition/season that has already been
+     * imported once: skips getCompetition()/getTeams() (team rosters don't
+     * change mid-season) and reuses the TeamExternalId mappings already in
+     * DB, so it costs a single API call instead of the 3 that import() uses.
+     * Intended for frequent polling while matches are in progress.
+     */
+    public function syncMatches(Competition $competition, Season $season, string $competitionCode): array
+    {
+        DB::beginTransaction();
+
+        try {
+            $dataSource = $this->ensureDataSource();
+
+            $teamIdMap = TeamExternalId::where('data_source_id', $dataSource->id)
+                ->pluck('team_id', 'external_id')
+                ->all();
+
+            $matchesData = $this->client->getMatches($competitionCode, $season->year_start);
+            $matches     = $matchesData['matches'] ?? [];
+
+            $this->processMatches($matches, $competition, $season, $teamIdMap, $dataSource);
+            $this->output->writeln(sprintf(
+                "[INFO]  Matches: %d created, %d linked, %d updated, %d skipped",
+                $this->result['matches']['created'],
+                $this->result['matches']['linked'],
+                $this->result['matches']['updated'],
+                $this->result['matches']['skipped'],
+            ));
+
+            DB::commit();
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            throw $e;
+        }
+
+        return $this->result;
+    }
+
     private function ensureDataSource(): DataSource
     {
         return DataSource::firstOrCreate(
