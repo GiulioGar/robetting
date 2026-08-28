@@ -48,6 +48,7 @@ class HighlightlyStatsFiller
      * @param  bool  $dryRun  If true: no writes, no API calls — only count eligibles.
      * @param  OutputStyle|null  $output
      * @param  string[]  $slugs  Competition slugs to process. Defaults to all 5.
+     * @param  int|null  $matchId  Restrict to a single canonical match ID for targeted testing.
      * @return array  Summary report.
      */
     public function fill(
@@ -57,6 +58,7 @@ class HighlightlyStatsFiller
         bool $dryRun,
         ?OutputStyle $output,
         array $slugs = [],
+        ?int $matchId = null,
     ): array {
         $slugs = $slugs ?: self::COMPETITION_SLUGS;
         $competitions = Competition::whereIn('slug', $slugs)->get()->keyBy('slug');
@@ -82,7 +84,7 @@ class HighlightlyStatsFiller
                 continue;
             }
 
-            $this->processCompetition($competition, $season, $source, $safetyLimit, $limit, $dryRun, $output);
+            $this->processCompetition($competition, $season, $source, $safetyLimit, $limit, $dryRun, $output, $matchId);
 
             if ($limit !== null && $this->callsMade >= $limit) {
                 break;
@@ -100,11 +102,13 @@ class HighlightlyStatsFiller
         ?int $limit,
         bool $dryRun,
         ?OutputStyle $output,
+        ?int $matchId = null,
     ): void {
         // All FINISHED canonical matches for this competition/season
         $finishedMatches = FootballMatch::where('competition_id', $competition->id)
             ->where('season_id', $season->id)
             ->where('status', 'finished')
+            ->when($matchId !== null, fn($q) => $q->where('id', $matchId))
             ->get();
 
         $matchIds = $finishedMatches->pluck('id');
@@ -115,10 +119,21 @@ class HighlightlyStatsFiller
             ->get()
             ->keyBy('match_id');
 
-        // Which ones already have complete Highlightly stats?
+        // Which ones already have complete Highlightly stats (all 12 core fields non-null)?
         $existingStats = MatchStatistic::where('data_source_id', $source->id)
             ->whereIn('match_id', $matchIds)
             ->whereNotNull('home_shots')
+            ->whereNotNull('away_shots')
+            ->whereNotNull('home_shots_on_target')
+            ->whereNotNull('away_shots_on_target')
+            ->whereNotNull('home_fouls')
+            ->whereNotNull('away_fouls')
+            ->whereNotNull('home_corners')
+            ->whereNotNull('away_corners')
+            ->whereNotNull('home_yellow_cards')
+            ->whereNotNull('away_yellow_cards')
+            ->whereNotNull('home_red_cards')
+            ->whereNotNull('away_red_cards')
             ->pluck('match_id')
             ->flip(); // use as a set
 
@@ -140,6 +155,12 @@ class HighlightlyStatsFiller
                 $this->log($output, "DRY   {$competition->slug} match_id={$match->id} hl={$hlMapping->external_id} → would fetch");
                 $this->filled++;
                 continue;
+            }
+
+            // Primary quota guard: stop before consuming beyond daily safety budget
+            if ($this->remainingQuota !== null && $this->remainingQuota <= 25) {
+                $this->log($output, "STOP  quota remaining={$this->remainingQuota} <= 25 — daily budget exhausted");
+                return;
             }
 
             // Stop if we have reached the per-run safety cap
@@ -208,8 +229,9 @@ class HighlightlyStatsFiller
      * Dry-run estimation only: counts eligibles from DB without calling the API.
      *
      * @param  string[]  $slugs  Competition slugs to check. Defaults to all 5.
+     * @param  int|null  $matchId  Restrict to a single canonical match ID for targeted testing.
      */
-    public function estimate(DataSource $source, ?OutputStyle $output, array $slugs = []): array
+    public function estimate(DataSource $source, ?OutputStyle $output, array $slugs = [], ?int $matchId = null): array
     {
         $slugs = $slugs ?: self::COMPETITION_SLUGS;
         $competitions = Competition::whereIn('slug', $slugs)->get()->keyBy('slug');
@@ -232,6 +254,7 @@ class HighlightlyStatsFiller
             $matchIds = FootballMatch::where('competition_id', $competition->id)
                 ->where('season_id', $season->id)
                 ->where('status', 'finished')
+                ->when($matchId !== null, fn($q) => $q->where('id', $matchId))
                 ->pluck('id');
 
             $mapped = MatchExternalId::where('data_source_id', $source->id)
@@ -242,6 +265,17 @@ class HighlightlyStatsFiller
             $complete = MatchStatistic::where('data_source_id', $source->id)
                 ->whereIn('match_id', $matchIds)
                 ->whereNotNull('home_shots')
+                ->whereNotNull('away_shots')
+                ->whereNotNull('home_shots_on_target')
+                ->whereNotNull('away_shots_on_target')
+                ->whereNotNull('home_fouls')
+                ->whereNotNull('away_fouls')
+                ->whereNotNull('home_corners')
+                ->whereNotNull('away_corners')
+                ->whereNotNull('home_yellow_cards')
+                ->whereNotNull('away_yellow_cards')
+                ->whereNotNull('home_red_cards')
+                ->whereNotNull('away_red_cards')
                 ->pluck('match_id')
                 ->flip();
 

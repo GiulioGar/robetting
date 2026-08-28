@@ -20,6 +20,7 @@ class BackfillHighlightlyStats extends Command
                             {--dry-run : Estimate what would be processed — no API calls, no DB writes}
                             {--limit=  : Max Highlightly API calls to make in this run}
                             {--competition= : Restrict to a single canonical competition slug}
+                            {--match= : Restrict to a single canonical match ID (linking + stats)}
                             {--skip-linking : Skip the match-linking phase and go straight to stats filling}
                             {--list-unresolved : Print team names that could not be resolved after linking}';
 
@@ -40,6 +41,7 @@ class BackfillHighlightlyStats extends Command
         $dryRun        = (bool) $this->option('dry-run');
         $limit         = $this->option('limit') !== null ? (int) $this->option('limit') : null;
         $compFilter    = $this->option('competition');
+        $matchFilter   = $this->option('match') !== null ? (int) $this->option('match') : null;
         $skipLinking   = (bool) $this->option('skip-linking');
         $listUnresolved = (bool) $this->option('list-unresolved');
 
@@ -47,6 +49,19 @@ class BackfillHighlightlyStats extends Command
         $leagueIds     = (array) config('highlightly.league_ids', []);
 
         $slugs = $compFilter ? [$compFilter] : self::COMPETITION_SLUGS;
+
+        // --match auto-restricts to that match's competition (avoids processing all 5 leagues)
+        if ($matchFilter !== null && $compFilter === null) {
+            $matchRow = FootballMatch::find($matchFilter);
+            if (!$matchRow) {
+                $this->error("Match ID {$matchFilter} not found in DB.");
+                return self::FAILURE;
+            }
+            $matchComp = Competition::find($matchRow->competition_id);
+            if ($matchComp && in_array($matchComp->slug, self::COMPETITION_SLUGS, true)) {
+                $slugs = [$matchComp->slug];
+            }
+        }
 
         if ($compFilter && !in_array($compFilter, self::COMPETITION_SLUGS, true)) {
             $this->error("Unknown competition slug '{$compFilter}'. Valid: " . implode(', ', self::COMPETITION_SLUGS));
@@ -118,6 +133,7 @@ class BackfillHighlightlyStats extends Command
 
                 $unmappedCount = FootballMatch::where('competition_id', $competition->id)
                     ->where('season_id', $season->id)
+                    ->when($matchFilter !== null, fn($q) => $q->where('id', $matchFilter))
                     ->whereNotIn('id', function ($q) use ($source) {
                         $q->select('match_id')
                           ->from('match_external_ids')
@@ -151,6 +167,7 @@ class BackfillHighlightlyStats extends Command
                     $safetyLimit,
                     $limit,
                     $linkCallsMade,
+                    $matchFilter,
                 );
 
                 $linkCallsMade += $result['calls'];
@@ -176,11 +193,11 @@ class BackfillHighlightlyStats extends Command
         DB::beginTransaction();
         try {
             if ($dryRun) {
-                $report = $filler->estimate($source, $this->output, $slugs);
+                $report = $filler->estimate($source, $this->output, $slugs, $matchFilter);
                 DB::rollBack();
             } else {
                 $effectiveSafety = max(0, $safetyLimit - $linkCallsMade);
-                $report = $filler->fill($source, $effectiveSafety, $remainingLimit, false, $this->output, $slugs);
+                $report = $filler->fill($source, $effectiveSafety, $remainingLimit, false, $this->output, $slugs, $matchFilter);
                 DB::commit();
             }
         } catch (\Throwable $e) {
@@ -249,6 +266,7 @@ class BackfillHighlightlyStats extends Command
         int $safetyLimit,
         ?int $limit,
         int $callsSoFar,
+        ?int $matchFilter = null,
     ): array {
         $calls = 0;
 
@@ -256,6 +274,7 @@ class BackfillHighlightlyStats extends Command
         // Future matches can be linked on a future run — no point querying HL for dates not yet played.
         $unmapped = FootballMatch::where('competition_id', $competitionId)
             ->where('season_id', $seasonId)
+            ->when($matchFilter !== null, fn($q) => $q->where('id', $matchFilter))
             ->where(function ($q) {
                 $q->where('status', 'finished')
                   ->orWhere('kickoff_at', '<=', now());
@@ -286,6 +305,25 @@ class BackfillHighlightlyStats extends Command
             }
 
             if ($limit !== null && ($callsSoFar + $calls) >= $limit) {
+                break;
+            }
+
+            // Deduplication: HL often returns the full season in every response.
+            // If all canonical matches for this date are already mapped (from a prior date's response),
+            // skip the API call entirely.
+            $targetIds = $matchesOnDate->pluck('id');
+            $alreadyLinked = MatchExternalId::where('data_source_id', $source->id)
+                ->whereIn('match_id', $targetIds)
+                ->count();
+            if ($alreadyLinked >= $targetIds->count()) {
+                continue;
+            }
+
+            // Primary quota guard: stop before consuming beyond daily safety budget
+            if ($client->getLastRemainingQuota() !== null && $client->getLastRemainingQuota() <= 25) {
+                Log::warning('highlightly-linker: quota <= 25, halting to preserve daily budget', [
+                    'remaining' => $client->getLastRemainingQuota(),
+                ]);
                 break;
             }
 
