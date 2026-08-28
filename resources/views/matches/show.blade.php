@@ -103,8 +103,71 @@
     @endif
 </div>
 
+{{-- C. Match Events --}}
+@if($matchEvents->isNotEmpty())
+<div class="mt-4">
+    <h2 class="fs-5 fw-semibold mb-3">Eventi partita</h2>
+    <div class="card">
+        <div class="card-body p-0">
+            @foreach($matchEvents as $event)
+            @php
+                $isHome    = $event->team_id === $match->home_team_id;
+                $minLabel  = ($event->minute_label ?? $event->minute) . "'";
+                $eventIcon = match($event->event_type) {
+                    'goal'           => '<span class="badge bg-success">GOL</span>',
+                    'yellow_card'    => '<span class="badge bg-warning text-dark">&#9646;</span>',
+                    'yellow_red_card'=> '<span class="badge bg-warning text-dark">&#9646;</span><span class="badge bg-danger ms-1">&#9646;</span>',
+                    'red_card'       => '<span class="badge bg-danger">&#9646;</span>',
+                    'substitution'   => '<span class="text-muted small">&#8593;&#8595;</span>',
+                    default          => '',
+                };
+            @endphp
+            <div class="d-flex align-items-center px-2 py-1 {{ !$loop->last ? 'border-bottom' : '' }}">
+                {{-- Home side --}}
+                <div class="flex-fill text-end pe-2 small">
+                    @if($isHome)
+                        @if($event->event_type === 'goal')
+                            {!! $eventIcon !!}
+                            <span class="fw-semibold">{{ $event->player_name ?? '–' }}</span>
+                            @if($event->related_player_name)
+                                <span class="text-muted">({{ $event->related_player_name }})</span>
+                            @endif
+                        @elseif($event->event_type === 'substitution')
+                            <span class="text-success small">&#8593; {{ $event->related_player_name ?? '–' }}</span>
+                            <span class="text-danger small ms-1">&#8595; {{ $event->player_name ?? '–' }}</span>
+                        @else
+                            {!! $eventIcon !!} {{ $event->player_name ?? '–' }}
+                        @endif
+                    @endif
+                </div>
+                {{-- Minute --}}
+                <div class="text-muted small text-center fw-semibold" style="width:48px;flex-shrink:0">{{ $minLabel }}</div>
+                {{-- Away side --}}
+                <div class="flex-fill text-start ps-2 small">
+                    @if(!$isHome)
+                        @if($event->event_type === 'goal')
+                            {!! $eventIcon !!}
+                            <span class="fw-semibold">{{ $event->player_name ?? '–' }}</span>
+                            @if($event->related_player_name)
+                                <span class="text-muted">({{ $event->related_player_name }})</span>
+                            @endif
+                        @elseif($event->event_type === 'substitution')
+                            <span class="text-success small">&#8593; {{ $event->related_player_name ?? '–' }}</span>
+                            <span class="text-danger small ms-1">&#8595; {{ $event->player_name ?? '–' }}</span>
+                        @else
+                            {!! $eventIcon !!} {{ $event->player_name ?? '–' }}
+                        @endif
+                    @endif
+                </div>
+            </div>
+            @endforeach
+        </div>
+    </div>
+</div>
+@endif
+
 @if($match->status !== 'finished')
-{{-- C. Forma prima del match --}}
+{{-- E. Forma prima del match --}}
 <div class="mt-4">
     <h2 class="fs-5 fw-semibold mb-3">Forma prima del match</h2>
     <div class="row g-3">

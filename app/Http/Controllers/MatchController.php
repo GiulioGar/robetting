@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\FootballMatch;
+use App\Models\MatchEvent;
 use App\Services\Analytics\HeadToHeadCalculator;
 use App\Services\Analytics\TeamAnalyticsCalculator;
 use App\Services\Matches\PreferredMatchStatisticResolver;
@@ -37,6 +38,12 @@ class MatchController extends Controller
 
         $matchStatistic = $matchStatistics->get($match->id);
 
+        $matchEvents = MatchEvent::where('match_id', $match->id)
+            ->whereNotIn('event_type', ['sync_complete'])
+            ->orderBy('minute')
+            ->orderBy('id')
+            ->get();
+
         $homeHomeOnly = $homePrevious->where('home_team_id', $match->home_team_id)->values();
         $awayAwayOnly = $awayPrevious->where('away_team_id', $match->away_team_id)->values();
 
@@ -55,6 +62,7 @@ class MatchController extends Controller
         return view('matches.show', [
             'match'               => $match,
             'matchStatistic'      => $matchStatistic,
+            'matchEvents'         => $matchEvents,
             'homeSeasonAnalytics' => $homeSeasonAnalytics,
             'homeLast5Analytics'  => $homeLast5Analytics,
             'homeLast10Analytics' => $homeLast10Analytics,
