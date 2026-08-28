@@ -40,4 +40,9 @@ return [
         'base_url' => env('FOOTBALL_DATA_ORG_BASE_URL', 'https://api.football-data.org/v4'),
     ],
 
+    'goal_api' => [
+        'api_key'  => env('GOAL_API_KEY'),
+        'base_url' => env('GOAL_API_BASE_URL', 'https://api.goal-api.com/v1'),
+    ],
+
 ];
