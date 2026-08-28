@@ -16,6 +16,19 @@ Schedule::command('robetting:sync-live-scores')
     ->everyFiveMinutes()
     ->withoutOverlapping();
 
+// FDO calendar sync — daily refresh of kickoffs, statuses, and new fixtures
+// for the 5 core leagues' current season. Also bootstraps a season that FDO
+// has started but that does not yet exist in the canonical DB (full import via
+// FootballDataOrgImporter::import()). Runs at 06:00 UTC — well clear of the
+// catch-up (04:02) and live-sync ticks (every 5 min). Each league is one API
+// call (full season GET), so 5 calls/day total — trivial against FDO budget.
+// Strategy: full-season retrieval (no dateFrom/dateTo window) for simplicity
+// and robustness: catches reschedules regardless of how far ahead they fall.
+Schedule::command('robetting:sync-fdo-calendar')
+    ->dailyAt('06:00')
+    ->timezone(config('app.timezone'))
+    ->withoutOverlapping();
+
 // Catch-up safety net — daily reconciliation for the 5 core leagues'
 // current season: finds matches whose kickoff has passed but that were
 // never finalized in DB (see LiveScoreSyncService::catchUp(), bounded to

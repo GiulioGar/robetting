@@ -39,6 +39,8 @@ class FootballDataOrgImporter
         'matches'   => ['created' => 0, 'linked' => 0, 'updated' => 0, 'skipped' => 0],
     ];
 
+    private MatchFieldPolicy $matchPolicy;
+
     public function __construct(
         private readonly FootballDataOrgClient  $client,
         private readonly CanonicalMatchResolver $matchResolver,
@@ -50,6 +52,8 @@ class FootballDataOrgImporter
         $slug   = $options['slug'] ?? null;
         $dryRun = (bool) ($options['dry_run'] ?? false);
         $limit  = isset($options['limit']) ? (int) $options['limit'] : null;
+
+        $this->matchPolicy = MatchFieldPolicy::forFdo();
 
         DB::beginTransaction();
 
@@ -122,8 +126,10 @@ class FootballDataOrgImporter
      * DB, so it costs a single API call instead of the 3 that import() uses.
      * Intended for frequent polling while matches are in progress.
      */
-    public function syncMatches(Competition $competition, Season $season, string $competitionCode): array
+    public function syncMatches(Competition $competition, Season $season, string $competitionCode, ?MatchFieldPolicy $policy = null): array
     {
+        $this->matchPolicy = $policy ?? MatchFieldPolicy::forFdo();
+
         DB::beginTransaction();
 
         try {
@@ -487,7 +493,7 @@ class FootballDataOrgImporter
             $source,
             $fdoMatchId,
             $matchFields,
-            MatchFieldPolicy::forFdo(),
+            $this->matchPolicy,
             "fdo match {$fdoMatchId}",
         );
         $this->result['matches'][$resolved->action]++;

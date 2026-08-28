@@ -103,9 +103,20 @@ class CanonicalMatchResolver
 
         // kickoff_at + kickoff_timezone
         if ($policy->kickoff === 'overwrite') {
-            if (($incoming['kickoff_at'] ?? null) !== null) {
-                $updates['kickoff_at']       = $incoming['kickoff_at'];
-                $updates['kickoff_timezone'] = $incoming['kickoff_timezone'] ?? null;
+            $incomingKickoff = $incoming['kickoff_at'] ?? null;
+            if ($incomingKickoff !== null) {
+                $skip = false;
+                if ($policy->kickoffSkipMidnightOverwrite) {
+                    $inC = $incomingKickoff instanceof Carbon ? $incomingKickoff : Carbon::parse($incomingKickoff);
+                    $isMidnight = $inC->utc()->format('H:i:s') === '00:00:00';
+                    $canonicalIsConfirmed = $match->kickoff_at !== null
+                        && $match->kickoff_at->utc()->format('H:i:s') !== '00:00:00';
+                    $skip = $isMidnight && $canonicalIsConfirmed;
+                }
+                if (!$skip) {
+                    $updates['kickoff_at']       = $incomingKickoff;
+                    $updates['kickoff_timezone'] = $incoming['kickoff_timezone'] ?? null;
+                }
             }
         } elseif ($match->kickoff_at === null && ($incoming['kickoff_at'] ?? null) !== null) {
             $updates['kickoff_at']       = $incoming['kickoff_at'];
@@ -128,30 +139,32 @@ class CanonicalMatchResolver
             }
         }
 
-        // ET/PEN scores: fill-only (FDCUK never provides these)
-        foreach (self::FILL_ONLY_FIELDS as $field) {
-            if (array_key_exists($field, $incoming) && $incoming[$field] !== null && $match->{$field} === null) {
-                $updates[$field] = $incoming[$field];
+        if (!$policy->noScores) {
+            // ET/PEN scores: fill-only (FDCUK never provides these)
+            foreach (self::FILL_ONLY_FIELDS as $field) {
+                if (array_key_exists($field, $incoming) && $incoming[$field] !== null && $match->{$field} === null) {
+                    $updates[$field] = $incoming[$field];
+                }
             }
-        }
 
-        // HT/FT scores: fill NULLs; warn and do not overwrite on conflict
-        foreach (self::SCORE_FIELDS as $field) {
-            $canonical = $match->{$field} !== null ? (int) $match->{$field} : null;
-            $incomingVal = (array_key_exists($field, $incoming) && $incoming[$field] !== null)
-                ? (int) $incoming[$field]
-                : null;
+            // HT/FT scores: fill NULLs; warn and do not overwrite on conflict
+            foreach (self::SCORE_FIELDS as $field) {
+                $canonical = $match->{$field} !== null ? (int) $match->{$field} : null;
+                $incomingVal = (array_key_exists($field, $incoming) && $incoming[$field] !== null)
+                    ? (int) $incoming[$field]
+                    : null;
 
-            if ($canonical === null && $incomingVal !== null) {
-                $updates[$field] = $incomingVal;
-            } elseif ($canonical !== null && $incomingVal !== null && $canonical !== $incomingVal) {
-                Log::warning('canonical-match-resolver: score mismatch — not overwriting', [
-                    'context'   => $logContext,
-                    'match_id'  => $match->id,
-                    'field'     => $field,
-                    'canonical' => $canonical,
-                    'incoming'  => $incomingVal,
-                ]);
+                if ($canonical === null && $incomingVal !== null) {
+                    $updates[$field] = $incomingVal;
+                } elseif ($canonical !== null && $incomingVal !== null && $canonical !== $incomingVal) {
+                    Log::warning('canonical-match-resolver: score mismatch — not overwriting', [
+                        'context'   => $logContext,
+                        'match_id'  => $match->id,
+                        'field'     => $field,
+                        'canonical' => $canonical,
+                        'incoming'  => $incomingVal,
+                    ]);
+                }
             }
         }
 
