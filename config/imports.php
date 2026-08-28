@@ -19,5 +19,8 @@ return [
     // Ordered list: first data source slug in this array that has a
     // MatchStatistic row for a given match wins. Extend the array (do not
     // replace it) when a second statistics source is imported.
-    'statistics_source_priority'       => ['football_data_co_uk'],
+    // FDCUK stays first: it covers historical seasons and its shot counts
+    // match the OPTA methodology used across the rest of the platform.
+    // Highlightly covers the current season (2026/27) where FDCUK is absent.
+    'statistics_source_priority'       => ['football_data_co_uk', 'highlightly'],
 ];
