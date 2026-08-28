@@ -44,6 +44,15 @@ Schedule::command('robetting:sync-live-scores', ['--catch-up'])
     ->timezone(config('app.timezone'))
     ->withoutOverlapping();
 
+// GOAL API events backfill — runs every 30 minutes to fill goal/card/substitution
+// events for the current season's finished matches. Processes all past matches
+// without a sync_complete sentinel, oldest first. Re-runs are free (zero API
+// calls) for already-synced matches. No linking phase needed: fixture mapping
+// is handled by link:goal-api-fixtures, which runs separately.
+Schedule::command('robetting:backfill-goal-api-events')
+    ->everyThirtyMinutes()
+    ->withoutOverlapping();
+
 // Highlightly stats backfill — runs every 30 minutes to fill missing/incomplete
 // match_statistics for the current season. Includes linking so any newly finished
 // match without a Highlightly mapping is resolved first. Oldest matches are
