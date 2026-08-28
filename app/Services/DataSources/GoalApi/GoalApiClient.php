@@ -9,10 +9,27 @@ class GoalApiClient
 {
     private const MAX_RETRIES = 3;
 
+    private ?int $lastRemainingQuota = null;
+
     public function __construct(
         private readonly string $apiKey,
         private readonly string $baseUrl = 'https://api.goal-api.com/v1',
     ) {}
+
+    /** Returns the X-RateLimit-Remaining value from the last successful response, or null. */
+    public function getLastRemainingQuota(): ?int
+    {
+        return $this->lastRemainingQuota;
+    }
+
+    /**
+     * GET /fixtures/{fixtureId} — full fixture detail including statistics.
+     * Response: {"success":true,"data":{...fixture with statistics...}}
+     */
+    public function getFixture(string $fixtureId): array
+    {
+        return $this->get("fixtures/{$fixtureId}");
+    }
 
     /**
      * Fetches all fixtures for a league, handling pagination automatically.
@@ -53,6 +70,10 @@ class GoalApiClient
                     ->get($url, $query);
 
                 if ($response->successful()) {
+                    $remaining = $response->header('X-RateLimit-Remaining');
+                    if ($remaining !== null && $remaining !== '') {
+                        $this->lastRemainingQuota = (int) $remaining;
+                    }
                     return $response->json() ?? [];
                 }
 
