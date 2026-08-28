@@ -10,6 +10,7 @@ use App\Models\MatchStatistic;
 use App\Models\Season;
 use Illuminate\Console\OutputStyle;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -61,6 +62,18 @@ class HighlightlyStatsFiller
         ?int $matchId = null,
     ): array {
         $slugs = $slugs ?: self::COMPETITION_SLUGS;
+
+        // Persistent quota guard: if today's remaining was already <= 25 from a prior run, abort immediately.
+        $today = now()->toDateString();
+        $cached = Cache::get('highlightly_quota');
+        if (!$dryRun && $cached && $cached['date'] === $today) {
+            $this->remainingQuota = $cached['remaining']; // seed so per-call guard is aware from the start
+            if ($cached['remaining'] <= 25) {
+                $this->log($output, "STOP  cached quota remaining={$cached['remaining']} <= 25 for {$today} — aborting run");
+                return $this->report();
+            }
+        }
+
         $competitions = Competition::whereIn('slug', $slugs)->get()->keyBy('slug');
 
         if ($competitions->isEmpty()) {
@@ -104,11 +117,12 @@ class HighlightlyStatsFiller
         ?OutputStyle $output,
         ?int $matchId = null,
     ): void {
-        // All FINISHED canonical matches for this competition/season
+        // All FINISHED canonical matches for this competition/season, oldest first
         $finishedMatches = FootballMatch::where('competition_id', $competition->id)
             ->where('season_id', $season->id)
             ->where('status', 'finished')
             ->when($matchId !== null, fn($q) => $q->where('id', $matchId))
+            ->orderBy('kickoff_at', 'asc')
             ->get();
 
         $matchIds = $finishedMatches->pluck('id');
@@ -189,6 +203,10 @@ class HighlightlyStatsFiller
 
         if ($this->client->getLastRemainingQuota() !== null) {
             $this->remainingQuota = $this->client->getLastRemainingQuota();
+            Cache::put('highlightly_quota', [
+                'remaining' => $this->remainingQuota,
+                'date'      => now()->toDateString(),
+            ], now()->addDays(2));
         }
 
         if (empty($raw)) {
@@ -255,6 +273,7 @@ class HighlightlyStatsFiller
                 ->where('season_id', $season->id)
                 ->where('status', 'finished')
                 ->when($matchId !== null, fn($q) => $q->where('id', $matchId))
+                ->orderBy('kickoff_at', 'asc')
                 ->pluck('id');
 
             $mapped = MatchExternalId::where('data_source_id', $source->id)

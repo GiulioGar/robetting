@@ -11,6 +11,7 @@ use App\Services\DataSources\Highlightly\HighlightlyFixtureLinker;
 use App\Services\DataSources\Highlightly\HighlightlyStatsParser;
 use App\Services\DataSources\Highlightly\HighlightlyStatsFiller;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -49,6 +50,16 @@ class BackfillHighlightlyStats extends Command
         $leagueIds     = (array) config('highlightly.league_ids', []);
 
         $slugs = $compFilter ? [$compFilter] : self::COMPETITION_SLUGS;
+
+        // Persistent quota guard: abort the entire run if today's budget is already exhausted
+        if (!$dryRun) {
+            $today = now()->toDateString();
+            $cachedQuota = Cache::get('highlightly_quota');
+            if ($cachedQuota && $cachedQuota['date'] === $today && $cachedQuota['remaining'] <= 25) {
+                $this->warn("[STOP]  Cached quota remaining={$cachedQuota['remaining']} <= 25 for {$today} — aborting run");
+                return self::SUCCESS;
+            }
+        }
 
         // --match auto-restricts to that match's competition (avoids processing all 5 leagues)
         if ($matchFilter !== null && $compFilter === null) {
@@ -329,6 +340,15 @@ class BackfillHighlightlyStats extends Command
 
             $hlMatches = $client->getMatches($hlLeagueId, $date, self::YEAR_START);
             $calls++;
+
+            // Persist remaining quota so the next run (or the stats phase) can abort early
+            $remaining = $client->getLastRemainingQuota();
+            if ($remaining !== null) {
+                Cache::put('highlightly_quota', [
+                    'remaining' => $remaining,
+                    'date'      => now()->toDateString(),
+                ], now()->addDays(2));
+            }
 
             foreach ($hlMatches as $hlMatch) {
                 DB::beginTransaction();

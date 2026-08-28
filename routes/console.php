@@ -43,3 +43,11 @@ Schedule::command('robetting:sync-live-scores', ['--catch-up'])
     ->dailyAt('04:02')
     ->timezone(config('app.timezone'))
     ->withoutOverlapping();
+
+// Highlightly stats backfill — runs every 30 minutes to fill missing/incomplete
+// match_statistics for the current season. Includes linking so any newly finished
+// match without a Highlightly mapping is resolved first. Oldest matches are
+// processed first. Aborts early if the daily quota is exhausted (remaining <= 25).
+Schedule::command('robetting:backfill-highlightly-stats')
+    ->everyThirtyMinutes()
+    ->withoutOverlapping();
