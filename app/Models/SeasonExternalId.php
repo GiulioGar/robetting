@@ -13,7 +13,15 @@ class SeasonExternalId extends Model
         'data_source_id',
         'external_id',
         'external_name',
+        'coverage',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'coverage' => 'array',
+        ];
+    }
 
     public function season(): BelongsTo
     {
