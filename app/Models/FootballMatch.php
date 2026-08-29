@@ -34,13 +34,15 @@ class FootballMatch extends Model
         'live_minute',
         'live_status',
         'definitive_at',
+        'events_fetched_at',
     ];
 
     protected function casts(): array
     {
         return [
-            'kickoff_at'   => 'datetime',
-            'definitive_at' => 'datetime',
+            'kickoff_at'        => 'datetime',
+            'definitive_at'     => 'datetime',
+            'events_fetched_at' => 'datetime',
         ];
     }
 
