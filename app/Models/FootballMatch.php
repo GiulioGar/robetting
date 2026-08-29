@@ -29,6 +29,10 @@ class FootballMatch extends Model
         'away_score_et',
         'home_score_penalties',
         'away_score_penalties',
+        'current_home_score',
+        'current_away_score',
+        'live_minute',
+        'live_status',
     ];
 
     protected function casts(): array

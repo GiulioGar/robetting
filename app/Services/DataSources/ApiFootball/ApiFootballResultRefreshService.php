@@ -182,12 +182,15 @@ class ApiFootballResultRefreshService
         $matchday   = $round !== null ? $this->parseMatchday($round) : null;
 
         $scoreData  = $item['score'] ?? [];
+        $isDefinitive = in_array($canonicalStatus, ApiFootballFixtureSyncService::DEFINITIVE_STATUSES, true);
+
         $newScalars = [
             'kickoff_timezone'     => $fixtureData['timezone'] ?? null,
             'status'               => $canonicalStatus,
             'round'                => $round,
             'matchday'             => $matchday,
             'venue_name'           => $fixtureData['venue']['name'] ?? null,
+            // Score fields: always sourced from score.* — never from goals.*
             'home_score_ht'        => $scoreData['halftime']['home']  ?? null,
             'away_score_ht'        => $scoreData['halftime']['away']  ?? null,
             'home_score_ft'        => $scoreData['fulltime']['home']  ?? null,
@@ -196,6 +199,11 @@ class ApiFootballResultRefreshService
             'away_score_et'        => $scoreData['extratime']['away'] ?? null,
             'home_score_penalties' => $scoreData['penalty']['home']   ?? null,
             'away_score_penalties' => $scoreData['penalty']['away']   ?? null,
+            // Live fields: current running score + granular minute/status
+            'current_home_score'   => $item['goals']['home'] ?? null,
+            'current_away_score'   => $item['goals']['away'] ?? null,
+            'live_minute'          => $isDefinitive ? null : ($fixtureData['status']['elapsed'] ?? null),
+            'live_status'          => $apiShortStatus,
         ];
 
         $dirty = $this->detectDirty($match, $newScalars, $kickoffAt);
