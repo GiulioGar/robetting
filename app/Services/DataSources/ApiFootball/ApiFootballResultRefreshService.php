@@ -206,6 +206,12 @@ class ApiFootballResultRefreshService
             'live_status'          => $apiShortStatus,
         ];
 
+        // Record the moment Robetting first detects the definitive transition.
+        // Never overwrite once set — it must represent the earliest detection, not the latest refresh.
+        if ($isDefinitive && $match->definitive_at === null) {
+            $newScalars['definitive_at'] = now();
+        }
+
         $dirty = $this->detectDirty($match, $newScalars, $kickoffAt);
 
         if (empty($dirty)) {

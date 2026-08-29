@@ -33,12 +33,14 @@ class FootballMatch extends Model
         'current_away_score',
         'live_minute',
         'live_status',
+        'definitive_at',
     ];
 
     protected function casts(): array
     {
         return [
-            'kickoff_at' => 'datetime',
+            'kickoff_at'   => 'datetime',
+            'definitive_at' => 'datetime',
         ];
     }
 

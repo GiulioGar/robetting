@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\DataSource;
 use App\Models\DataSyncRun;
 use App\Services\DataSources\ApiFootball\ApiFootballFixtureSyncService;
+use App\Services\DataSources\ApiFootball\ApiFootballMatchStatisticsSyncService;
 use App\Services\DataSources\ApiFootball\ApiFootballResultRefreshService;
 use Illuminate\Console\Command;
 use Symfony\Component\Process\Process;
@@ -21,13 +22,15 @@ class ServeLocal extends Command
     protected $description = 'Start local dev environment: catch-up, calendar check, dev server + result refresh';
 
     public function handle(
-        ApiFootballResultRefreshService $refreshService,
-        ApiFootballFixtureSyncService   $fixtureService,
+        ApiFootballResultRefreshService       $refreshService,
+        ApiFootballFixtureSyncService         $fixtureService,
+        ApiFootballMatchStatisticsSyncService $statsService,
     ): int {
-        $this->runStartup($refreshService, $fixtureService);
+        $this->runStartup($refreshService, $fixtureService, $statsService);
 
         if ($this->option('once')) {
             $this->runRefresh($refreshService);
+            $this->runPendingStats($statsService);
             return self::SUCCESS;
         }
 
@@ -48,14 +51,16 @@ class ServeLocal extends Command
             }
 
             $this->runRefresh($refreshService);
+            $this->runPendingStats($statsService);
         }
 
         return self::SUCCESS;
     }
 
     private function runStartup(
-        ApiFootballResultRefreshService $refreshService,
-        ApiFootballFixtureSyncService   $fixtureService,
+        ApiFootballResultRefreshService       $refreshService,
+        ApiFootballFixtureSyncService         $fixtureService,
+        ApiFootballMatchStatisticsSyncService $statsService,
     ): void {
         $this->info('[startup] Running catch-up...');
         $catchUp = $refreshService->catchUp();
@@ -63,6 +68,9 @@ class ServeLocal extends Command
 
         $this->info('[startup] Checking calendar staleness...');
         $this->maybeRefreshCalendar($fixtureService);
+
+        $this->info('[startup] Syncing pending statistics...');
+        $this->runPendingStats($statsService);
     }
 
     private function maybeRefreshCalendar(ApiFootballFixtureSyncService $fixtureService): void
@@ -104,6 +112,14 @@ class ServeLocal extends Command
             $msg .= "  [rem:{$result['daily_remaining']}]";
         }
         $this->line($msg);
+    }
+
+    private function runPendingStats(ApiFootballMatchStatisticsSyncService $service): void
+    {
+        $result = $service->syncPending();
+        if ($result['candidates'] > 0) {
+            $this->line("[pending-stats] candidates={$result['candidates']}  synced={$result['synced']}  failed={$result['failed']}  api_calls={$result['api_calls']}");
+        }
     }
 
     private function startDevServer(): Process
