@@ -1,28 +1,36 @@
 @extends('layouts.app')
 
-@section('title', 'Admin — Sync Squadre API-Football')
+@section('title', 'Admin — Sync Calendario API-Football')
 
 @section('content')
 <div class="row justify-content-center">
-    <div class="col-lg-10">
+    <div class="col-lg-11">
 
         <div class="d-flex justify-content-between align-items-center mb-3">
-            <h4 class="mb-0">Sync Squadre API-Football</h4>
+            <h4 class="mb-0">Sync Calendario API-Football</h4>
             <div>
                 <a href="{{ route('admin.api-football.dashboard') }}" class="btn btn-sm btn-outline-secondary me-2">Dashboard</a>
-                <a href="{{ route('admin.api-football.fixtures') }}" class="btn btn-sm btn-outline-secondary">Calendario →</a>
+                <a href="{{ route('admin.api-football.teams') }}" class="btn btn-sm btn-outline-secondary">← Squadre</a>
             </div>
         </div>
 
-        <form method="POST" action="{{ route('admin.api-football.teams.sync') }}">
+        <form method="POST" action="{{ route('admin.api-football.fixtures.sync') }}">
             @csrf
-            <div class="d-flex align-items-center gap-3 mb-4">
+            <div class="d-flex align-items-end gap-3 mb-4">
                 <div>
                     <label class="form-label mb-1 small fw-semibold">Season</label>
                     <input type="number" name="season" value="2026" class="form-control form-control-sm" style="width:100px">
                 </div>
-                <div class="align-self-end">
-                    <button type="submit" class="btn btn-primary btn-sm">Aggiorna squadre</button>
+                <div>
+                    <label class="form-label mb-1 small fw-semibold">Modalità</label>
+                    <select name="mode" class="form-select form-select-sm" style="width:280px">
+                        @foreach($modes as $value => $label)
+                            <option value="{{ $value }}">{{ $label }}</option>
+                        @endforeach
+                    </select>
+                </div>
+                <div>
+                    <button type="submit" class="btn btn-primary btn-sm">Aggiorna calendario</button>
                 </div>
             </div>
         </form>
@@ -31,8 +39,9 @@
             <hr>
             <h6 class="mb-3">
                 Report — season {{ $report['season'] }}
-                &nbsp;<span class="badge bg-success">+{{ $report['teams_created'] }} create</span>
-                &nbsp;<span class="badge bg-warning text-dark">~{{ $report['teams_updated'] }} aggiornate</span>
+                &nbsp;<span class="badge bg-secondary text-uppercase">{{ $report['mode'] }}</span>
+                &nbsp;<span class="badge bg-success">+{{ $report['fixtures_created'] }} create</span>
+                &nbsp;<span class="badge bg-warning text-dark">~{{ $report['fixtures_updated'] }} aggiornate</span>
             </h6>
 
             <table class="table table-sm table-bordered align-middle">
@@ -44,6 +53,7 @@
                         <th class="text-center">Create</th>
                         <th class="text-center">Agg.</th>
                         <th class="text-center">Inv.</th>
+                        <th class="text-center">Skip</th>
                         <th class="text-center">API calls</th>
                         <th class="text-center">Rem.</th>
                         <th>Note</th>
@@ -66,6 +76,7 @@
                             <td class="text-center">{{ $r['created'] }}</td>
                             <td class="text-center">{{ $r['updated'] }}</td>
                             <td class="text-center">{{ $r['unchanged'] }}</td>
+                            <td class="text-center">{{ $r['skipped'] }}</td>
                             <td class="text-center">{{ $r['api_calls'] }}</td>
                             <td class="text-center">{{ $r['requests_remaining'] ?? '—' }}</td>
                             <td class="small text-muted">

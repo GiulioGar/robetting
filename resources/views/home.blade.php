@@ -69,4 +69,10 @@
 @endif
 
 
+@if(app()->isLocal())
+<div class="mt-4 text-end">
+    <a href="{{ route('admin.api-football.dashboard') }}" class="text-muted small">Admin API-Football</a>
+</div>
+@endif
+
 @endsection

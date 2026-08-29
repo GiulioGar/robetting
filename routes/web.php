@@ -37,6 +37,9 @@ Route::delete('/competitions/{competition:slug}/seasons/{season}/zones/{zone}', 
 
 // Admin — local only (gated in controller constructor)
 Route::prefix('admin/api-football')->name('admin.api-football.')->group(function () {
+    Route::get('/', [ApiFootballAdminController::class, 'dashboard'])->name('dashboard');
     Route::get('teams', [ApiFootballAdminController::class, 'teams'])->name('teams');
     Route::post('teams/sync', [ApiFootballAdminController::class, 'syncTeams'])->name('teams.sync');
+    Route::get('fixtures', [ApiFootballAdminController::class, 'fixtures'])->name('fixtures');
+    Route::post('fixtures/sync', [ApiFootballAdminController::class, 'syncFixtures'])->name('fixtures.sync');
 });

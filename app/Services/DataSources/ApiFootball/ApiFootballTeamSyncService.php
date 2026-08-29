@@ -6,6 +6,7 @@ use App\Models\Competition;
 use App\Models\CompetitionExternalId;
 use App\Models\Country;
 use App\Models\DataSource;
+use App\Models\DataSyncRun;
 use App\Models\SeasonExternalId;
 use App\Models\Team;
 use App\Models\TeamExternalId;
@@ -100,6 +101,8 @@ class ApiFootballTeamSyncService
         $totalUpdated  = 0;
 
         foreach ($ceis as $cei) {
+            $startedAt = now();
+
             try {
                 $report = $this->syncCompetition($cei, $season);
             } catch (ApiFootballException $e) {
@@ -119,6 +122,27 @@ class ApiFootballTeamSyncService
                 ];
                 Log::error("api-football-team-sync: {$cei->external_id} failed — {$e->getMessage()}");
             }
+
+            DataSyncRun::create([
+                'data_source_id'  => $ds->id,
+                'sync_type'       => 'team_sync',
+                'competition_id'  => $cei->competition_id,
+                'season_id'       => null,
+                'mode'            => null,
+                'started_at'      => $startedAt,
+                'finished_at'     => now(),
+                'status'          => in_array($report['status'] ?? '', ['ok', 'skipped'], true)
+                                        ? ($report['status'] ?? 'ok')
+                                        : 'failed',
+                'created_count'   => $report['created']   ?? 0,
+                'updated_count'   => $report['updated']   ?? 0,
+                'unchanged_count' => $report['unchanged'] ?? 0,
+                'skipped_count'   => 0,
+                'warnings_count'  => count($report['warnings'] ?? []),
+                'api_calls'       => $report['api_calls'] ?? 0,
+                'daily_remaining' => $report['requests_remaining'] ?? null,
+                'details'         => null,
+            ]);
 
             $totalCreated += $report['created'];
             $totalUpdated += $report['updated'];
