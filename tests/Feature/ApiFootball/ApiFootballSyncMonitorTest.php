@@ -18,6 +18,7 @@ use App\Services\DataSources\ApiFootball\ApiFootballTeamSyncService;
 use Database\Seeders\ApiFootballDataSourceSeeder;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -210,34 +211,22 @@ class ApiFootballSyncMonitorTest extends TestCase
     {
         $this->app['env'] = 'local';
 
-        // Create matches for this competition
-        FootballMatch::create([
-            'competition_id' => $this->competition->id,
-            'season_id'      => $this->season->id,
-            'home_team_id'   => $this->homeTeam->id,
-            'away_team_id'   => $this->awayTeam->id,
-            'status'         => 'finished',
+        // Register teams in season_team (source of truth for team counts)
+        DB::table('season_team')->insert([
+            ['season_id' => $this->season->id, 'team_id' => $this->homeTeam->id, 'created_at' => now(), 'updated_at' => now()],
+            ['season_id' => $this->season->id, 'team_id' => $this->awayTeam->id, 'created_at' => now(), 'updated_at' => now()],
         ]);
-        FootballMatch::create([
-            'competition_id' => $this->competition->id,
-            'season_id'      => $this->season->id,
-            'home_team_id'   => $this->homeTeam->id,
-            'away_team_id'   => $this->awayTeam->id,
-            'status'         => 'scheduled',
-        ]);
-        FootballMatch::create([
-            'competition_id' => $this->competition->id,
-            'season_id'      => $this->season->id,
-            'home_team_id'   => $this->homeTeam->id,
-            'away_team_id'   => $this->awayTeam->id,
-            'status'         => 'postponed',
-        ]);
+
+        // Matches for match-count assertions
+        FootballMatch::create(['competition_id' => $this->competition->id, 'season_id' => $this->season->id,
+            'home_team_id' => $this->homeTeam->id, 'away_team_id' => $this->awayTeam->id, 'status' => 'finished']);
+        FootballMatch::create(['competition_id' => $this->competition->id, 'season_id' => $this->season->id,
+            'home_team_id' => $this->homeTeam->id, 'away_team_id' => $this->awayTeam->id, 'status' => 'scheduled']);
+        FootballMatch::create(['competition_id' => $this->competition->id, 'season_id' => $this->season->id,
+            'home_team_id' => $this->homeTeam->id, 'away_team_id' => $this->awayTeam->id, 'status' => 'postponed']);
 
         Http::fake();
-        $response = $this->get(route('admin.api-football.dashboard'))->assertOk();
-
-        $stats = $response->viewData('stats');
-        $s     = $stats->first();
+        $s = $this->get(route('admin.api-football.dashboard'))->assertOk()->viewData('stats')->first();
 
         $this->assertSame(2,  $s['total_teams']);
         $this->assertSame(2,  $s['team_external_ids']);
@@ -355,15 +344,13 @@ class ApiFootballSyncMonitorTest extends TestCase
     {
         $this->app['env'] = 'local';
 
-        // A third team with NO external id
+        // A third team with NO api-football external id
         $unmappedTeam = Team::create(['name' => 'Juventus', 'type' => 'club', 'is_active' => true]);
 
-        FootballMatch::create([
-            'competition_id' => $this->competition->id,
-            'season_id'      => $this->season->id,
-            'home_team_id'   => $this->homeTeam->id,
-            'away_team_id'   => $unmappedTeam->id,
-            'status'         => 'scheduled',
+        // Register both in season_team — source of truth for team counts
+        DB::table('season_team')->insert([
+            ['season_id' => $this->season->id, 'team_id' => $this->homeTeam->id,  'created_at' => now(), 'updated_at' => now()],
+            ['season_id' => $this->season->id, 'team_id' => $unmappedTeam->id,    'created_at' => now(), 'updated_at' => now()],
         ]);
 
         Http::fake();
@@ -373,7 +360,7 @@ class ApiFootballSyncMonitorTest extends TestCase
             ->first();
 
         $this->assertSame(2,  $s['total_teams']);         // homeTeam + unmappedTeam
-        $this->assertSame(1,  $s['team_external_ids']);   // only homeTeam has mapping
+        $this->assertSame(1,  $s['team_external_ids']);   // only homeTeam has api-football mapping
         $this->assertSame(1,  $s['teams_without_mapping']);
         $this->assertSame('attenzione', $s['status']);
     }
@@ -446,6 +433,29 @@ class ApiFootballSyncMonitorTest extends TestCase
             ->first();
 
         $this->assertSame('errore', $s['status']);
+    }
+
+    // -------------------------------------------------------------------------
+    // season_team as source of truth (no matches needed)
+    // -------------------------------------------------------------------------
+
+    public function test_monitor_shows_teams_with_zero_matches(): void
+    {
+        $this->app['env'] = 'local';
+
+        // Register teams via season_team — no matches in DB
+        DB::table('season_team')->insert([
+            ['season_id' => $this->season->id, 'team_id' => $this->homeTeam->id, 'created_at' => now(), 'updated_at' => now()],
+            ['season_id' => $this->season->id, 'team_id' => $this->awayTeam->id, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        Http::fake();
+        $s = $this->get(route('admin.api-football.dashboard'))->assertOk()->viewData('stats')->first();
+
+        $this->assertSame(2, $s['total_teams']);
+        $this->assertSame(2, $s['team_external_ids']);
+        $this->assertSame(0, $s['teams_without_mapping']);
+        $this->assertSame(0, $s['total_matches']); // no fixtures imported yet
     }
 
     // -------------------------------------------------------------------------

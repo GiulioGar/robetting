@@ -14,6 +14,44 @@
             </div>
         </div>
 
+        {{-- Global: Result Refresh & Catch-up --}}
+        <div class="card mb-4">
+            <div class="card-header"><strong>Aggiornamento risultati (globale)</strong></div>
+            <div class="card-body p-0">
+                <table class="table table-sm table-bordered mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width:20%">Tipo</th>
+                            <th>Ultima esecuzione</th>
+                            <th>Stato</th>
+                            <th class="text-center">~Agg</th>
+                            <th class="text-center">API calls</th>
+                            <th class="text-center">Daily rem.</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach([
+                            ['Result Refresh (5 min)', $lastResultRefresh],
+                            ['Catch-up (startup)',     $lastCatchUp],
+                        ] as [$label, $run])
+                            <tr>
+                                <td class="text-muted small">{{ $label }}</td>
+                                @if($run)
+                                    <td class="small">{{ $run->started_at->format('d/m/Y H:i') }}</td>
+                                    <td><span class="badge bg-success">{{ $run->status }}</span></td>
+                                    <td class="text-center">{{ $run->updated_count }}</td>
+                                    <td class="text-center">{{ $run->api_calls }}</td>
+                                    <td class="text-center">{{ $run->daily_remaining ?? '—' }}</td>
+                                @else
+                                    <td colspan="5" class="text-muted small fst-italic">mai eseguito</td>
+                                @endif
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
         @if($stats->isEmpty())
             <div class="alert alert-warning">
                 Nessuna competition_external_id api-football trovata. Esegui prima il League Sync.

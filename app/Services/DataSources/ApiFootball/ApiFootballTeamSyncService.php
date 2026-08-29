@@ -10,6 +10,7 @@ use App\Models\DataSyncRun;
 use App\Models\SeasonExternalId;
 use App\Models\Team;
 use App\Models\TeamExternalId;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class ApiFootballTeamSyncService
@@ -47,17 +48,19 @@ class ApiFootballTeamSyncService
             'minute_remaining'  => null,
         ];
 
-        // Verify season_external_id exists — no auto-create
-        $seiExists = SeasonExternalId::where('data_source_id', $ds->id)
+        // Verify season_external_id exists and retrieve season_id for membership tracking
+        $sei = SeasonExternalId::where('data_source_id', $ds->id)
             ->where('competition_id', $cei->competition_id)
             ->where('external_id', (string) $season)
-            ->exists();
+            ->first();
 
-        if (!$seiExists) {
+        if (!$sei) {
             $msg = "no season_external_id for {$slug} season {$season} — skipped";
             Log::warning("api-football-team-sync: {$msg}");
             return array_merge($base, ['status' => 'skipped', 'message' => $msg]);
         }
+
+        $seasonId = $sei->season_id;
 
         $response = $this->client->get('teams', [
             'league' => $cei->external_id,
@@ -76,7 +79,7 @@ class ApiFootballTeamSyncService
         }
 
         foreach ($response->response as $item) {
-            $outcome = $this->processTeamItem($item, $ds);
+            $outcome = $this->processTeamItem($item, $ds, $seasonId);
             if ($outcome === 'created')   $base['created']++;
             elseif ($outcome === 'updated')   $base['updated']++;
             elseif ($outcome === 'unchanged') $base['unchanged']++;
@@ -159,9 +162,10 @@ class ApiFootballTeamSyncService
 
     /**
      * Process a single team item from the API response.
+     * Creates/updates team + external_id, then idempotently registers the team in season_team.
      * Returns 'created', 'updated', 'unchanged', or a warning string.
      */
-    private function processTeamItem(array $item, DataSource $ds): string
+    private function processTeamItem(array $item, DataSource $ds, int $seasonId): string
     {
         $teamData = $item['team'] ?? [];
         $extId    = (string) ($teamData['id'] ?? '');
@@ -205,6 +209,8 @@ class ApiFootballTeamSyncService
                 $tei->update(['external_name' => $name]);
             }
 
+            $this->attachToSeason($team->id, $seasonId);
+
             if (empty($dirty)) {
                 return 'unchanged';
             }
@@ -230,6 +236,18 @@ class ApiFootballTeamSyncService
             'external_name' => $name,
         ]);
 
+        $this->attachToSeason($team->id, $seasonId);
+
         return 'created';
+    }
+
+    private function attachToSeason(int $teamId, int $seasonId): void
+    {
+        DB::table('season_team')->insertOrIgnore([
+            'season_id'  => $seasonId,
+            'team_id'    => $teamId,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 }

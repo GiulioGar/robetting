@@ -8,11 +8,13 @@ use App\Models\DataSource;
 use App\Models\DataSyncRun;
 use App\Models\FootballMatch;
 use App\Models\MatchExternalId;
+use App\Models\SeasonExternalId;
 use App\Models\TeamExternalId;
 use App\Services\DataSources\ApiFootball\ApiFootballFixtureSyncService;
 use App\Services\DataSources\ApiFootball\ApiFootballTeamSyncService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
 class ApiFootballAdminController extends Controller
@@ -55,14 +57,21 @@ class ApiFootballAdminController extends Controller
         ) {
             $compId = $cei->competition_id;
 
-            // Teams appearing in this competition's matches
-            $homeTeamIds = FootballMatch::where('competition_id', $compId)->distinct()->pluck('home_team_id');
-            $awayTeamIds = FootballMatch::where('competition_id', $compId)->distinct()->pluck('away_team_id');
-            $teamIds     = $homeTeamIds->merge($awayTeamIds)->unique();
-            $totalTeams  = $teamIds->count();
+            // Teams from season_team for seasons with an api-football SeasonExternalId
+            $apiSeasonIds = SeasonExternalId::where('data_source_id', $dsId)
+                ->where('competition_id', $compId)
+                ->pluck('season_id');
 
-            $teamExternalIds     = $dsId && $teamIds->isNotEmpty()
-                ? TeamExternalId::where('data_source_id', $dsId)->whereIn('team_id', $teamIds)->count()
+            $teamIdsInSeasons = $apiSeasonIds->isNotEmpty()
+                ? DB::table('season_team')
+                    ->whereIn('season_id', $apiSeasonIds)
+                    ->distinct()
+                    ->pluck('team_id')
+                : collect();
+
+            $totalTeams          = $teamIdsInSeasons->count();
+            $teamExternalIds     = $dsId && $teamIdsInSeasons->isNotEmpty()
+                ? TeamExternalId::where('data_source_id', $dsId)->whereIn('team_id', $teamIdsInSeasons)->count()
                 : 0;
             $teamsWithoutMapping = $totalTeams - $teamExternalIds;
 
@@ -122,7 +131,25 @@ class ApiFootballAdminController extends Controller
             ];
         });
 
-        return view('admin.api-football.dashboard', ['stats' => $stats]);
+        $lastResultRefresh = $dsId
+            ? DataSyncRun::where('data_source_id', $dsId)
+                ->where('sync_type', 'result_refresh')
+                ->orderBy('started_at', 'desc')
+                ->first()
+            : null;
+
+        $lastCatchUp = $dsId
+            ? DataSyncRun::where('data_source_id', $dsId)
+                ->where('sync_type', 'catch_up')
+                ->orderBy('started_at', 'desc')
+                ->first()
+            : null;
+
+        return view('admin.api-football.dashboard', [
+            'stats'             => $stats,
+            'lastResultRefresh' => $lastResultRefresh,
+            'lastCatchUp'       => $lastCatchUp,
+        ]);
     }
 
     // -------------------------------------------------------------------------

@@ -13,6 +13,7 @@ use App\Models\TeamExternalId;
 use App\Services\DataSources\ApiFootball\ApiFootballTeamSyncService;
 use Database\Seeders\ApiFootballDataSourceSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -253,6 +254,65 @@ class ApiFootballTeamSyncServiceTest extends TestCase
             ->assertSuccessful();
 
         $this->assertSame(2, Team::count());
+    }
+
+    // -------------------------------------------------------------------------
+    // season_team membership
+    // -------------------------------------------------------------------------
+
+    public function test_season_team_membership_is_created_on_sync(): void
+    {
+        Http::fake(['v3.football.api-sports.io/teams*' => Http::response($this->serieATeamsResponse(), 200)]);
+
+        $this->assertSame(0, DB::table('season_team')->count());
+
+        app(ApiFootballTeamSyncService::class)->syncCompetition($this->cei, 2026);
+
+        $this->assertSame(2, DB::table('season_team')->count());
+
+        $season = Season::where('competition_id', $this->competition->id)->firstOrFail();
+        $this->assertSame(2, DB::table('season_team')->where('season_id', $season->id)->count());
+    }
+
+    public function test_season_team_membership_is_idempotent(): void
+    {
+        Http::fake(['v3.football.api-sports.io/teams*' => Http::response($this->serieATeamsResponse(), 200)]);
+
+        $service = app(ApiFootballTeamSyncService::class);
+        $service->syncCompetition($this->cei, 2026);
+        $service->syncCompetition($this->cei, 2026); // second run — must not duplicate
+
+        $this->assertSame(2, DB::table('season_team')->count());
+    }
+
+    public function test_team_can_belong_to_multiple_seasons(): void
+    {
+        // Second season for the same competition
+        $season2 = Season::create([
+            'competition_id' => $this->competition->id,
+            'name'           => '2027/28',
+            'year_start'     => 2027,
+            'year_end'       => 2028,
+            'is_current'     => false,
+        ]);
+        SeasonExternalId::create([
+            'season_id'      => $season2->id,
+            'competition_id' => $this->competition->id,
+            'data_source_id' => $this->ds->id,
+            'external_id'    => '2027',
+        ]);
+
+        Http::fake(['v3.football.api-sports.io/teams*' => Http::response($this->serieATeamsResponse(), 200)]);
+
+        $service = app(ApiFootballTeamSyncService::class);
+        $service->syncCompetition($this->cei, 2026); // season 2026/27
+        $service->syncCompetition($this->cei, 2027); // season 2027/28
+
+        // Each of the 2 teams appears in both seasons → 4 rows total
+        $this->assertSame(4, DB::table('season_team')->count());
+
+        $inter = Team::where('name', 'Internazionale')->firstOrFail();
+        $this->assertSame(2, DB::table('season_team')->where('team_id', $inter->id)->count());
     }
 
     // -------------------------------------------------------------------------
