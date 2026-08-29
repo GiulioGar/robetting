@@ -135,10 +135,13 @@
                 $minLabel  = ($event->minute_label ?? $event->minute) . "'";
                 $eventIcon = match($event->event_type) {
                     'goal'           => '<span class="badge bg-success">GOL</span>',
+                    'own_goal'       => '<span class="badge bg-secondary">AUTOGOL</span>',
+                    'missed_penalty' => '<span class="badge bg-secondary">RIG. SBAG.</span>',
                     'yellow_card'    => '<span class="badge bg-warning text-dark">&#9646;</span>',
                     'yellow_red_card'=> '<span class="badge bg-warning text-dark">&#9646;</span><span class="badge bg-danger ms-1">&#9646;</span>',
                     'red_card'       => '<span class="badge bg-danger">&#9646;</span>',
                     'substitution'   => '<span class="text-muted small">&#8593;&#8595;</span>',
+                    'var'            => '<span class="badge bg-info text-dark">VAR</span>',
                     default          => '',
                 };
             @endphp
@@ -155,6 +158,15 @@
                         @elseif($event->event_type === 'substitution')
                             <span class="text-success small">&#8593; {{ $event->related_player_name ?? '–' }}</span>
                             <span class="text-danger small ms-1">&#8595; {{ $event->player_name ?? '–' }}</span>
+                        @elseif($event->event_type === 'own_goal')
+                            {!! $eventIcon !!} {{ $event->player_name ?? '–' }}
+                        @elseif($event->event_type === 'missed_penalty')
+                            {!! $eventIcon !!} {{ $event->player_name ?? '–' }}
+                        @elseif($event->event_type === 'var')
+                            {!! $eventIcon !!}
+                            @if(!empty($event->detail['api_detail']))
+                                <span class="text-muted small">{{ $event->detail['api_detail'] }}</span>
+                            @endif
                         @else
                             {!! $eventIcon !!} {{ $event->player_name ?? '–' }}
                         @endif
@@ -174,6 +186,15 @@
                         @elseif($event->event_type === 'substitution')
                             <span class="text-success small">&#8593; {{ $event->related_player_name ?? '–' }}</span>
                             <span class="text-danger small ms-1">&#8595; {{ $event->player_name ?? '–' }}</span>
+                        @elseif($event->event_type === 'own_goal')
+                            {!! $eventIcon !!} {{ $event->player_name ?? '–' }}
+                        @elseif($event->event_type === 'missed_penalty')
+                            {!! $eventIcon !!} {{ $event->player_name ?? '–' }}
+                        @elseif($event->event_type === 'var')
+                            {!! $eventIcon !!}
+                            @if(!empty($event->detail['api_detail']))
+                                <span class="text-muted small">{{ $event->detail['api_detail'] }}</span>
+                            @endif
                         @else
                             {!! $eventIcon !!} {{ $event->player_name ?? '–' }}
                         @endif

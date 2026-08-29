@@ -39,7 +39,6 @@ class MatchController extends Controller
         $matchStatistic = $matchStatistics->get($match->id);
 
         $matchEvents = MatchEvent::where('match_id', $match->id)
-            ->whereNotIn('event_type', ['sync_complete'])
             ->orderBy('minute')
             ->orderBy('id')
             ->get();
