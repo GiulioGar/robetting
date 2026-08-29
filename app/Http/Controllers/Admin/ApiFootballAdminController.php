@@ -218,6 +218,8 @@ class ApiFootballAdminController extends Controller
 
     public function syncStatistics(ApiFootballMatchStatisticsSyncService $service): RedirectResponse
     {
+        set_time_limit(900);
+
         $result = $service->syncAll();
 
         return redirect()
