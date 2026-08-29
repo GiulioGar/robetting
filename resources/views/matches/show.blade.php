@@ -23,8 +23,19 @@
         default     => ['secondary', $match->status],
     };
     $kickoffRome = $match->kickoff_at?->copy()->setTimezone('Europe/Rome');
-    $hasFt = $match->home_score_ft !== null && $match->away_score_ft !== null;
-    $hasHt = $match->home_score_ht !== null && $match->away_score_ht !== null;
+    $hasFt   = $match->home_score_ft !== null && $match->away_score_ft !== null;
+    $hasHt   = $match->home_score_ht !== null && $match->away_score_ht !== null;
+    $hasLive = $match->status === 'live'
+        && $match->current_home_score !== null
+        && $match->current_away_score !== null;
+    $liveStatusLabel = match($match->live_status) {
+        '1H'    => '1° tempo',
+        'HT'    => 'Intervallo',
+        '2H'    => '2° tempo',
+        'ET'    => 'Supplementari',
+        'P'     => 'Rigori',
+        default => $match->live_status ?? 'Live',
+    };
 @endphp
 
 {{-- A. Header --}}
@@ -40,7 +51,16 @@
             <a href="{{ route('teams.show', $match->home_team_id) }}" class="link-body-emphasis text-decoration-none">{{ $match->homeTeam->name }}</a>
         </div>
         <div class="text-center px-3" style="min-width:110px">
-            @if($hasFt)
+            @if($match->status === 'live')
+                @if($hasLive)
+                    <div class="fs-2 fw-bold text-danger">{{ $match->current_home_score }} – {{ $match->current_away_score }}</div>
+                    <div class="text-danger small">
+                        {{ $liveStatusLabel }}@if($match->live_minute !== null) · {{ $match->live_minute }}'@endif
+                    </div>
+                @else
+                    <div class="fs-4 text-danger">Live</div>
+                @endif
+            @elseif($hasFt)
                 <div class="fs-2 fw-bold">{{ $match->home_score_ft }} – {{ $match->away_score_ft }}</div>
             @else
                 <div class="fs-4 text-muted">vs</div>
