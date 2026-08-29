@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Admin\ApiFootballAdminController;
 use App\Http\Controllers\CompetitionOverviewController;
 use App\Http\Controllers\CompetitionSeasonZoneController;
 use App\Http\Controllers\HomeController;
@@ -33,3 +34,9 @@ Route::patch('/competitions/{competition:slug}/seasons/{season}/zones/{zone}', [
 
 Route::delete('/competitions/{competition:slug}/seasons/{season}/zones/{zone}', [CompetitionSeasonZoneController::class, 'destroy'])
     ->name('competitions.seasons.zones.destroy');
+
+// Admin — local only (gated in controller constructor)
+Route::prefix('admin/api-football')->name('admin.api-football.')->group(function () {
+    Route::get('teams', [ApiFootballAdminController::class, 'teams'])->name('teams');
+    Route::post('teams/sync', [ApiFootballAdminController::class, 'syncTeams'])->name('teams.sync');
+});
