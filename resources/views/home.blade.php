@@ -68,15 +68,5 @@
 </div>
 @endif
 
-@if(app()->environment('local'))
-<h2 class="fs-5 fw-semibold mb-3 mt-5">Strumenti locali</h2>
-<div class="card">
-    <div class="card-body p-3">
-        <a href="{{ route('admin.imports.football-data-co-uk.index') }}" class="link-body-emphasis text-decoration-none">
-            Gestione dati Football-Data.co.uk (upload CSV/ZIP)
-        </a>
-    </div>
-</div>
-@endif
 
 @endsection

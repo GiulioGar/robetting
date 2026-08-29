@@ -20,23 +20,4 @@ readonly class MatchFieldPolicy
         // Score responsibility stays with the live sync and catch-up reconciliation.
     ) {}
 
-    public static function forFdo(): self
-    {
-        return new self(kickoff: 'overwrite', status: 'overwrite');
-    }
-
-    public static function forFdoCalendar(): self
-    {
-        return new self(
-            kickoff: 'overwrite',
-            status:  'overwrite',
-            kickoffSkipMidnightOverwrite: true,
-            noScores: true,
-        );
-    }
-
-    public static function forFdcuk(): self
-    {
-        return new self();
-    }
 }
