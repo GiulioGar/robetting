@@ -22,7 +22,7 @@ class ApiFootballFixtureSyncService
     // REFRESH mode skips matches already carrying one of these canonical statuses.
     // Note: 'cancelled' and 'abandoned' are intentionally excluded because those
     // matches can be rescheduled or replayed and need continued tracking.
-    private const DEFINITIVE_STATUSES = ['finished', 'awarded', 'walkover'];
+    public const DEFINITIVE_STATUSES = ['finished', 'awarded', 'walkover'];
 
     private const STATUS_MAP = [
         'TBD'  => 'tbd',
