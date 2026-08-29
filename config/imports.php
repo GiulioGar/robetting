@@ -6,5 +6,5 @@ return [
     // Ordered list: first data source slug in this array that has a
     // MatchStatistic row for a given match wins. Populate when a statistics
     // source is imported via API-Football.
-    'statistics_source_priority' => [],
+    'statistics_source_priority' => ['api-football'],
 ];
