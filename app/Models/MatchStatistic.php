@@ -10,6 +10,7 @@ class MatchStatistic extends Model
     protected $fillable = [
         'match_id',
         'data_source_id',
+        'fetched_at',
         'home_shots',
         'away_shots',
         'home_shots_on_target',
@@ -22,6 +23,10 @@ class MatchStatistic extends Model
         'away_yellow_cards',
         'home_red_cards',
         'away_red_cards',
+    ];
+
+    protected $casts = [
+        'fetched_at' => 'datetime',
     ];
 
     public function match(): BelongsTo

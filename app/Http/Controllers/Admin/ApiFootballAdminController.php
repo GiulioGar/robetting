@@ -11,6 +11,7 @@ use App\Models\MatchExternalId;
 use App\Models\SeasonExternalId;
 use App\Models\TeamExternalId;
 use App\Services\DataSources\ApiFootball\ApiFootballFixtureSyncService;
+use App\Services\DataSources\ApiFootball\ApiFootballMatchStatisticsSyncService;
 use App\Services\DataSources\ApiFootball\ApiFootballTeamSyncService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -202,5 +203,25 @@ class ApiFootballAdminController extends Controller
         return redirect()
             ->route('admin.api-football.fixtures')
             ->with('fixture_sync_report', $result);
+    }
+
+    // -------------------------------------------------------------------------
+    // Statistics
+    // -------------------------------------------------------------------------
+
+    public function statistics(): View
+    {
+        return view('admin.api-football.statistics', [
+            'report' => session('statistics_sync_report'),
+        ]);
+    }
+
+    public function syncStatistics(ApiFootballMatchStatisticsSyncService $service): RedirectResponse
+    {
+        $result = $service->syncAll();
+
+        return redirect()
+            ->route('admin.api-football.statistics')
+            ->with('statistics_sync_report', $result);
     }
 }

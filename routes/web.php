@@ -42,4 +42,6 @@ Route::prefix('admin/api-football')->name('admin.api-football.')->group(function
     Route::post('teams/sync', [ApiFootballAdminController::class, 'syncTeams'])->name('teams.sync');
     Route::get('fixtures', [ApiFootballAdminController::class, 'fixtures'])->name('fixtures');
     Route::post('fixtures/sync', [ApiFootballAdminController::class, 'syncFixtures'])->name('fixtures.sync');
+    Route::get('statistics', [ApiFootballAdminController::class, 'statistics'])->name('statistics');
+    Route::post('statistics/sync', [ApiFootballAdminController::class, 'syncStatistics'])->name('statistics.sync');
 });

@@ -10,7 +10,8 @@
             <h4 class="mb-0">Monitor API-Football</h4>
             <div>
                 <a href="{{ route('admin.api-football.teams') }}" class="btn btn-sm btn-outline-secondary me-2">Squadre</a>
-                <a href="{{ route('admin.api-football.fixtures') }}" class="btn btn-sm btn-outline-secondary">Calendario</a>
+                <a href="{{ route('admin.api-football.fixtures') }}" class="btn btn-sm btn-outline-secondary me-2">Calendario</a>
+                <a href="{{ route('admin.api-football.statistics') }}" class="btn btn-sm btn-outline-secondary">Statistiche</a>
             </div>
         </div>
 
