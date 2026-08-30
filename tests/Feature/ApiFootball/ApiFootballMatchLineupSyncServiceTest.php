@@ -527,6 +527,209 @@ class ApiFootballMatchLineupSyncServiceTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // syncMissingHistorical — candidate selection
+    // -------------------------------------------------------------------------
+
+    public function test_historical_returns_zero_candidates_when_no_current_season(): void
+    {
+        $this->season->update(['is_current' => false]);
+
+        $result = $this->service()->syncMissingHistorical();
+
+        $this->assertSame('no_current_season', $result['status']);
+        $this->assertSame(0, $result['candidates']);
+        $this->assertSame(0, $result['api_calls']);
+    }
+
+    public function test_historical_excludes_matches_already_fetched(): void
+    {
+        // Match with lineups_fetched_at set → already done, must be excluded.
+        $match = $this->makeFinishedMatch('77001');
+        $match->update(['lineups_fetched_at' => now()->subHours(1)]);
+
+        $result = $this->service()->syncMissingHistorical();
+
+        $this->assertSame(0, $result['candidates']);
+        $this->assertSame(0, $result['api_calls']);
+    }
+
+    public function test_historical_excludes_non_definitive_matches(): void
+    {
+        // Scheduled match in the current season — not yet definitive, must be excluded.
+        $this->makeWindowMatch('77002', kickoffOffsetMinutes: 30);
+
+        $result = $this->service()->syncMissingHistorical();
+
+        $this->assertSame(0, $result['candidates']);
+    }
+
+    public function test_historical_excludes_matches_without_external_id(): void
+    {
+        // Finished match but no MatchExternalId row → no API-Football fixture ID.
+        FootballMatch::create([
+            'competition_id' => $this->competition->id,
+            'season_id'      => $this->season->id,
+            'home_team_id'   => $this->homeTeam->id,
+            'away_team_id'   => $this->awayTeam->id,
+            'kickoff_at'     => now()->subHours(3),
+            'status'         => 'finished',
+            'home_score_ft'  => 1,
+            'away_score_ft'  => 0,
+        ]);
+
+        $result = $this->service()->syncMissingHistorical();
+
+        $this->assertSame(0, $result['candidates']);
+        $this->assertSame(0, $result['api_calls']);
+    }
+
+    public function test_historical_syncs_all_eligible_matches(): void
+    {
+        $this->makeFinishedMatch('77010');
+        $this->makeFinishedMatch('77011');
+
+        Http::fake([
+            '*fixtures/lineups*' => Http::response($this->lineupResponse(
+                homeStartXI:     [$this->player(1001, 'Sommer', 1, 'G', '1:1')],
+                homeSubstitutes: [],
+                awayStartXI:     [$this->player(2001, 'Maignan', 16, 'G', '1:1')],
+                awaySubstitutes: [],
+            ), 200),
+        ]);
+
+        $result = $this->service()->syncMissingHistorical();
+
+        $this->assertSame(2, $result['candidates']);
+        $this->assertSame(2, $result['synced']);
+        $this->assertSame(0, $result['failed']);
+        $this->assertSame(2, $result['api_calls']);
+        $this->assertSame('ok', $result['status']);
+    }
+
+    public function test_historical_empty_response_stays_retryable(): void
+    {
+        $match = $this->makeFinishedMatch('77020');
+
+        Http::fake(['*fixtures/lineups*' => Http::response(['errors' => [], 'results' => 0, 'response' => []], 200)]);
+
+        $result = $this->service()->syncMissingHistorical();
+
+        $this->assertSame(1, $result['candidates']);
+        $this->assertSame(0, $result['synced']);
+        $this->assertSame(1, $result['empty']);
+
+        // lineups_fetched_at stays null → retryable on next run.
+        $match->refresh();
+        $this->assertNull($match->lineups_fetched_at);
+    }
+
+    public function test_historical_with_season_year_finds_correct_season(): void
+    {
+        // setUp season has year_start=2026; explicit seasonYear=2026 should find it.
+        $match = $this->makeFinishedMatch('78001');
+
+        Http::fake([
+            '*fixtures/lineups*' => Http::response($this->lineupResponse(
+                homeStartXI:     [$this->player(1001, 'Sommer', 1, 'G', '1:1')],
+                homeSubstitutes: [],
+                awayStartXI:     [$this->player(2001, 'Maignan', 16, 'G', '1:1')],
+                awaySubstitutes: [],
+            ), 200),
+        ]);
+
+        $result = $this->service()->syncMissingHistorical(2026);
+
+        $this->assertSame(1, $result['candidates']);
+        $this->assertSame(1, $result['synced']);
+    }
+
+    public function test_historical_with_season_year_excludes_matches_from_other_seasons(): void
+    {
+        // Match in the test season (year_start=2026); querying for 2025 → no candidates.
+        $this->makeFinishedMatch('78002');
+
+        $result = $this->service()->syncMissingHistorical(2025);
+
+        // No season with year_start=2025 exists → status reflects that, 0 candidates.
+        $this->assertSame(0, $result['candidates']);
+        $this->assertSame(0, $result['api_calls']);
+    }
+
+    public function test_historical_processes_all_without_artificial_limit(): void
+    {
+        // Create 5 eligible matches — proves no hard ceiling (previously was limit=20).
+        for ($i = 1; $i <= 5; $i++) {
+            $this->makeFinishedMatch("780{$i}0");
+        }
+
+        Http::fake([
+            '*fixtures/lineups*' => Http::response($this->lineupResponse(
+                homeStartXI:     [$this->player(1001, 'Sommer', 1, 'G', '1:1')],
+                homeSubstitutes: [],
+                awayStartXI:     [$this->player(2001, 'Maignan', 16, 'G', '1:1')],
+                awaySubstitutes: [],
+            ), 200),
+        ]);
+
+        $result = $this->service()->syncMissingHistorical();
+
+        $this->assertSame(5, $result['candidates']);
+        $this->assertSame(5, $result['synced']);
+        $this->assertSame(5, $result['api_calls']);
+        $this->assertNull($result['daily_remaining']);
+    }
+
+    public function test_historical_second_run_processes_only_remaining(): void
+    {
+        $this->makeFinishedMatch('78100');
+
+        Http::fake([
+            '*fixtures/lineups*' => Http::response($this->lineupResponse(
+                homeStartXI:     [$this->player(1001, 'Sommer', 1, 'G', '1:1')],
+                homeSubstitutes: [],
+                awayStartXI:     [$this->player(2001, 'Maignan', 16, 'G', '1:1')],
+                awaySubstitutes: [],
+            ), 200),
+        ]);
+
+        $first = $this->service()->syncMissingHistorical();
+        $this->assertSame(1, $first['candidates']);
+        $this->assertSame(1, $first['synced']);
+
+        // lineups_fetched_at is now set — match no longer a candidate.
+        $second = $this->service()->syncMissingHistorical();
+        $this->assertSame(0, $second['candidates']);
+        $this->assertSame(0, $second['api_calls']);
+    }
+
+    public function test_historical_failed_match_does_not_block_subsequent(): void
+    {
+        $this->makeFinishedMatch('77030');
+        $this->makeFinishedMatch('77031');
+
+        // Sequence: first call fails, second succeeds — order is kickoff desc (both equal here,
+        // so DB order), but what matters is that neither failure aborts the other.
+        Http::fake([
+            '*fixtures/lineups*' => Http::sequence()
+                ->push(null, 500)
+                ->push($this->lineupResponse(
+                    homeStartXI:     [$this->player(1001, 'Sommer', 1, 'G', '1:1')],
+                    homeSubstitutes: [],
+                    awayStartXI:     [$this->player(2001, 'Maignan', 16, 'G', '1:1')],
+                    awaySubstitutes: [],
+                ), 200),
+        ]);
+
+        $result = $this->service()->syncMissingHistorical();
+
+        $this->assertSame(2, $result['candidates']);
+        // Both were attempted — one failed, one synced — no early exit on HTTP error.
+        $this->assertSame(2, $result['synced'] + $result['failed']);
+        $this->assertSame(1, $result['synced']);
+        $this->assertSame(1, $result['failed']);
+    }
+
+    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 
@@ -545,6 +748,30 @@ class ApiFootballMatchLineupSyncServiceTest extends TestCase
             'away_team_id'   => $this->awayTeam->id,
             'kickoff_at'     => now()->addMinutes($kickoffOffsetMinutes),
             'status'         => 'scheduled',
+        ]);
+
+        MatchExternalId::create([
+            'match_id'       => $match->id,
+            'data_source_id' => $this->ds->id,
+            'external_id'    => $extId,
+            'external_name'  => null,
+        ]);
+
+        return $match;
+    }
+
+    /** Create a definitive (finished) match in the current season with an API-Football external ID. */
+    private function makeFinishedMatch(string $extId, ?\Carbon\Carbon $kickoffAt = null): FootballMatch
+    {
+        $match = FootballMatch::create([
+            'competition_id' => $this->competition->id,
+            'season_id'      => $this->season->id,
+            'home_team_id'   => $this->homeTeam->id,
+            'away_team_id'   => $this->awayTeam->id,
+            'kickoff_at'     => $kickoffAt ?? now()->subHours(3),
+            'status'         => 'finished',
+            'home_score_ft'  => 1,
+            'away_score_ft'  => 0,
         ]);
 
         MatchExternalId::create([

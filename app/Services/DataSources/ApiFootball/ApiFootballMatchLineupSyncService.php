@@ -7,6 +7,7 @@ use App\Models\FootballMatch;
 use App\Models\MatchExternalId;
 use App\Models\MatchLineup;
 use App\Models\MatchLineupPlayer;
+use App\Models\Season;
 use App\Models\TeamExternalId;
 use Illuminate\Support\Facades\Log;
 
@@ -99,6 +100,96 @@ class ApiFootballMatchLineupSyncService
             'failed'     => $failed,
             'empty'      => $empty,
             'api_calls'  => $apiCalls,
+        ];
+    }
+
+    /**
+     * Backfill lineups for all definitive matches that have an API-Football external ID
+     * but have never had lineups fetched.
+     *
+     * @param  int|null  $seasonYear  year_start of the target season; null = current season(s).
+     *
+     * Ordering: most recent kickoff first — freshest data populated first; interruptions
+     * leave only the oldest matches pending on the next run.
+     *
+     * Retryability: empty API responses and HTTP failures do NOT set lineups_fetched_at,
+     * so they are retried automatically on the next invocation. No hard limit — callers
+     * are responsible for timeout management (CLI: set_time_limit(0)).
+     *
+     * @return array{status:string,candidates:int,synced:int,empty:int,failed:int,api_calls:int,daily_remaining:int|null}
+     */
+    public function syncMissingHistorical(?int $seasonYear = null): array
+    {
+        $ds = $this->dataSource();
+
+        if ($seasonYear !== null) {
+            $seasonIds = Season::where('year_start', $seasonYear)->pluck('id');
+            if ($seasonIds->isEmpty()) {
+                return ['status' => 'no_season_found', 'candidates' => 0, 'synced' => 0, 'empty' => 0, 'failed' => 0, 'api_calls' => 0, 'daily_remaining' => null];
+            }
+        } else {
+            $seasonIds = Season::where('is_current', true)->pluck('id');
+            if ($seasonIds->isEmpty()) {
+                return ['status' => 'no_current_season', 'candidates' => 0, 'synced' => 0, 'empty' => 0, 'failed' => 0, 'api_calls' => 0, 'daily_remaining' => null];
+            }
+        }
+
+        $matchIds = FootballMatch::whereIn('season_id', $seasonIds)
+            ->whereIn('status', ApiFootballFixtureSyncService::DEFINITIVE_STATUSES)
+            ->whereNull('lineups_fetched_at')
+            ->pluck('id');
+
+        if ($matchIds->isEmpty()) {
+            return ['status' => 'ok', 'candidates' => 0, 'synced' => 0, 'empty' => 0, 'failed' => 0, 'api_calls' => 0, 'daily_remaining' => null];
+        }
+
+        $extIdByMatchId = MatchExternalId::where('data_source_id', $ds->id)
+            ->whereIn('match_id', $matchIds)
+            ->pluck('external_id', 'match_id')
+            ->all();
+
+        if (empty($extIdByMatchId)) {
+            return ['status' => 'ok', 'candidates' => 0, 'synced' => 0, 'empty' => 0, 'failed' => 0, 'api_calls' => 0, 'daily_remaining' => null];
+        }
+
+        // Load ordered most-recent-first; preserve DB ordering (do not re-sort in PHP).
+        $matchModels = FootballMatch::whereIn('id', array_keys($extIdByMatchId))
+            ->orderByDesc('kickoff_at')
+            ->get()
+            ->all();
+
+        $candidates = 0;
+        $synced     = 0;
+        $failed     = 0;
+        $empty      = 0;
+        $apiCalls   = 0;
+
+        foreach ($matchModels as $match) {
+            $extId = $extIdByMatchId[$match->id] ?? null;
+            if ($extId === null) {
+                continue;
+            }
+
+            $candidates++;
+            $result    = $this->syncSingle($match, $extId);
+            $apiCalls += $result['api_calls'];
+
+            match ($result['outcome']) {
+                'synced'     => $synced++,
+                'http_error' => $failed++,
+                'empty'      => $empty++,
+                default      => null,
+            };
+        }
+
+        return [
+            'status'          => 'ok',
+            'candidates'      => $candidates,
+            'synced'          => $synced,
+            'empty'           => $empty,
+            'failed'          => $failed,
+            'api_calls'       => $apiCalls,
+            'daily_remaining' => null,
         ];
     }
 
