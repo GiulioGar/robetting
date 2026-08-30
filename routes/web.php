@@ -17,6 +17,9 @@ Route::get('/teams/{team}', [TeamController::class, 'show'])
 Route::get('/matches/{match}', [MatchController::class, 'show'])
     ->name('matches.show');
 
+Route::post('/matches/{match}/update-all', [MatchController::class, 'updateAll'])
+    ->name('matches.update-all');
+
 Route::get('/competitions/{competition:slug}', [CompetitionOverviewController::class, 'index'])
     ->name('competitions.show');
 

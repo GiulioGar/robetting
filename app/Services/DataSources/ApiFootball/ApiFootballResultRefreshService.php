@@ -46,6 +46,32 @@ class ApiFootballResultRefreshService
     }
 
     /**
+     * Fetch and apply the latest fixture data for a single match.
+     * One API call. Throws ApiFootballException on HTTP failure — caller handles.
+     * Does NOT create a DataSyncRun record (manual/debug use only).
+     *
+     * @return array{outcome:string,api_calls:int}
+     */
+    public function refreshSingle(FootballMatch $match, string $extId): array
+    {
+        $response = $this->client->get('fixtures', ['ids' => $extId]);
+
+        if (empty($response->response)) {
+            return ['outcome' => 'empty', 'api_calls' => 1];
+        }
+
+        $extIdMap    = [$extId => $match->id];
+        $matchesById = [$match->id => $match];
+
+        foreach ($response->response as $item) {
+            $result = $this->processItem($item, $extIdMap, $matchesById);
+            return array_merge($result, ['api_calls' => 1]);
+        }
+
+        return ['outcome' => 'no_fixture_in_response', 'api_calls' => 1];
+    }
+
+    /**
      * Normal 5-minute refresh: candidates with kickoff <= now + 5 minutes.
      */
     public function refresh(): array
