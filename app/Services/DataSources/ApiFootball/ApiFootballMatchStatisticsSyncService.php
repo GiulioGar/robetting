@@ -7,6 +7,7 @@ use App\Models\DataSyncRun;
 use App\Models\FootballMatch;
 use App\Models\MatchExternalId;
 use App\Models\MatchStatistic;
+use App\Models\Season;
 use App\Models\TeamExternalId;
 use Illuminate\Support\Facades\Log;
 
@@ -283,6 +284,127 @@ class ApiFootballMatchStatisticsSyncService
             'synced'     => $synced,
             'failed'     => $failed,
             'api_calls'  => $apiCalls,
+        ];
+    }
+
+    /**
+     * Backfill statistics for all definitive matches in the target season that have an
+     * API-Football external ID but have no statistics yet (absent row OR fetched_at IS NULL).
+     *
+     * @param  int|null  $seasonYear  year_start of the target season; null = current season(s).
+     *
+     * Candidacy: absent MatchStatistic row OR row with fetched_at IS NULL.
+     * Resolved (excluded): row with fetched_at IS NOT NULL — regardless of which metrics are null.
+     *
+     * Retryability:
+     *  - HTTP failure (ApiFootballException) → failed++, fetched_at unchanged → retryable.
+     *  - Unparsable response → fetched_at unchanged → retryable.
+     *  - Empty [] response → fetched_at SET (permanent, source confirmed no data) → not retried.
+     *
+     * Ordering: kickoff_at DESC. No hard limit — caller responsible for timeout (set_time_limit(0)).
+     *
+     * @return array{status:string,candidates:int,created:int,updated:int,unchanged:int,failed:int,api_calls:int,daily_remaining:null}
+     */
+    public function syncMissingHistorical(?int $seasonYear = null): array
+    {
+        $ds = $this->dataSource();
+
+        if ($seasonYear !== null) {
+            $seasonIds = Season::where('year_start', $seasonYear)->pluck('id');
+            if ($seasonIds->isEmpty()) {
+                return ['status' => 'no_season_found', 'candidates' => 0, 'created' => 0, 'updated' => 0, 'unchanged' => 0, 'failed' => 0, 'api_calls' => 0, 'daily_remaining' => null];
+            }
+        } else {
+            $seasonIds = Season::where('is_current', true)->pluck('id');
+            if ($seasonIds->isEmpty()) {
+                return ['status' => 'no_current_season', 'candidates' => 0, 'created' => 0, 'updated' => 0, 'unchanged' => 0, 'failed' => 0, 'api_calls' => 0, 'daily_remaining' => null];
+            }
+        }
+
+        $matchIds = FootballMatch::whereIn('season_id', $seasonIds)
+            ->whereIn('status', ApiFootballFixtureSyncService::DEFINITIVE_STATUSES)
+            ->pluck('id');
+
+        if ($matchIds->isEmpty()) {
+            return ['status' => 'ok', 'candidates' => 0, 'created' => 0, 'updated' => 0, 'unchanged' => 0, 'failed' => 0, 'api_calls' => 0, 'daily_remaining' => null];
+        }
+
+        $extIdByMatchId = MatchExternalId::where('data_source_id', $ds->id)
+            ->whereIn('match_id', $matchIds)
+            ->pluck('external_id', 'match_id')
+            ->all();
+
+        if (empty($extIdByMatchId)) {
+            return ['status' => 'ok', 'candidates' => 0, 'created' => 0, 'updated' => 0, 'unchanged' => 0, 'failed' => 0, 'api_calls' => 0, 'daily_remaining' => null];
+        }
+
+        // Pre-load existing stats to separate candidates from already-complete rows.
+        $existingByMatchId = MatchStatistic::where('data_source_id', $ds->id)
+            ->whereIn('match_id', array_keys($extIdByMatchId))
+            ->get()
+            ->keyBy('match_id')
+            ->all();
+
+        $candidateExtIds = [];
+        $unchanged       = 0;
+
+        foreach ($extIdByMatchId as $matchId => $extId) {
+            $stat = $existingByMatchId[$matchId] ?? null;
+            if ($stat !== null && $stat->fetched_at !== null) {
+                $unchanged++;
+            } else {
+                $candidateExtIds[$matchId] = $extId;
+            }
+        }
+
+        if (empty($candidateExtIds)) {
+            return ['status' => 'ok', 'candidates' => 0, 'created' => 0, 'updated' => 0, 'unchanged' => $unchanged, 'failed' => 0, 'api_calls' => 0, 'daily_remaining' => null];
+        }
+
+        $matchModels = FootballMatch::whereIn('id', array_keys($candidateExtIds))
+            ->orderByDesc('kickoff_at')
+            ->get()
+            ->all();
+
+        $candidates = 0;
+        $created    = 0;
+        $updated    = 0;
+        $failed     = 0;
+        $apiCalls   = 0;
+
+        foreach ($matchModels as $match) {
+            $extId = $candidateExtIds[$match->id] ?? null;
+            if ($extId === null) {
+                continue;
+            }
+
+            $candidates++;
+            $hadExistingRow = isset($existingByMatchId[$match->id]);
+
+            try {
+                $result    = $this->syncSingle($match, $extId);
+                $apiCalls += $result['api_calls'];
+
+                // 'synced' and 'empty' both resolve the row (fetched_at set).
+                // 'unparsable' leaves fetched_at unset → silently retryable on next run.
+                if (in_array($result['outcome'], ['synced', 'empty'], true)) {
+                    $hadExistingRow ? $updated++ : $created++;
+                }
+            } catch (ApiFootballException $e) {
+                $failed++;
+                Log::error("api-football-historical-stats: fixture {$extId} — {$e->getMessage()}");
+            }
+        }
+
+        return [
+            'status'          => 'ok',
+            'candidates'      => $candidates,
+            'created'         => $created,
+            'updated'         => $updated,
+            'unchanged'       => $unchanged,
+            'failed'          => $failed,
+            'api_calls'       => $apiCalls,
+            'daily_remaining' => null,
         ];
     }
 
