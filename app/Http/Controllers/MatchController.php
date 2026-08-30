@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\DataSource;
 use App\Models\FootballMatch;
 use App\Models\MatchEvent;
 use App\Services\Analytics\HeadToHeadCalculator;
@@ -25,6 +26,16 @@ class MatchController extends Controller
     public function show(FootballMatch $match): View
     {
         $match->load(['competition.country', 'season', 'homeTeam', 'awayTeam']);
+
+        $lineupDsSlug = config('imports.lineups_source_slug', 'api-football');
+        $lineupDs     = DataSource::where('slug', $lineupDsSlug)->first();
+        $lineups      = $lineupDs
+            ? $match->lineups()
+                ->with('players')
+                ->where('data_source_id', $lineupDs->id)
+                ->get()
+                ->keyBy('team_id')
+            : collect();
 
         $homePrevious = $this->previousMatches($match, $match->home_team_id);
         $awayPrevious = $this->previousMatches($match, $match->away_team_id);
@@ -62,6 +73,7 @@ class MatchController extends Controller
             'match'               => $match,
             'matchStatistic'      => $matchStatistic,
             'matchEvents'         => $matchEvents,
+            'lineups'             => $lineups,
             'homeSeasonAnalytics' => $homeSeasonAnalytics,
             'homeLast5Analytics'  => $homeLast5Analytics,
             'homeLast10Analytics' => $homeLast10Analytics,

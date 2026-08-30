@@ -7,4 +7,7 @@ return [
     // MatchStatistic row for a given match wins. Populate when a statistics
     // source is imported via API-Football.
     'statistics_source_priority' => ['api-football'],
+
+    // Data source slug used to load match lineups on the match page.
+    'lineups_source_slug' => 'api-football',
 ];

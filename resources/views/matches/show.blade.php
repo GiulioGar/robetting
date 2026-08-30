@@ -207,6 +207,78 @@
 </div>
 @endif
 
+{{-- D. Formazioni --}}
+@if($lineups->isNotEmpty())
+<div class="mt-4">
+    <h2 class="fs-5 fw-semibold mb-3">Formazioni</h2>
+    <div class="row g-3">
+        @foreach([$match->home_team_id, $match->away_team_id] as $teamId)
+        @php
+            $isHome   = $teamId === $match->home_team_id;
+            $teamName = $isHome ? $match->homeTeam->name : $match->awayTeam->name;
+            $lineup   = $lineups->get($teamId);
+            $starters = $lineup
+                ? $lineup->players->where('is_starter', true)->sortBy(fn($p) => $p->shirt_number ?? PHP_INT_MAX)->values()
+                : collect();
+            $bench    = $lineup
+                ? $lineup->players->where('is_starter', false)->sortBy(fn($p) => $p->shirt_number ?? PHP_INT_MAX)->values()
+                : collect();
+        @endphp
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-body p-3">
+                    @if($lineup === null)
+                        <div class="fw-semibold mb-1">{{ $teamName }}</div>
+                        <p class="text-muted small mb-0">Formazione non ancora disponibile.</p>
+                    @else
+                        <div class="mb-1">
+                            <span class="fw-semibold">{{ $teamName }}</span>
+                            @if($lineup->formation)
+                                <span class="badge bg-secondary ms-2">{{ $lineup->formation }}</span>
+                            @endif
+                        </div>
+                        @if($lineup->coach_name)
+                            <div class="text-muted small mb-2">Allenatore: {{ $lineup->coach_name }}</div>
+                        @endif
+
+                        @if($starters->isNotEmpty())
+                        <div class="small fw-semibold text-uppercase text-muted mt-2 mb-1">Titolari</div>
+                        <table class="table table-sm table-borderless mb-0">
+                            <tbody>
+                                @foreach($starters as $player)
+                                <tr>
+                                    <td class="text-muted ps-0 text-end pe-2" style="width:28px">{{ $player->shirt_number ?? '–' }}</td>
+                                    <td class="px-1">{{ $player->player_name }}</td>
+                                    <td class="text-muted pe-0 text-end">{{ $player->position ?? '–' }}</td>
+                                </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                        @endif
+
+                        @if($bench->isNotEmpty())
+                        <div class="small fw-semibold text-uppercase text-muted mt-3 mb-1">Panchina</div>
+                        <table class="table table-sm table-borderless mb-0">
+                            <tbody>
+                                @foreach($bench as $player)
+                                <tr>
+                                    <td class="text-muted ps-0 text-end pe-2" style="width:28px">{{ $player->shirt_number ?? '–' }}</td>
+                                    <td class="px-1">{{ $player->player_name }}</td>
+                                    <td class="text-muted pe-0 text-end">{{ $player->position ?? '–' }}</td>
+                                </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                        @endif
+                    @endif
+                </div>
+            </div>
+        </div>
+        @endforeach
+    </div>
+</div>
+@endif
+
 @if($match->status !== 'finished')
 {{-- E. Forma prima del match --}}
 <div class="mt-4">
