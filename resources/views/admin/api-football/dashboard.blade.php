@@ -163,6 +163,62 @@
             @endforeach
         @endif
 
+        {{-- Manual match update --}}
+        <div class="card mb-4">
+            <div class="card-header"><strong>Aggiorna partita</strong></div>
+            <div class="card-body">
+
+                @if($matchUpdateError)
+                <div class="alert alert-danger py-2 small">{{ $matchUpdateError }}</div>
+                @endif
+
+                @if($matchUpdateReport)
+                @php $r = $matchUpdateReport; @endphp
+                <div class="alert alert-{{ $r['status'] === 'ok' ? 'success' : ($r['status'] === 'error' ? 'danger' : 'warning') }} py-2 small mb-3">
+                    <strong>Match #{{ $r['match_id'] }} — status: {{ $r['status'] }}</strong>
+                    · API calls: {{ $r['api_calls'] }}<br>
+                    result: <code>{{ $r['result']['outcome'] ?? '–' }}</code>
+                    &middot; lineup: <code>{{ $r['lineup']['outcome'] ?? '–' }}</code>
+                    &middot; events: <code>{{ $r['events']['outcome'] ?? '–' }}</code>
+                    &middot; stats: <code>{{ $r['statistics']['outcome'] ?? '–' }}</code>
+                    @if(!empty($r['warnings']))
+                    <br><span class="text-danger">Warnings: {{ implode(' · ', $r['warnings']) }}</span>
+                    @endif
+                </div>
+                @endif
+
+                <form method="POST" action="{{ route('admin.api-football.match-update') }}">
+                    @csrf
+                    <div class="row g-2 align-items-end">
+                        <div class="col-auto flex-grow-1">
+                            <label for="match_id" class="form-label small mb-1">Seleziona partita (±14 giorni)</label>
+                            <select name="match_id" id="match_id" class="form-select form-select-sm" required>
+                                <option value="">— scegli una partita —</option>
+                                @foreach($recentMatches as $m)
+                                <option value="{{ $m->id }}"
+                                    {{ old('match_id') == $m->id ? 'selected' : '' }}>
+                                    {{ $m->kickoff_at?->format('d/m H:i') ?? '—' }}
+                                    · {{ $m->homeTeam->name }} vs {{ $m->awayTeam->name }}
+                                    · {{ $m->status }}
+                                </option>
+                                @endforeach
+                            </select>
+                        </div>
+                        <div class="col-auto">
+                            <button type="submit" class="btn btn-sm btn-warning">
+                                Aggiorna tutti i dati
+                            </button>
+                        </div>
+                    </div>
+                </form>
+
+                @if($recentMatches->isEmpty())
+                <p class="text-muted small mt-2 mb-0">Nessuna partita nei prossimi/ultimi 14 giorni.</p>
+                @endif
+
+            </div>
+        </div>
+
     </div>
 </div>
 @endsection

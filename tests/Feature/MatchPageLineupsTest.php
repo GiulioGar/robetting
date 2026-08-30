@@ -226,6 +226,20 @@ class MatchPageLineupsTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // 7. Match Page non contiene il bottone di aggiornamento manuale
+    // -------------------------------------------------------------------------
+
+    public function test_match_page_does_not_contain_manual_update_button(): void
+    {
+        $response = $this->get(route('matches.show', $this->match->id));
+
+        $response->assertOk();
+        // Il trigger manuale è stato spostato nel pannello admin — non deve più apparire qui.
+        $response->assertDontSee('Aggiorna tutti i dati');
+        $response->assertDontSee('matches.update-all');
+    }
+
+    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 

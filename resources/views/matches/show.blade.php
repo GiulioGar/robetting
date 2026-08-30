@@ -78,32 +78,6 @@
     </div>
 </div>
 
-@if(app()->isLocal())
-{{-- Local-only: manual API-Football data refresh --}}
-<div class="mb-3 d-flex align-items-start gap-3 flex-wrap">
-    <form method="POST" action="{{ route('matches.update-all', $match) }}">
-        @csrf
-        <button type="submit" class="btn btn-sm btn-outline-warning">
-            Aggiorna tutti i dati (API-Football)
-        </button>
-    </form>
-    @if(session('update_result'))
-    @php $ur = session('update_result'); @endphp
-    <div class="small text-muted">
-        <strong>Status:</strong> {{ $ur['status'] }} &middot;
-        <strong>API calls:</strong> {{ $ur['api_calls'] }} &middot;
-        result: {{ $ur['result']['outcome'] ?? '–' }} &middot;
-        lineup: {{ $ur['lineup']['outcome'] ?? '–' }} &middot;
-        events: {{ $ur['events']['outcome'] ?? '–' }} &middot;
-        stats: {{ $ur['statistics']['outcome'] ?? '–' }}
-        @if(!empty($ur['warnings']))
-            &middot; <span class="text-warning">{{ implode('; ', $ur['warnings']) }}</span>
-        @endif
-    </div>
-    @endif
-</div>
-@endif
-
 {{-- B. Match statistics --}}
 <div class="mt-4">
     <h2 class="fs-5 fw-semibold mb-3">Statistiche match</h2>

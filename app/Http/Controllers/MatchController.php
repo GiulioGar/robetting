@@ -7,9 +7,7 @@ use App\Models\FootballMatch;
 use App\Models\MatchEvent;
 use App\Services\Analytics\HeadToHeadCalculator;
 use App\Services\Analytics\TeamAnalyticsCalculator;
-use App\Services\DataSources\ApiFootball\ApiFootballMatchUpdateService;
 use App\Services\Matches\PreferredMatchStatisticResolver;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Collection;
 use Illuminate\View\View;
 
@@ -87,21 +85,6 @@ class MatchController extends Controller
             'headToHead'          => $headToHead,
             'h2hMatches'          => $h2hMatches,
         ]);
-    }
-
-    /**
-     * Manual "update all data" trigger — local environment only.
-     * Delegates entirely to ApiFootballMatchUpdateService; no data logic here.
-     */
-    public function updateAll(FootballMatch $match, ApiFootballMatchUpdateService $service): RedirectResponse
-    {
-        abort_if(!app()->isLocal(), 404);
-
-        $result = $service->update($match);
-
-        return redirect()
-            ->route('matches.show', $match)
-            ->with('update_result', $result);
     }
 
     /**

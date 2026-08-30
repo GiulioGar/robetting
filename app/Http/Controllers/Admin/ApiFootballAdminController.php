@@ -12,6 +12,7 @@ use App\Models\SeasonExternalId;
 use App\Models\TeamExternalId;
 use App\Services\DataSources\ApiFootball\ApiFootballFixtureSyncService;
 use App\Services\DataSources\ApiFootball\ApiFootballMatchStatisticsSyncService;
+use App\Services\DataSources\ApiFootball\ApiFootballMatchUpdateService;
 use App\Services\DataSources\ApiFootball\ApiFootballTeamSyncService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -146,11 +147,44 @@ class ApiFootballAdminController extends Controller
                 ->first()
             : null;
 
+        // Recent/upcoming matches for the manual update tool — window ±14 days.
+        // Ordered desc so the most recent/soonest appear first in the select.
+        $recentMatches = FootballMatch::with(['homeTeam:id,name', 'awayTeam:id,name'])
+            ->whereBetween('kickoff_at', [now()->subDays(14), now()->addDays(14)])
+            ->orderByDesc('kickoff_at')
+            ->limit(60)
+            ->get();
+
         return view('admin.api-football.dashboard', [
             'stats'             => $stats,
             'lastResultRefresh' => $lastResultRefresh,
             'lastCatchUp'       => $lastCatchUp,
+            'recentMatches'     => $recentMatches,
+            'matchUpdateReport' => session('match_update_report'),
+            'matchUpdateError'  => session('match_update_error'),
         ]);
+    }
+
+    // -------------------------------------------------------------------------
+    // Match Update (manual orchestrator)
+    // -------------------------------------------------------------------------
+
+    public function matchUpdate(Request $request, ApiFootballMatchUpdateService $service): RedirectResponse
+    {
+        $matchId = (int) $request->input('match_id');
+        $match   = FootballMatch::find($matchId);
+
+        if (!$match) {
+            return redirect()
+                ->route('admin.api-football.dashboard')
+                ->with('match_update_error', "Match ID {$matchId} non trovato nel database.");
+        }
+
+        $result = $service->update($match);
+
+        return redirect()
+            ->route('admin.api-football.dashboard')
+            ->with('match_update_report', array_merge($result, ['match_id' => $matchId]));
     }
 
     // -------------------------------------------------------------------------
