@@ -518,6 +518,147 @@ class ApiFootballMatchEventSyncServiceTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
+    // syncMissingHistorical — candidacy & filtering
+    // -------------------------------------------------------------------------
+
+    public function test_historical_finished_without_events_is_candidate(): void
+    {
+        $match = $this->makeMatch('9900');
+
+        Http::fake([
+            '*fixtures/events*' => Http::response($this->apiResponse([
+                $this->goalEvent(45, null, self::HOME_API_ID, 'Normal Goal', 184943, 'Vlahovic', null, null),
+            ]), 200),
+        ]);
+
+        $result = $this->service()->syncMissingHistorical();
+
+        $this->assertSame(1, $result['candidates']);
+        $this->assertSame(1, $result['synced']);
+        $this->assertSame(0, $result['empty']);
+        $this->assertSame(0, $result['failed']);
+        $this->assertSame(1, $result['api_calls']);
+        $this->assertNull($result['daily_remaining']);
+
+        $match->refresh();
+        $this->assertNotNull($match->events_fetched_at);
+        $this->assertSame(1, MatchEvent::where('match_id', $match->id)->count());
+    }
+
+    public function test_historical_match_with_events_fetched_at_is_excluded(): void
+    {
+        $match = $this->makeMatch('9901');
+        $match->update(['events_fetched_at' => now()]);
+
+        Http::fake();
+
+        $result = $this->service()->syncMissingHistorical();
+
+        $this->assertSame(0, $result['candidates']);
+        $this->assertSame(0, $result['api_calls']);
+
+        Http::assertNothingSent();
+    }
+
+    public function test_historical_season_year_excludes_different_season(): void
+    {
+        // Match is in $this->season (year_start=2026). Querying year_start=2025
+        // finds no season → no_season_found, 0 candidates.
+        $this->makeMatch('9902');
+
+        $result = $this->service()->syncMissingHistorical(2025);
+
+        $this->assertSame('no_season_found', $result['status']);
+        $this->assertSame(0, $result['candidates']);
+        $this->assertSame(0, $result['api_calls']);
+    }
+
+    public function test_historical_all_missing_are_processed(): void
+    {
+        for ($i = 1; $i <= 4; $i++) {
+            $this->makeMatch("990{$i}0");
+        }
+
+        Http::fake([
+            '*fixtures/events*' => Http::response($this->apiResponse([
+                $this->goalEvent(30, null, self::HOME_API_ID, 'Normal Goal', 100, 'Player', null, null),
+            ]), 200),
+        ]);
+
+        $result = $this->service()->syncMissingHistorical();
+
+        $this->assertSame(4, $result['candidates']);
+        $this->assertSame(4, $result['synced']);
+        $this->assertSame(0, $result['failed']);
+        $this->assertSame(4, $result['api_calls']);
+        $this->assertSame('ok', $result['status']);
+    }
+
+    public function test_historical_single_error_does_not_block_others(): void
+    {
+        $this->makeMatch('99100');
+        $this->makeMatch('99101');
+
+        Http::fake([
+            '*fixtures/events*' => Http::sequence()
+                ->push(null, 500)
+                ->push($this->apiResponse([
+                    $this->goalEvent(60, null, self::AWAY_API_ID, 'Normal Goal', 200, 'Scorer', null, null),
+                ]), 200),
+        ]);
+
+        $result = $this->service()->syncMissingHistorical();
+
+        $this->assertSame(2, $result['candidates']);
+        $this->assertSame(2, $result['synced'] + $result['failed']);
+        $this->assertSame(1, $result['synced']);
+        $this->assertSame(1, $result['failed']);
+    }
+
+    public function test_historical_empty_response_marks_events_fetched_at(): void
+    {
+        $match = $this->makeMatch('99200');
+
+        Http::fake([
+            '*fixtures/events*' => Http::response($this->apiResponse([]), 200),
+        ]);
+
+        $result = $this->service()->syncMissingHistorical();
+
+        $this->assertSame(1, $result['candidates']);
+        $this->assertSame(0, $result['synced']);
+        $this->assertSame(1, $result['empty']);
+        $this->assertSame(0, $result['failed']);
+
+        $match->refresh();
+        $this->assertNotNull($match->events_fetched_at);
+    }
+
+    public function test_historical_second_run_processes_only_remaining(): void
+    {
+        $match = $this->makeMatch('99300');
+
+        Http::fake([
+            '*fixtures/events*' => Http::response($this->apiResponse([
+                $this->goalEvent(10, null, self::HOME_API_ID, 'Normal Goal', 300, 'Striker', null, null),
+            ]), 200),
+        ]);
+
+        $first = $this->service()->syncMissingHistorical();
+        $this->assertSame(1, $first['candidates']);
+        $this->assertSame(1, $first['synced']);
+
+        // events_fetched_at is now set → excluded on second run.
+        Http::fake();
+
+        $second = $this->service()->syncMissingHistorical();
+        $this->assertSame(0, $second['candidates']);
+        $this->assertSame(0, $second['api_calls']);
+
+        Http::assertNothingSent();
+    }
+
+    // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 
