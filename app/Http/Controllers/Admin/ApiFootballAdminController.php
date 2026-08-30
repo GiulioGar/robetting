@@ -12,6 +12,7 @@ use App\Models\SeasonExternalId;
 use App\Models\TeamExternalId;
 use App\Services\DataSources\ApiFootball\ApiFootballFixtureSyncService;
 use App\Services\DataSources\ApiFootball\ApiFootballMatchStatisticsSyncService;
+use App\Services\DataSources\ApiFootball\ApiFootballFullUpdateService;
 use App\Services\DataSources\ApiFootball\ApiFootballMatchUpdateService;
 use App\Services\DataSources\ApiFootball\ApiFootballTeamSyncService;
 use Illuminate\Http\RedirectResponse;
@@ -163,6 +164,21 @@ class ApiFootballAdminController extends Controller
             'matchUpdateReport' => session('match_update_report'),
             'matchUpdateError'  => session('match_update_error'),
         ]);
+    }
+
+    // -------------------------------------------------------------------------
+    // Full update (global orchestrator — all blocks in sequence)
+    // -------------------------------------------------------------------------
+
+    public function syncAll(ApiFootballFullUpdateService $service): RedirectResponse
+    {
+        set_time_limit(900);
+
+        $result = $service->updateAll();
+
+        return redirect()
+            ->route('admin.api-football.dashboard')
+            ->with('full_update_report', $result);
     }
 
     // -------------------------------------------------------------------------

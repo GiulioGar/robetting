@@ -8,12 +8,84 @@
 
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h4 class="mb-0">Monitor API-Football</h4>
-            <div>
-                <a href="{{ route('admin.api-football.teams') }}" class="btn btn-sm btn-outline-secondary me-2">Squadre</a>
-                <a href="{{ route('admin.api-football.fixtures') }}" class="btn btn-sm btn-outline-secondary me-2">Calendario</a>
+            <div class="d-flex gap-2 align-items-center flex-wrap">
+                <form method="POST" action="{{ route('admin.api-football.sync-all') }}" class="m-0">
+                    @csrf
+                    <button type="submit" class="btn btn-sm btn-warning fw-semibold">
+                        &#9654; Aggiorna tutto
+                    </button>
+                </form>
+                <a href="{{ route('admin.api-football.teams') }}" class="btn btn-sm btn-outline-secondary">Squadre</a>
+                <a href="{{ route('admin.api-football.fixtures') }}" class="btn btn-sm btn-outline-secondary">Calendario</a>
                 <a href="{{ route('admin.api-football.statistics') }}" class="btn btn-sm btn-outline-secondary">Statistiche</a>
             </div>
         </div>
+
+        {{-- Full update report --}}
+        @if(session('full_update_report'))
+        @php
+            $fu = session('full_update_report');
+            $fuBadge = $fu['status'] === 'ok' ? 'success' : 'warning';
+            $fuLabels = [
+                'result_catchup' => 'Risultati (catch-up)',
+                'calendar'       => 'Calendario',
+                'lineups'        => 'Formazioni',
+                'events_live'    => 'Eventi live',
+                'stats_live'     => 'Statistiche live',
+                'stats_pending'  => 'Statistiche post-match',
+                'events_pending' => 'Eventi post-match',
+            ];
+        @endphp
+        <div class="card mb-4 border-{{ $fuBadge }}">
+            <div class="card-header d-flex justify-content-between align-items-center py-2">
+                <strong>Report: Aggiorna tutto</strong>
+                <span class="badge bg-{{ $fuBadge }}">{{ $fu['status'] }}</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="px-3 py-2 small text-muted border-bottom">
+                    API calls totali: <strong>{{ $fu['api_calls'] }}</strong>
+                    @if($fu['daily_remaining'] !== null)
+                        &middot; Daily remaining: <strong>{{ $fu['daily_remaining'] }}</strong>
+                    @endif
+                </div>
+                <table class="table table-sm table-bordered mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Blocco</th>
+                            <th>Status</th>
+                            <th class="text-center">Candidati</th>
+                            <th class="text-center">API calls</th>
+                            <th>Dettaglio</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach($fuLabels as $key => $label)
+                        @php $b = $fu['blocks'][$key] ?? []; $bs = $b['status'] ?? '–'; @endphp
+                        <tr class="{{ $bs === 'error' ? 'table-danger' : ($bs === 'skipped_fresh' || $bs === 'skipped_no_datasource' ? 'table-light text-muted' : '') }}">
+                            <td class="small">{{ $label }}</td>
+                            <td><code class="small">{{ $bs }}</code></td>
+                            <td class="text-center small">{{ $b['candidates'] ?? '—' }}</td>
+                            <td class="text-center small">{{ $b['api_calls'] ?? 0 }}</td>
+                            <td class="small">
+                                @if($bs === 'error')
+                                    <span class="text-danger">{{ $b['error'] ?? '' }}</span>
+                                @elseif($key === 'result_catchup' && isset($b['updated']))
+                                    upd: {{ $b['updated'] }} · unch: {{ $b['unchanged'] ?? 0 }}
+                                @elseif($key === 'calendar' && $bs === 'ok')
+                                    +{{ $b['fixtures_created'] ?? 0 }} created · ~{{ $b['fixtures_updated'] ?? 0 }} updated
+                                @elseif($key === 'calendar' && $bs === 'skipped_fresh')
+                                    last: {{ isset($b['last_run']) ? \Carbon\Carbon::parse($b['last_run'])->format('d/m H:i') : '–' }}
+                                @elseif(isset($b['synced']))
+                                    synced: {{ $b['synced'] }} · failed: {{ $b['failed'] ?? 0 }}
+                                @endif
+                            </td>
+                        </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        @endif
 
         {{-- Global: Result Refresh & Catch-up --}}
         <div class="card mb-4">
