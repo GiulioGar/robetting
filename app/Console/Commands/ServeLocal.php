@@ -6,6 +6,7 @@ use App\Models\DataSource;
 use App\Models\DataSyncRun;
 use App\Services\DataSources\ApiFootball\ApiFootballFixtureSyncService;
 use App\Services\DataSources\ApiFootball\ApiFootballMatchEventSyncService;
+use App\Services\DataSources\ApiFootball\ApiFootballMatchLineupSyncService;
 use App\Services\DataSources\ApiFootball\ApiFootballMatchStatisticsSyncService;
 use App\Services\DataSources\ApiFootball\ApiFootballResultRefreshService;
 use Illuminate\Console\Command;
@@ -27,11 +28,13 @@ class ServeLocal extends Command
         ApiFootballFixtureSyncService         $fixtureService,
         ApiFootballMatchStatisticsSyncService $statsService,
         ApiFootballMatchEventSyncService      $eventsService,
+        ApiFootballMatchLineupSyncService     $lineupsService,
     ): int {
-        $this->runStartup($refreshService, $fixtureService, $statsService, $eventsService);
+        $this->runStartup($refreshService, $fixtureService, $statsService, $eventsService, $lineupsService);
 
         if ($this->option('once')) {
             $this->runRefresh($refreshService);
+            $this->runPendingLineups($lineupsService);
             $this->runLiveEvents($eventsService);
             $this->runLiveStats($statsService);
             $this->runPendingStats($statsService);
@@ -56,6 +59,7 @@ class ServeLocal extends Command
             }
 
             $this->runRefresh($refreshService);
+            $this->runPendingLineups($lineupsService);
             $this->runLiveEvents($eventsService);
             $this->runLiveStats($statsService);
             $this->runPendingStats($statsService);
@@ -70,6 +74,7 @@ class ServeLocal extends Command
         ApiFootballFixtureSyncService         $fixtureService,
         ApiFootballMatchStatisticsSyncService $statsService,
         ApiFootballMatchEventSyncService      $eventsService,
+        ApiFootballMatchLineupSyncService     $lineupsService,
     ): void {
         $this->info('[startup] Running catch-up...');
         $catchUp = $refreshService->catchUp();
@@ -77,6 +82,9 @@ class ServeLocal extends Command
 
         $this->info('[startup] Checking calendar staleness...');
         $this->maybeRefreshCalendar($fixtureService);
+
+        $this->info('[startup] Syncing pending lineups...');
+        $this->runPendingLineups($lineupsService);
 
         $this->info('[startup] Syncing pending statistics...');
         $this->runPendingStats($statsService);
@@ -155,6 +163,14 @@ class ServeLocal extends Command
         $result = $service->syncPending();
         if ($result['candidates'] > 0) {
             $this->line("[pending-events] candidates={$result['candidates']}  synced={$result['synced']}  failed={$result['failed']}  api_calls={$result['api_calls']}");
+        }
+    }
+
+    private function runPendingLineups(ApiFootballMatchLineupSyncService $service): void
+    {
+        $result = $service->syncPending();
+        if ($result['candidates'] > 0) {
+            $this->line("[pending-lineups] candidates={$result['candidates']}  synced={$result['synced']}  failed={$result['failed']}  empty={$result['empty']}  api_calls={$result['api_calls']}");
         }
     }
 

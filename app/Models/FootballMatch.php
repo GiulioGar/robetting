@@ -35,14 +35,18 @@ class FootballMatch extends Model
         'live_status',
         'definitive_at',
         'events_fetched_at',
+        'lineups_fetched_at',
+        'lineups_last_attempt_at',
     ];
 
     protected function casts(): array
     {
         return [
             'kickoff_at'        => 'datetime',
-            'definitive_at'     => 'datetime',
-            'events_fetched_at' => 'datetime',
+            'definitive_at'          => 'datetime',
+            'events_fetched_at'      => 'datetime',
+            'lineups_fetched_at'     => 'datetime',
+            'lineups_last_attempt_at' => 'datetime',
         ];
     }
 
@@ -59,6 +63,11 @@ class FootballMatch extends Model
     public function statistics(): HasMany
     {
         return $this->hasMany(MatchStatistic::class, 'match_id');
+    }
+
+    public function lineups(): HasMany
+    {
+        return $this->hasMany(MatchLineup::class, 'match_id');
     }
 
     public function homeTeam(): BelongsTo

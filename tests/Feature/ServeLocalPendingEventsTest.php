@@ -12,6 +12,7 @@ use App\Models\MatchStatistic;
 use App\Models\Season;
 use App\Models\Team;
 use App\Services\DataSources\ApiFootball\ApiFootballMatchEventSyncService;
+use App\Services\DataSources\ApiFootball\ApiFootballMatchLineupSyncService;
 use App\Services\DataSources\ApiFootball\ApiFootballMatchStatisticsSyncService;
 use App\Services\DataSources\ApiFootball\ApiFootballResultRefreshService;
 use Database\Seeders\ApiFootballDataSourceSeeder;
@@ -54,6 +55,9 @@ class ServeLocalPendingEventsTest extends TestCase
             $mock->shouldReceive('syncPending')->andReturn($this->emptyStatsResult());
             $mock->shouldReceive('syncLive')->once()->andReturn($this->emptyLiveStatsResult());
         });
+        $this->mock(ApiFootballMatchLineupSyncService::class, function ($mock) {
+            $mock->shouldReceive('syncPending')->atLeast()->once()->andReturn($this->emptyLineupsResult());
+        });
         $eventsService = $this->mock(ApiFootballMatchEventSyncService::class, function ($mock) {
             $mock->shouldReceive('syncPending')->atLeast()->once()->andReturn($this->emptyEventsResult());
             $mock->shouldReceive('syncLive')->once()->andReturn($this->emptyEventsResult());
@@ -79,6 +83,10 @@ class ServeLocalPendingEventsTest extends TestCase
             $mock->shouldReceive('syncPending')->andReturn($this->emptyStatsResult());
             // syncLive: once in the --once refresh cycle only (not in startup).
             $mock->shouldReceive('syncLive')->once()->andReturn($this->emptyLiveStatsResult());
+        });
+        $this->mock(ApiFootballMatchLineupSyncService::class, function ($mock) {
+            // syncPending: once in runStartup(), once in the --once refresh cycle.
+            $mock->shouldReceive('syncPending')->twice()->andReturn($this->emptyLineupsResult());
         });
         $this->mock(ApiFootballMatchEventSyncService::class, function ($mock) {
             // syncPending: once in runStartup(), once in the --once refresh cycle.
@@ -238,5 +246,10 @@ class ServeLocalPendingEventsTest extends TestCase
     private function emptyLiveStatsResult(): array
     {
         return ['status' => 'ok', 'candidates' => 0, 'synced' => 0, 'failed' => 0, 'api_calls' => 0];
+    }
+
+    private function emptyLineupsResult(): array
+    {
+        return ['status' => 'ok', 'candidates' => 0, 'synced' => 0, 'failed' => 0, 'empty' => 0, 'api_calls' => 0];
     }
 }
