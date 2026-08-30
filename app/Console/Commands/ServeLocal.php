@@ -32,6 +32,7 @@ class ServeLocal extends Command
 
         if ($this->option('once')) {
             $this->runRefresh($refreshService);
+            $this->runLiveEvents($eventsService);
             $this->runPendingStats($statsService);
             $this->runPendingEvents($eventsService);
             return self::SUCCESS;
@@ -54,6 +55,7 @@ class ServeLocal extends Command
             }
 
             $this->runRefresh($refreshService);
+            $this->runLiveEvents($eventsService);
             $this->runPendingStats($statsService);
             $this->runPendingEvents($eventsService);
         }
@@ -127,6 +129,14 @@ class ServeLocal extends Command
         $result = $service->syncPending();
         if ($result['candidates'] > 0) {
             $this->line("[pending-stats] candidates={$result['candidates']}  synced={$result['synced']}  failed={$result['failed']}  api_calls={$result['api_calls']}");
+        }
+    }
+
+    private function runLiveEvents(ApiFootballMatchEventSyncService $service): void
+    {
+        $result = $service->syncLive();
+        if ($result['candidates'] > 0) {
+            $this->line("[live-events] candidates={$result['candidates']}  synced={$result['synced']}  failed={$result['failed']}  api_calls={$result['api_calls']}");
         }
     }
 

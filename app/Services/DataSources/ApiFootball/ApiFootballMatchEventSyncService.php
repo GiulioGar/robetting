@@ -23,51 +23,95 @@ class ApiFootballMatchEventSyncService
     /**
      * Fetch and upsert events for a single definitive match.
      * Skips the API call if events_fetched_at is already set.
+     * Sets events_fetched_at on any valid 2xx response.
      * Throws ApiFootballException on HTTP failure so the caller can log and retry.
      *
      * @return array{outcome:string,api_calls:int,events_count:int}
      */
     public function syncSingle(FootballMatch $match, string $extId): array
     {
-        $ds = $this->dataSource();
-
         if ($match->events_fetched_at !== null) {
             return ['outcome' => 'skipped_complete', 'api_calls' => 0, 'events_count' => 0];
         }
 
-        $teamExtIdMap = $this->buildTeamExtIdMap($match, $ds);
+        return $this->fetchAndUpsertEvents($match, $extId, markComplete: true);
+    }
 
-        // May throw ApiFootballException — caller handles.
-        $response = $this->client->get('fixtures/events', ['fixture' => $extId]);
+    /**
+     * Fetch and upsert events for a single live match.
+     * Always fetches — no sentinel guard. Never sets events_fetched_at.
+     * Throws ApiFootballException on HTTP failure so the caller can log and retry.
+     *
+     * @return array{outcome:string,api_calls:int,events_count:int}
+     */
+    public function syncLiveSingle(FootballMatch $match, string $extId): array
+    {
+        return $this->fetchAndUpsertEvents($match, $extId, markComplete: false);
+    }
 
-        if (empty($response->response)) {
-            $match->update(['events_fetched_at' => now()]);
-            return ['outcome' => 'empty', 'api_calls' => 1, 'events_count' => 0];
+    /**
+     * Fetch events for all currently-live matches with an API-Football external ID.
+     * Never sets events_fetched_at. HTTP failures are caught and logged as warnings
+     * so the result refresh cycle continues uninterrupted.
+     *
+     * @return array{status:string,candidates:int,synced:int,failed:int,api_calls:int}
+     */
+    public function syncLive(): array
+    {
+        $ds = $this->dataSource();
+
+        $liveIds = FootballMatch::where('status', 'live')->pluck('id');
+
+        if ($liveIds->isEmpty()) {
+            return ['status' => 'ok', 'candidates' => 0, 'synced' => 0, 'failed' => 0, 'api_calls' => 0];
         }
 
-        $events = $this->parseEvents($response->response, $match->id, $ds->id, $teamExtIdMap);
+        $extIdByMatchId = MatchExternalId::where('data_source_id', $ds->id)
+            ->whereIn('match_id', $liveIds)
+            ->pluck('external_id', 'match_id')
+            ->all();
 
-        // Non-empty API response that produced zero parseable events: completely unexpected structure.
-        // Do not set events_fetched_at so the next cycle can retry (or a parser fix can recover it).
-        if (empty($events)) {
-            Log::warning("api-football-events-sync: fixture {$extId} — non-empty response produced no valid events");
-            return ['outcome' => 'unparsable', 'api_calls' => 1, 'events_count' => 0];
+        if (empty($extIdByMatchId)) {
+            Log::warning('api-football-live-events: ' . $liveIds->count() . ' live match(es) but none have api-football external IDs');
+            return ['status' => 'ok', 'candidates' => 0, 'synced' => 0, 'failed' => 0, 'api_calls' => 0];
         }
 
-        foreach ($events as $event) {
-            MatchEvent::updateOrCreate(
-                [
-                    'match_id'         => $match->id,
-                    'data_source_id'   => $ds->id,
-                    'source_event_key' => $event['source_event_key'],
-                ],
-                $event,
-            );
+        $matchModels = FootballMatch::whereIn('id', array_keys($extIdByMatchId))
+            ->get()
+            ->keyBy('id')
+            ->all();
+
+        $candidates = 0;
+        $synced     = 0;
+        $failed     = 0;
+        $apiCalls   = 0;
+
+        foreach ($extIdByMatchId as $matchId => $extId) {
+            $candidates++;
+            $match = $matchModels[$matchId] ?? null;
+            if (!$match) {
+                continue;
+            }
+
+            try {
+                $result    = $this->syncLiveSingle($match, $extId);
+                $apiCalls += $result['api_calls'];
+                if (in_array($result['outcome'], ['synced', 'empty'], true)) {
+                    $synced++;
+                }
+            } catch (ApiFootballException $e) {
+                $failed++;
+                Log::warning("api-football-live-events: fixture {$extId} — {$e->getMessage()}");
+            }
         }
 
-        $match->update(['events_fetched_at' => now()]);
-
-        return ['outcome' => 'synced', 'api_calls' => 1, 'events_count' => count($events)];
+        return [
+            'status'     => 'ok',
+            'candidates' => $candidates,
+            'synced'     => $synced,
+            'failed'     => $failed,
+            'api_calls'  => $apiCalls,
+        ];
     }
 
     /**
@@ -144,6 +188,56 @@ class ApiFootballMatchEventSyncService
             'failed'     => $failed,
             'api_calls'  => $apiCalls,
         ];
+    }
+
+    /**
+     * Core fetch + upsert. Called by both post-match and live flows.
+     * $markComplete=true → sets events_fetched_at on success (post-match).
+     * $markComplete=false → never touches events_fetched_at (live).
+     *
+     * @return array{outcome:string,api_calls:int,events_count:int}
+     */
+    private function fetchAndUpsertEvents(FootballMatch $match, string $extId, bool $markComplete): array
+    {
+        $ds = $this->dataSource();
+
+        $teamExtIdMap = $this->buildTeamExtIdMap($match, $ds);
+
+        // May throw ApiFootballException — caller handles.
+        $response = $this->client->get('fixtures/events', ['fixture' => $extId]);
+
+        if (empty($response->response)) {
+            if ($markComplete) {
+                $match->update(['events_fetched_at' => now()]);
+            }
+            return ['outcome' => 'empty', 'api_calls' => 1, 'events_count' => 0];
+        }
+
+        $events = $this->parseEvents($response->response, $match->id, $ds->id, $teamExtIdMap);
+
+        // Non-empty API response that produced zero parseable events: completely unexpected structure.
+        // Do not set events_fetched_at so the next cycle can retry (or a parser fix can recover it).
+        if (empty($events)) {
+            Log::warning("api-football-events-sync: fixture {$extId} — non-empty response produced no valid events");
+            return ['outcome' => 'unparsable', 'api_calls' => 1, 'events_count' => 0];
+        }
+
+        foreach ($events as $event) {
+            MatchEvent::updateOrCreate(
+                [
+                    'match_id'         => $match->id,
+                    'data_source_id'   => $ds->id,
+                    'source_event_key' => $event['source_event_key'],
+                ],
+                $event,
+            );
+        }
+
+        if ($markComplete) {
+            $match->update(['events_fetched_at' => now()]);
+        }
+
+        return ['outcome' => 'synced', 'api_calls' => 1, 'events_count' => count($events)];
     }
 
     /** [api_external_id_string => canonical_team_id] for the match's home and away teams. */

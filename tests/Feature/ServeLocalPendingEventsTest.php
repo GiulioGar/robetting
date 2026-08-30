@@ -55,6 +55,7 @@ class ServeLocalPendingEventsTest extends TestCase
         });
         $eventsService = $this->mock(ApiFootballMatchEventSyncService::class, function ($mock) {
             $mock->shouldReceive('syncPending')->atLeast()->once()->andReturn($this->emptyEventsResult());
+            $mock->shouldReceive('syncLive')->once()->andReturn($this->emptyEventsResult());
         });
 
         $this->artisan('robetting:serve', ['--once' => true, '--skip-server' => true])
@@ -77,8 +78,10 @@ class ServeLocalPendingEventsTest extends TestCase
             $mock->shouldReceive('syncPending')->andReturn($this->emptyStatsResult());
         });
         $this->mock(ApiFootballMatchEventSyncService::class, function ($mock) {
-            // Exactly 2: once in runStartup(), once in the --once refresh cycle.
+            // syncPending: once in runStartup(), once in the --once refresh cycle.
             $mock->shouldReceive('syncPending')->twice()->andReturn($this->emptyEventsResult());
+            // syncLive: once in the --once refresh cycle only (not in startup).
+            $mock->shouldReceive('syncLive')->once()->andReturn($this->emptyEventsResult());
         });
 
         $this->artisan('robetting:serve', ['--once' => true, '--skip-server' => true])
