@@ -121,7 +121,14 @@
                         @if($hasScore)
                             <a href="{{ route('matches.show', $match->id) }}" class="fw-bold link-body-emphasis text-decoration-none">{{ $match->home_score_ft }} – {{ $match->away_score_ft }}</a>
                         @elseif($match->status === 'live')
-                            <span class="text-danger fw-bold">Live</span>
+                            <a href="{{ route('matches.show', $match->id) }}" class="text-danger fw-bold text-decoration-none">
+                                @if($match->current_home_score !== null && $match->current_away_score !== null)
+                                    {{ $match->current_home_score }} – {{ $match->current_away_score }}
+                                    @if($match->live_minute)<span class="small fw-normal"> {{ $match->live_minute }}'</span>@endif
+                                @else
+                                    Live
+                                @endif
+                            </a>
                         @else
                             <a href="{{ route('matches.show', $match->id) }}" class="text-muted text-decoration-none">–</a>
                         @endif
