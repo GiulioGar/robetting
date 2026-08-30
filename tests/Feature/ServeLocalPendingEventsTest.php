@@ -52,6 +52,7 @@ class ServeLocalPendingEventsTest extends TestCase
         });
         $this->mock(ApiFootballMatchStatisticsSyncService::class, function ($mock) {
             $mock->shouldReceive('syncPending')->andReturn($this->emptyStatsResult());
+            $mock->shouldReceive('syncLive')->once()->andReturn($this->emptyLiveStatsResult());
         });
         $eventsService = $this->mock(ApiFootballMatchEventSyncService::class, function ($mock) {
             $mock->shouldReceive('syncPending')->atLeast()->once()->andReturn($this->emptyEventsResult());
@@ -76,6 +77,8 @@ class ServeLocalPendingEventsTest extends TestCase
         });
         $this->mock(ApiFootballMatchStatisticsSyncService::class, function ($mock) {
             $mock->shouldReceive('syncPending')->andReturn($this->emptyStatsResult());
+            // syncLive: once in the --once refresh cycle only (not in startup).
+            $mock->shouldReceive('syncLive')->once()->andReturn($this->emptyLiveStatsResult());
         });
         $this->mock(ApiFootballMatchEventSyncService::class, function ($mock) {
             // syncPending: once in runStartup(), once in the --once refresh cycle.
@@ -228,6 +231,11 @@ class ServeLocalPendingEventsTest extends TestCase
     }
 
     private function emptyEventsResult(): array
+    {
+        return ['status' => 'ok', 'candidates' => 0, 'synced' => 0, 'failed' => 0, 'api_calls' => 0];
+    }
+
+    private function emptyLiveStatsResult(): array
     {
         return ['status' => 'ok', 'candidates' => 0, 'synced' => 0, 'failed' => 0, 'api_calls' => 0];
     }

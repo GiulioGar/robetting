@@ -187,9 +187,9 @@ class ApiFootballMatchStatisticsSyncService
     }
 
     /**
-     * Fetch and upsert statistics for a single match that just became definitive.
+     * Fetch and upsert statistics for a single definitive match.
      * Skips the API call if fetched_at is already set (already complete).
-     * Does not create a DataSyncRun — this is an inline autosync operation.
+     * Sets fetched_at on any valid 2xx response.
      * Throws ApiFootballException on HTTP failure so the caller can log and continue.
      *
      * @return array{outcome:string,api_calls:int}
@@ -206,35 +206,84 @@ class ApiFootballMatchStatisticsSyncService
             return ['outcome' => 'skipped_complete', 'api_calls' => 0];
         }
 
-        $homeExtId = TeamExternalId::where('data_source_id', $ds->id)
-            ->where('team_id', $match->home_team_id)
-            ->value('external_id');
+        return $this->fetchAndUpsertStats($match, $extId, markComplete: true);
+    }
 
-        // May throw ApiFootballException — caller handles gracefully.
-        $response  = $this->client->get('fixtures/statistics', ['fixture' => $extId]);
-        $fetchedAt = now();
+    /**
+     * Fetch and upsert statistics for a single live match.
+     * Always fetches — no sentinel guard. Never sets fetched_at.
+     * Throws ApiFootballException on HTTP failure so the caller can log and continue.
+     *
+     * @return array{outcome:string,api_calls:int}
+     */
+    public function syncLiveSingle(FootballMatch $match, string $extId): array
+    {
+        return $this->fetchAndUpsertStats($match, $extId, markComplete: false);
+    }
 
-        if (empty($response->response)) {
-            MatchStatistic::updateOrCreate(
-                ['match_id' => $match->id, 'data_source_id' => $ds->id],
-                ['fetched_at' => $fetchedAt],
-            );
-            return ['outcome' => 'empty', 'api_calls' => 1];
+    /**
+     * Fetch statistics for all currently-live matches with an API-Football external ID.
+     * Never sets fetched_at. HTTP failures are caught and logged as warnings
+     * so the result refresh cycle continues uninterrupted.
+     *
+     * @return array{status:string,candidates:int,synced:int,failed:int,api_calls:int}
+     */
+    public function syncLive(): array
+    {
+        $ds = $this->dataSource();
+
+        $liveIds = FootballMatch::where('status', 'live')->pluck('id');
+
+        if ($liveIds->isEmpty()) {
+            return ['status' => 'ok', 'candidates' => 0, 'synced' => 0, 'failed' => 0, 'api_calls' => 0];
         }
 
-        $parsed = $this->parseResponse($response->response, $homeExtId);
+        $extIdByMatchId = MatchExternalId::where('data_source_id', $ds->id)
+            ->whereIn('match_id', $liveIds)
+            ->pluck('external_id', 'match_id')
+            ->all();
 
-        if ($parsed === null) {
-            Log::warning("api-football-statistics-sync: fixture {$extId} — response present but unparsable (autosync)");
-            return ['outcome' => 'unparsable', 'api_calls' => 1];
+        if (empty($extIdByMatchId)) {
+            Log::warning('api-football-live-stats: ' . $liveIds->count() . ' live match(es) but none have api-football external IDs');
+            return ['status' => 'ok', 'candidates' => 0, 'synced' => 0, 'failed' => 0, 'api_calls' => 0];
         }
 
-        MatchStatistic::updateOrCreate(
-            ['match_id' => $match->id, 'data_source_id' => $ds->id],
-            array_merge($parsed, ['fetched_at' => $fetchedAt]),
-        );
+        $matchModels = FootballMatch::whereIn('id', array_keys($extIdByMatchId))
+            ->get()
+            ->keyBy('id')
+            ->all();
 
-        return ['outcome' => 'synced', 'api_calls' => 1];
+        $candidates = 0;
+        $synced     = 0;
+        $failed     = 0;
+        $apiCalls   = 0;
+
+        foreach ($extIdByMatchId as $matchId => $extId) {
+            $candidates++;
+            $match = $matchModels[$matchId] ?? null;
+            if (!$match) {
+                continue;
+            }
+
+            try {
+                $result    = $this->syncLiveSingle($match, $extId);
+                $apiCalls += $result['api_calls'];
+                if (in_array($result['outcome'], ['synced', 'empty'], true)) {
+                    $synced++;
+                }
+            } catch (ApiFootballException $e) {
+                $failed++;
+                Log::warning("api-football-live-stats: fixture {$extId} — {$e->getMessage()}");
+            }
+        }
+
+        return [
+            'status'     => 'ok',
+            'candidates' => $candidates,
+            'synced'     => $synced,
+            'failed'     => $failed,
+            'api_calls'  => $apiCalls,
+        ];
     }
 
     /**
@@ -336,6 +385,51 @@ class ApiFootballMatchStatisticsSyncService
             'failed'     => $failed,
             'api_calls'  => $apiCalls,
         ];
+    }
+
+    /**
+     * Core fetch + upsert for a single match.
+     * $markComplete=true → sets fetched_at on success (post-match flow).
+     * $markComplete=false → never touches fetched_at (live flow).
+     *
+     * @return array{outcome:string,api_calls:int}
+     */
+    private function fetchAndUpsertStats(FootballMatch $match, string $extId, bool $markComplete): array
+    {
+        $ds = $this->dataSource();
+
+        $homeExtId = TeamExternalId::where('data_source_id', $ds->id)
+            ->where('team_id', $match->home_team_id)
+            ->value('external_id');
+
+        // May throw ApiFootballException — caller handles gracefully.
+        $response = $this->client->get('fixtures/statistics', ['fixture' => $extId]);
+
+        if (empty($response->response)) {
+            if ($markComplete) {
+                MatchStatistic::updateOrCreate(
+                    ['match_id' => $match->id, 'data_source_id' => $ds->id],
+                    ['fetched_at' => now()],
+                );
+            }
+            return ['outcome' => 'empty', 'api_calls' => 1];
+        }
+
+        $parsed = $this->parseResponse($response->response, $homeExtId);
+
+        if ($parsed === null) {
+            Log::warning("api-football-statistics-sync: fixture {$extId} — response present but unparsable");
+            return ['outcome' => 'unparsable', 'api_calls' => 1];
+        }
+
+        $data = $markComplete ? array_merge($parsed, ['fetched_at' => now()]) : $parsed;
+
+        MatchStatistic::updateOrCreate(
+            ['match_id' => $match->id, 'data_source_id' => $ds->id],
+            $data,
+        );
+
+        return ['outcome' => 'synced', 'api_calls' => 1];
     }
 
     /**
