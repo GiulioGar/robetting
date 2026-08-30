@@ -241,6 +241,63 @@
                             <div class="text-muted small mb-2">Allenatore: {{ $lineup->coach_name }}</div>
                         @endif
 
+                        @php
+                            $gridStarters = $starters->filter(function($p) {
+                                if (empty($p->grid) || !str_contains($p->grid, ':')) { return false; }
+                                [$gr, $gc] = explode(':', $p->grid, 2);
+                                return is_numeric($gr) && is_numeric($gc) && (int)$gr > 0 && (int)$gc > 0;
+                            });
+
+                            if ($gridStarters->isNotEmpty()) {
+                                $parsedGrid = $gridStarters->map(function($p) {
+                                    [$gr, $gc] = explode(':', $p->grid, 2);
+                                    $parts = explode(' ', trim($p->player_name));
+                                    $sn    = count($parts) > 1 ? end($parts) : $parts[0];
+                                    $sn    = mb_strlen($sn) > 8 ? mb_substr($sn, 0, 7) . '.' : $sn;
+                                    $lbl   = $p->shirt_number ?? implode('', array_map(
+                                        fn($w) => mb_strtoupper(mb_substr($w, 0, 1)),
+                                        array_filter(explode(' ', trim($p->player_name)))
+                                    ));
+                                    return ['player' => $p, 'row' => (int)$gr, 'col' => (int)$gc, 'shortName' => $sn, 'label' => (string)$lbl];
+                                })->values();
+
+                                $Rmax    = $parsedGrid->max('row');
+                                $rowNr   = $parsedGrid->groupBy('row')->map(fn($g) => $g->max('col'));
+                                $pitched = $parsedGrid->map(function($pd) use ($Rmax, $rowNr) {
+                                    $Nr = $rowNr[$pd['row']];
+                                    return array_merge($pd, [
+                                        'x' => round($pd['col'] / ($Nr + 1) * 100, 1),
+                                        'y' => round(($Rmax - $pd['row'] + 1) / ($Rmax + 1) * 100, 1),
+                                    ]);
+                                });
+                                $hasPitch = true;
+                            } else {
+                                $hasPitch = false;
+                                $pitched  = collect();
+                            }
+                        @endphp
+
+                        @if($hasPitch)
+                        <div class="lineup-pitch" style="position:relative;width:100%;aspect-ratio:3/4;background:#2d6a4f;border:2px solid rgba(255,255,255,0.6);border-radius:6px;overflow:hidden;margin-top:8px;margin-bottom:10px">
+                            <svg style="position:absolute;inset:0;width:100%;height:100%" viewBox="0 0 300 400" preserveAspectRatio="none" aria-hidden="true">
+                                <line x1="0" y1="200" x2="300" y2="200" stroke="rgba(255,255,255,0.4)" stroke-width="1.5"/>
+                                <circle cx="150" cy="200" r="38" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="1.5"/>
+                                <circle cx="150" cy="200" r="3" fill="rgba(255,255,255,0.45)"/>
+                                <rect x="80" y="0" width="140" height="64" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="1.5"/>
+                                <rect x="80" y="336" width="140" height="64" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="1.5"/>
+                                <rect x="110" y="0" width="80" height="26" fill="none" stroke="rgba(255,255,255,0.25)" stroke-width="1"/>
+                                <rect x="110" y="374" width="80" height="26" fill="none" stroke="rgba(255,255,255,0.25)" stroke-width="1"/>
+                            </svg>
+                            @foreach($pitched as $pd)
+                            <div style="position:absolute;left:{{ $pd['x'] }}%;top:{{ $pd['y'] }}%;transform:translate(-50%,-50%);text-align:center;width:40px;z-index:1"
+                                 title="{{ $pd['player']->player_name }}">
+                                <div style="width:26px;height:26px;background:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#1a1a1a;margin:0 auto;line-height:1">{{ $pd['label'] }}</div>
+                                <div style="font-size:8px;color:#fff;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:40px;margin-top:1px;text-shadow:0 1px 2px rgba(0,0,0,0.85)">{{ $pd['shortName'] }}</div>
+                            </div>
+                            @endforeach
+                        </div>
+                        @endif
+
                         @if($starters->isNotEmpty())
                         <div class="small fw-semibold text-uppercase text-muted mt-2 mb-1">Titolari</div>
                         <table class="table table-sm table-borderless mb-0">
