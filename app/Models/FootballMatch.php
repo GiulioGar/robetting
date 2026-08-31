@@ -38,6 +38,8 @@ class FootballMatch extends Model
         'lineups_fetched_at',
         'lineups_last_attempt_at',
         'player_stats_fetched_at',
+        'injuries_last_attempt_at',
+        'injuries_fetched_at',
     ];
 
     protected function casts(): array
@@ -49,6 +51,8 @@ class FootballMatch extends Model
             'lineups_fetched_at'       => 'datetime',
             'lineups_last_attempt_at'  => 'datetime',
             'player_stats_fetched_at'  => 'datetime',
+            'injuries_last_attempt_at' => 'datetime',
+            'injuries_fetched_at'      => 'datetime',
         ];
     }
 
