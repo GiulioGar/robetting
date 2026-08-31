@@ -654,6 +654,384 @@ class ApiFootballMatchStatisticsSyncServiceTest extends TestCase
         ]);
     }
 
+    // =========================================================================
+    // Extended metrics — parsing tests
+    // =========================================================================
+
+    public function test_all_extended_metrics_parsed_and_saved(): void
+    {
+        $match = $this->makeFinishedMatch(9200);
+
+        Http::fake(['*fixtures/statistics*' => Http::response($this->extendedStatsResponse(), 200)]);
+
+        app(ApiFootballMatchStatisticsSyncService::class)->syncAll();
+
+        $stat = MatchStatistic::where('match_id', $match->id)
+            ->where('data_source_id', $this->ds->id)
+            ->first();
+
+        $this->assertNotNull($stat);
+
+        // --- shots ---
+        $this->assertSame(12,  $stat->home_shots);
+        $this->assertSame(9,   $stat->away_shots);
+        $this->assertSame(5,   $stat->home_shots_on_target);
+        $this->assertSame(3,   $stat->away_shots_on_target);
+        $this->assertSame(4,   $stat->home_shots_off_target);
+        $this->assertSame(3,   $stat->away_shots_off_target);
+        $this->assertSame(2,   $stat->home_blocked_shots);
+        $this->assertSame(1,   $stat->away_blocked_shots);
+        $this->assertSame(8,   $stat->home_shots_insidebox);
+        $this->assertSame(5,   $stat->away_shots_insidebox);
+        $this->assertSame(4,   $stat->home_shots_outsidebox);
+        $this->assertSame(4,   $stat->away_shots_outsidebox);
+
+        // --- discipline / set pieces ---
+        $this->assertSame(11, $stat->home_fouls);
+        $this->assertSame(14, $stat->away_fouls);
+        $this->assertSame(6,  $stat->home_corners);
+        $this->assertSame(4,  $stat->away_corners);
+        $this->assertSame(1,  $stat->home_yellow_cards);
+        $this->assertSame(2,  $stat->away_yellow_cards);
+        $this->assertSame(0,  $stat->home_red_cards);
+        $this->assertSame(0,  $stat->away_red_cards);
+        $this->assertSame(2,  $stat->home_offsides);
+        $this->assertSame(1,  $stat->away_offsides);
+
+        // --- possession (percentage string → float) ---
+        $this->assertEqualsWithDelta(55.0, $stat->home_possession, 0.001);
+        $this->assertEqualsWithDelta(45.0, $stat->away_possession, 0.001);
+
+        // --- goalkeeper saves ---
+        $this->assertSame(3, $stat->home_goalkeeper_saves);
+        $this->assertSame(5, $stat->away_goalkeeper_saves);
+
+        // --- passes ---
+        $this->assertSame(512, $stat->home_passes_total);
+        $this->assertSame(389, $stat->away_passes_total);
+        $this->assertSame(447, $stat->home_passes_accurate);
+        $this->assertSame(321, $stat->away_passes_accurate);
+        $this->assertEqualsWithDelta(87.0, $stat->home_passes_percentage, 0.001);
+        $this->assertEqualsWithDelta(82.0, $stat->away_passes_percentage, 0.001);
+    }
+
+    public function test_possession_percentage_string_parsed_to_float(): void
+    {
+        $match = $this->makeFinishedMatch(9201);
+
+        $response = $this->extendedStatsResponse();
+        // Replace possession with unusual formats
+        $response['response'][0]['statistics'] = array_map(function ($s) {
+            return $s['type'] === 'Ball Possession' ? ['type' => 'Ball Possession', 'value' => '63%'] : $s;
+        }, $response['response'][0]['statistics']);
+        $response['response'][1]['statistics'] = array_map(function ($s) {
+            return $s['type'] === 'Ball Possession' ? ['type' => 'Ball Possession', 'value' => '37%'] : $s;
+        }, $response['response'][1]['statistics']);
+
+        Http::fake(['*fixtures/statistics*' => Http::response($response, 200)]);
+
+        app(ApiFootballMatchStatisticsSyncService::class)->syncAll();
+
+        $stat = MatchStatistic::where('match_id', $match->id)->where('data_source_id', $this->ds->id)->first();
+        $this->assertEqualsWithDelta(63.0, $stat->home_possession, 0.001);
+        $this->assertEqualsWithDelta(37.0, $stat->away_possession, 0.001);
+    }
+
+    public function test_passes_percentage_string_parsed_to_float(): void
+    {
+        $match = $this->makeFinishedMatch(9202);
+
+        Http::fake(['*fixtures/statistics*' => Http::response($this->extendedStatsResponse(), 200)]);
+
+        app(ApiFootballMatchStatisticsSyncService::class)->syncAll();
+
+        $stat = MatchStatistic::where('match_id', $match->id)->where('data_source_id', $this->ds->id)->first();
+        $this->assertEqualsWithDelta(87.0, $stat->home_passes_percentage, 0.001);
+        $this->assertEqualsWithDelta(82.0, $stat->away_passes_percentage, 0.001);
+    }
+
+    public function test_null_extended_metrics_preserved_as_null(): void
+    {
+        $match = $this->makeFinishedMatch(9203);
+
+        // Response that completely omits the new metrics (only core 6 present)
+        Http::fake(['*fixtures/statistics*' => Http::response($this->statsResponse(), 200)]);
+
+        app(ApiFootballMatchStatisticsSyncService::class)->syncAll();
+
+        $stat = MatchStatistic::where('match_id', $match->id)->where('data_source_id', $this->ds->id)->first();
+
+        // Core metrics still populated
+        $this->assertSame(12, $stat->home_shots);
+
+        // Extended metrics absent from response → null in DB, not 0
+        $this->assertNull($stat->home_shots_off_target);
+        $this->assertNull($stat->away_shots_off_target);
+        $this->assertNull($stat->home_possession);
+        $this->assertNull($stat->away_possession);
+        $this->assertNull($stat->home_goalkeeper_saves);
+        $this->assertNull($stat->home_passes_total);
+        $this->assertNull($stat->home_passes_percentage);
+    }
+
+    public function test_raw_stats_captures_all_api_keys_including_unknown(): void
+    {
+        $match = $this->makeFinishedMatch(9204);
+
+        Http::fake(['*fixtures/statistics*' => Http::response(
+            $this->extendedStatsResponse(withUnknownMetric: true),
+            200,
+        )]);
+
+        app(ApiFootballMatchStatisticsSyncService::class)->syncAll();
+
+        $stat = MatchStatistic::where('match_id', $match->id)->where('data_source_id', $this->ds->id)->first();
+        $this->assertNotNull($stat->raw_stats);
+
+        // Known metrics present in raw_stats
+        $this->assertSame(12, $stat->raw_stats['home']['Total Shots']);
+        $this->assertSame(9,  $stat->raw_stats['away']['Total Shots']);
+        $this->assertSame('55%', $stat->raw_stats['home']['Ball Possession']);
+
+        // Unknown metric also captured
+        $this->assertArrayHasKey('Future Unknown Metric', $stat->raw_stats['home']);
+        $this->assertSame(42, $stat->raw_stats['home']['Future Unknown Metric']);
+        $this->assertArrayHasKey('Future Unknown Metric', $stat->raw_stats['away']);
+        $this->assertSame(17, $stat->raw_stats['away']['Future Unknown Metric']);
+    }
+
+    public function test_invalid_percentage_value_stored_as_null(): void
+    {
+        $match = $this->makeFinishedMatch(9205);
+
+        $response = $this->extendedStatsResponse();
+        // Replace Ball Possession with a non-numeric string
+        foreach ($response['response'] as &$team) {
+            foreach ($team['statistics'] as &$stat) {
+                if ($stat['type'] === 'Ball Possession') {
+                    $stat['value'] = 'N/A';
+                }
+            }
+        }
+
+        Http::fake(['*fixtures/statistics*' => Http::response($response, 200)]);
+
+        app(ApiFootballMatchStatisticsSyncService::class)->syncAll();
+
+        $stat = MatchStatistic::where('match_id', $match->id)->where('data_source_id', $this->ds->id)->first();
+        $this->assertNull($stat->home_possession);
+        $this->assertNull($stat->away_possession);
+        // Other metrics still correctly parsed
+        $this->assertSame(12, $stat->home_shots);
+    }
+
+    // =========================================================================
+    // Live sync — extended metrics updated, fetched_at untouched
+    // =========================================================================
+
+    public function test_live_sync_updates_extended_metrics_without_setting_fetched_at(): void
+    {
+        $match = FootballMatch::create([
+            'competition_id' => $this->competition->id,
+            'season_id'      => $this->season->id,
+            'home_team_id'   => $this->homeTeam->id,
+            'away_team_id'   => $this->awayTeam->id,
+            'kickoff_at'     => now()->subHour(),
+            'status'         => 'live',
+        ]);
+
+        MatchExternalId::create([
+            'match_id'       => $match->id,
+            'data_source_id' => $this->ds->id,
+            'external_id'    => '9210',
+        ]);
+
+        Http::fake(['*fixtures/statistics*' => Http::response($this->extendedStatsResponse(), 200)]);
+
+        $service = app(ApiFootballMatchStatisticsSyncService::class);
+        $result  = $service->syncLiveSingle($match, '9210');
+
+        $this->assertSame('synced', $result['outcome']);
+
+        $stat = MatchStatistic::where('match_id', $match->id)->where('data_source_id', $this->ds->id)->first();
+        $this->assertNotNull($stat);
+
+        // Extended metrics written
+        $this->assertSame(4, $stat->home_shots_off_target);
+        $this->assertSame(3, $stat->home_goalkeeper_saves);
+        $this->assertEqualsWithDelta(55.0, $stat->home_possession, 0.001);
+        $this->assertSame(512, $stat->home_passes_total);
+
+        // fetched_at must NOT be set by live sync
+        $this->assertNull($stat->fetched_at);
+    }
+
+    public function test_live_sync_does_not_overwrite_existing_fetched_at(): void
+    {
+        $match = FootballMatch::create([
+            'competition_id' => $this->competition->id,
+            'season_id'      => $this->season->id,
+            'home_team_id'   => $this->homeTeam->id,
+            'away_team_id'   => $this->awayTeam->id,
+            'kickoff_at'     => now()->subHour(),
+            'status'         => 'live',
+        ]);
+
+        MatchExternalId::create([
+            'match_id'       => $match->id,
+            'data_source_id' => $this->ds->id,
+            'external_id'    => '9211',
+        ]);
+
+        // Pre-existing row with fetched_at (e.g. post-match sync ran already)
+        $existingFetchedAt = now()->subMinutes(30);
+        MatchStatistic::create([
+            'match_id'       => $match->id,
+            'data_source_id' => $this->ds->id,
+            'fetched_at'     => $existingFetchedAt,
+            'home_shots'     => 8,
+            'away_shots'     => 6,
+        ]);
+
+        Http::fake(['*fixtures/statistics*' => Http::response($this->extendedStatsResponse(), 200)]);
+
+        app(ApiFootballMatchStatisticsSyncService::class)->syncLiveSingle($match, '9211');
+
+        $stat = MatchStatistic::where('match_id', $match->id)->where('data_source_id', $this->ds->id)->first();
+
+        // Live sync updates metrics
+        $this->assertSame(12, $stat->home_shots);
+
+        // But does NOT touch fetched_at
+        $this->assertNotNull($stat->fetched_at);
+        $this->assertEqualsWithDelta(
+            $existingFetchedAt->timestamp,
+            $stat->fetched_at->timestamp,
+            2,
+        );
+    }
+
+    // =========================================================================
+    // backfillExtendedHistorical
+    // =========================================================================
+
+    public function test_extended_backfill_fetches_even_when_fetched_at_already_set(): void
+    {
+        $match = $this->makeFinishedMatch(9300);
+
+        // Row already "complete" by existing sentinel
+        MatchStatistic::create([
+            'match_id'       => $match->id,
+            'data_source_id' => $this->ds->id,
+            'fetched_at'     => now()->subDay(),
+            'home_shots'     => 10,
+            'away_shots'     => 8,
+        ]);
+
+        Http::fake(['*fixtures/statistics*' => Http::response($this->extendedStatsResponse(), 200)]);
+
+        $result = app(ApiFootballMatchStatisticsSyncService::class)->backfillExtendedHistorical(2026);
+
+        // Fetched despite existing fetched_at
+        $this->assertSame(1, $result['candidates']);
+        $this->assertSame(1, $result['api_calls']);
+        $this->assertSame(1, $result['updated']);
+        $this->assertSame(0, $result['failed']);
+
+        $stat = MatchStatistic::where('match_id', $match->id)->where('data_source_id', $this->ds->id)->first();
+        // Extended columns now populated
+        $this->assertSame(4,  $stat->home_shots_off_target);
+        $this->assertSame(3,  $stat->home_goalkeeper_saves);
+        $this->assertEqualsWithDelta(55.0, $stat->home_possession, 0.001);
+    }
+
+    public function test_extended_backfill_is_idempotent_no_duplicate_rows(): void
+    {
+        $match = $this->makeFinishedMatch(9301);
+
+        Http::fake(['*fixtures/statistics*' => Http::response($this->extendedStatsResponse(), 200)]);
+
+        $service = app(ApiFootballMatchStatisticsSyncService::class);
+
+        $first  = $service->backfillExtendedHistorical(2026);
+        $second = $service->backfillExtendedHistorical(2026);
+
+        $this->assertSame(1, $first['candidates']);
+        $this->assertSame(1, $first['updated']);
+        $this->assertSame(1, $second['candidates']);
+        $this->assertSame(1, $second['updated']);
+
+        // Exactly one row in DB
+        $this->assertSame(
+            1,
+            MatchStatistic::where('match_id', $match->id)->where('data_source_id', $this->ds->id)->count(),
+        );
+    }
+
+    public function test_extended_backfill_error_on_one_fixture_does_not_block_others(): void
+    {
+        $match1 = $this->makeFinishedMatch(9310);
+        $match2 = $this->makeFinishedMatch(9311);
+
+        Http::fake([
+            '*fixtures/statistics*' => Http::sequence()
+                ->push(null, 500)
+                ->push($this->extendedStatsResponse(), 200),
+        ]);
+
+        $result = app(ApiFootballMatchStatisticsSyncService::class)->backfillExtendedHistorical(2026);
+
+        $this->assertSame(2, $result['candidates']);
+        $this->assertSame(1, $result['api_calls']); // HTTP failures don't count: exception thrown before return
+        $this->assertSame(1, $result['failed']);
+        $this->assertSame(1, $result['updated']);
+    }
+
+    public function test_extended_backfill_no_season_found(): void
+    {
+        $result = app(ApiFootballMatchStatisticsSyncService::class)->backfillExtendedHistorical(1899);
+
+        $this->assertSame('no_season_found', $result['status']);
+        $this->assertSame(0, $result['candidates']);
+        $this->assertSame(0, $result['api_calls']);
+    }
+
+    public function test_extended_backfill_excludes_matches_from_different_season(): void
+    {
+        // Match lives in the 2026 season (year_start=2026), not 2025
+        $this->makeFinishedMatch(9320);
+
+        Http::fake();
+
+        $result = app(ApiFootballMatchStatisticsSyncService::class)->backfillExtendedHistorical(2025);
+
+        $this->assertSame('no_season_found', $result['status']);
+        $this->assertSame(0, $result['candidates']);
+        $this->assertSame(0, $result['api_calls']);
+
+        Http::assertNothingSent();
+    }
+
+    public function test_extended_backfill_command_requires_season_option(): void
+    {
+        $this->artisan('robetting:backfill-extended-statistics')
+            ->assertExitCode(\Illuminate\Console\Command::FAILURE);
+    }
+
+    public function test_extended_backfill_command_delegates_to_service(): void
+    {
+        $this->makeFinishedMatch(9330);
+
+        Http::fake(['*fixtures/statistics*' => Http::response($this->extendedStatsResponse(), 200)]);
+
+        $this->artisan('robetting:backfill-extended-statistics --season=2026')
+            ->assertExitCode(\Illuminate\Console\Command::SUCCESS);
+    }
+
+    // =========================================================================
+    // Helpers
+    // =========================================================================
+
     /** Fake statistics response: home team ext_id=505 (home), ext_id=489 (away). */
     private function statsResponse(): array
     {
@@ -684,6 +1062,66 @@ class ApiFootballMatchStatisticsSyncServiceTest extends TestCase
                         ['type' => 'Red Cards',     'value' => 0],
                     ],
                 ],
+            ],
+        ];
+    }
+
+    /**
+     * Extended fake response with all mapped metrics + optional unknown metric.
+     * Possession and Passes % are delivered as percentage strings ("55%", "87%").
+     */
+    private function extendedStatsResponse(bool $withUnknownMetric = false): array
+    {
+        $homeStats = [
+            ['type' => 'Total Shots',      'value' => 12],
+            ['type' => 'Shots on Goal',    'value' => 5],
+            ['type' => 'Shots off Goal',   'value' => 4],
+            ['type' => 'Blocked Shots',    'value' => 2],
+            ['type' => 'Shots insidebox',  'value' => 8],
+            ['type' => 'Shots outsidebox', 'value' => 4],
+            ['type' => 'Fouls',            'value' => 11],
+            ['type' => 'Corner Kicks',     'value' => 6],
+            ['type' => 'Offsides',         'value' => 2],
+            ['type' => 'Ball Possession',  'value' => '55%'],
+            ['type' => 'Yellow Cards',     'value' => 1],
+            ['type' => 'Red Cards',        'value' => 0],
+            ['type' => 'Goalkeeper Saves', 'value' => 3],
+            ['type' => 'Total passes',     'value' => 512],
+            ['type' => 'Passes accurate',  'value' => 447],
+            ['type' => 'Passes %',         'value' => '87%'],
+        ];
+
+        $awayStats = [
+            ['type' => 'Total Shots',      'value' => 9],
+            ['type' => 'Shots on Goal',    'value' => 3],
+            ['type' => 'Shots off Goal',   'value' => 3],
+            ['type' => 'Blocked Shots',    'value' => 1],
+            ['type' => 'Shots insidebox',  'value' => 5],
+            ['type' => 'Shots outsidebox', 'value' => 4],
+            ['type' => 'Fouls',            'value' => 14],
+            ['type' => 'Corner Kicks',     'value' => 4],
+            ['type' => 'Offsides',         'value' => 1],
+            ['type' => 'Ball Possession',  'value' => '45%'],
+            ['type' => 'Yellow Cards',     'value' => 2],
+            ['type' => 'Red Cards',        'value' => 0],
+            ['type' => 'Goalkeeper Saves', 'value' => 5],
+            ['type' => 'Total passes',     'value' => 389],
+            ['type' => 'Passes accurate',  'value' => 321],
+            ['type' => 'Passes %',         'value' => '82%'],
+        ];
+
+        if ($withUnknownMetric) {
+            $homeStats[] = ['type' => 'Future Unknown Metric', 'value' => 42];
+            $awayStats[] = ['type' => 'Future Unknown Metric', 'value' => 17];
+        }
+
+        return [
+            'errors'   => [],
+            'results'  => 2,
+            'paging'   => ['current' => 1, 'total' => 1],
+            'response' => [
+                ['team' => ['id' => (int) self::HOME_EXT_ID, 'name' => 'Inter'], 'statistics' => $homeStats],
+                ['team' => ['id' => (int) self::AWAY_EXT_ID, 'name' => 'Milan'], 'statistics' => $awayStats],
             ],
         ];
     }

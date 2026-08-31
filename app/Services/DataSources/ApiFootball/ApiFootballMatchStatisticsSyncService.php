@@ -555,9 +555,90 @@ class ApiFootballMatchStatisticsSyncService
     }
 
     /**
+     * Fetch and upsert statistics for all definitive matches in the requested season,
+     * regardless of whether fetched_at is already set. Used to populate extended
+     * columns added after the initial backfill without resetting the global sentinel.
+     *
+     * Every candidate triggers one API call. HTTP failures are caught per-fixture so
+     * a single error never blocks the remaining matches.
+     * Always sets fetched_at = now() on a successful response (refreshes the timestamp).
+     *
+     * @return array{status:string,candidates:int,updated:int,failed:int,api_calls:int,daily_remaining:null}
+     */
+    public function backfillExtendedHistorical(int $seasonYear): array
+    {
+        $ds = $this->dataSource();
+
+        $seasonIds = Season::where('year_start', $seasonYear)->pluck('id');
+        if ($seasonIds->isEmpty()) {
+            return ['status' => 'no_season_found', 'candidates' => 0, 'updated' => 0, 'failed' => 0, 'api_calls' => 0, 'daily_remaining' => null];
+        }
+
+        $matchIds = FootballMatch::whereIn('season_id', $seasonIds)
+            ->whereIn('status', ApiFootballFixtureSyncService::DEFINITIVE_STATUSES)
+            ->pluck('id');
+
+        if ($matchIds->isEmpty()) {
+            return ['status' => 'ok', 'candidates' => 0, 'updated' => 0, 'failed' => 0, 'api_calls' => 0, 'daily_remaining' => null];
+        }
+
+        $extIdByMatchId = MatchExternalId::where('data_source_id', $ds->id)
+            ->whereIn('match_id', $matchIds)
+            ->pluck('external_id', 'match_id')
+            ->all();
+
+        if (empty($extIdByMatchId)) {
+            return ['status' => 'ok', 'candidates' => 0, 'updated' => 0, 'failed' => 0, 'api_calls' => 0, 'daily_remaining' => null];
+        }
+
+        $matchModels = FootballMatch::whereIn('id', array_keys($extIdByMatchId))
+            ->orderByDesc('kickoff_at')
+            ->get()
+            ->all();
+
+        $candidates = 0;
+        $updated    = 0;
+        $failed     = 0;
+        $apiCalls   = 0;
+
+        foreach ($matchModels as $match) {
+            $extId = $extIdByMatchId[$match->id] ?? null;
+            if ($extId === null) {
+                continue;
+            }
+
+            $candidates++;
+
+            try {
+                // Always fetch regardless of existing fetched_at; always mark complete.
+                $result    = $this->fetchAndUpsertStats($match, $extId, markComplete: true);
+                $apiCalls += $result['api_calls'];
+
+                if (in_array($result['outcome'], ['synced', 'empty'], true)) {
+                    $updated++;
+                }
+            } catch (ApiFootballException $e) {
+                $failed++;
+                Log::error("api-football-extended-backfill: fixture {$extId} — {$e->getMessage()}");
+            }
+        }
+
+        return [
+            'status'          => 'ok',
+            'candidates'      => $candidates,
+            'updated'         => $updated,
+            'failed'          => $failed,
+            'api_calls'       => $apiCalls,
+            'daily_remaining' => null,
+        ];
+    }
+
+    /**
      * Parse the two-team statistics response from API-Football.
      * Uses homeExtId to match the home team; falls back to positional (index 0 = home).
      * Returns null if fewer than 2 team entries are present.
+     *
+     * All API metric keys are documented below; unmapped keys are captured in raw_stats.
      */
     private function parseResponse(array $responseItems, ?string $homeExtId): ?array
     {
@@ -587,18 +668,45 @@ class ApiFootballMatchStatisticsSyncService
         }
 
         return [
-            'home_shots'           => $this->intStat($homeStats, 'Total Shots'),
-            'away_shots'           => $this->intStat($awayStats, 'Total Shots'),
-            'home_shots_on_target' => $this->intStat($homeStats, 'Shots on Goal'),
-            'away_shots_on_target' => $this->intStat($awayStats, 'Shots on Goal'),
-            'home_fouls'           => $this->intStat($homeStats, 'Fouls'),
-            'away_fouls'           => $this->intStat($awayStats, 'Fouls'),
-            'home_corners'         => $this->intStat($homeStats, 'Corner Kicks'),
-            'away_corners'         => $this->intStat($awayStats, 'Corner Kicks'),
-            'home_yellow_cards'    => $this->intStat($homeStats, 'Yellow Cards'),
-            'away_yellow_cards'    => $this->intStat($awayStats, 'Yellow Cards'),
-            'home_red_cards'       => $this->intStat($homeStats, 'Red Cards'),
-            'away_red_cards'       => $this->intStat($awayStats, 'Red Cards'),
+            // --- shots ---
+            'home_shots'              => $this->intStat($homeStats, 'Total Shots'),
+            'away_shots'              => $this->intStat($awayStats, 'Total Shots'),
+            'home_shots_on_target'    => $this->intStat($homeStats, 'Shots on Goal'),
+            'away_shots_on_target'    => $this->intStat($awayStats, 'Shots on Goal'),
+            'home_shots_off_target'   => $this->intStat($homeStats, 'Shots off Goal'),
+            'away_shots_off_target'   => $this->intStat($awayStats, 'Shots off Goal'),
+            'home_blocked_shots'      => $this->intStat($homeStats, 'Blocked Shots'),
+            'away_blocked_shots'      => $this->intStat($awayStats, 'Blocked Shots'),
+            'home_shots_insidebox'    => $this->intStat($homeStats, 'Shots insidebox'),
+            'away_shots_insidebox'    => $this->intStat($awayStats, 'Shots insidebox'),
+            'home_shots_outsidebox'   => $this->intStat($homeStats, 'Shots outsidebox'),
+            'away_shots_outsidebox'   => $this->intStat($awayStats, 'Shots outsidebox'),
+            // --- discipline ---
+            'home_fouls'              => $this->intStat($homeStats, 'Fouls'),
+            'away_fouls'              => $this->intStat($awayStats, 'Fouls'),
+            'home_yellow_cards'       => $this->intStat($homeStats, 'Yellow Cards'),
+            'away_yellow_cards'       => $this->intStat($awayStats, 'Yellow Cards'),
+            'home_red_cards'          => $this->intStat($homeStats, 'Red Cards'),
+            'away_red_cards'          => $this->intStat($awayStats, 'Red Cards'),
+            // --- set pieces ---
+            'home_corners'            => $this->intStat($homeStats, 'Corner Kicks'),
+            'away_corners'            => $this->intStat($awayStats, 'Corner Kicks'),
+            'home_offsides'           => $this->intStat($homeStats, 'Offsides'),
+            'away_offsides'           => $this->intStat($awayStats, 'Offsides'),
+            // --- possession & saves ---
+            'home_possession'         => $this->percentStat($homeStats, 'Ball Possession'),
+            'away_possession'         => $this->percentStat($awayStats, 'Ball Possession'),
+            'home_goalkeeper_saves'   => $this->intStat($homeStats, 'Goalkeeper Saves'),
+            'away_goalkeeper_saves'   => $this->intStat($awayStats, 'Goalkeeper Saves'),
+            // --- passes ---
+            'home_passes_total'       => $this->intStat($homeStats, 'Total passes'),
+            'away_passes_total'       => $this->intStat($awayStats, 'Total passes'),
+            'home_passes_accurate'    => $this->intStat($homeStats, 'Passes accurate'),
+            'away_passes_accurate'    => $this->intStat($awayStats, 'Passes accurate'),
+            'home_passes_percentage'  => $this->percentStat($homeStats, 'Passes %'),
+            'away_passes_percentage'  => $this->percentStat($awayStats, 'Passes %'),
+            // --- raw payload: preserves ALL API keys including unmapped ones ---
+            'raw_stats'               => ['home' => $homeStats, 'away' => $awayStats],
         ];
     }
 
@@ -623,5 +731,29 @@ class ApiFootballMatchStatisticsSyncService
             return null;
         }
         return (int) $value;
+    }
+
+    /**
+     * Parse a percentage stat from the API.
+     * Handles string "55%" → 55.0 and bare numeric values.
+     * Returns null for null, empty string, or unparseable values — never throws.
+     */
+    private function percentStat(array $stats, string $key): ?float
+    {
+        $value = $stats[$key] ?? null;
+        if ($value === null) {
+            return null;
+        }
+        if (is_string($value)) {
+            $numeric = rtrim(trim($value), '%');
+            if ($numeric === '' || !is_numeric($numeric)) {
+                return null;
+            }
+            return (float) $numeric;
+        }
+        if (is_numeric($value)) {
+            return (float) $value;
+        }
+        return null;
     }
 }
