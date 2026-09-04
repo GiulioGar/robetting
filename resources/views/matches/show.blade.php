@@ -336,6 +336,43 @@
 </div>
 @endif
 
+{{-- E1. Carico recente --}}
+<div class="mt-4">
+    <h2 class="fs-5 fw-semibold mb-3">Carico recente <span class="text-muted small fw-normal">(tutte le competizioni, prima del match)</span></h2>
+    <div class="row g-3">
+        @foreach([
+            ['label' => $match->homeTeam->name, 'load' => $homeScheduleLoad],
+            ['label' => $match->awayTeam->name, 'load' => $awayScheduleLoad],
+        ] as $block)
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-body p-3">
+                    <div class="text-muted small fw-semibold mb-3">{{ $block['label'] }}</div>
+                    <div class="row text-center small">
+                        <div class="col-3">
+                            <div class="fw-bold fs-5">{{ $block['load']['rest_days'] ?? '—' }}</div>
+                            <div class="text-muted">Riposo (gg)</div>
+                        </div>
+                        <div class="col-3">
+                            <div class="fw-bold fs-5">{{ $block['load']['matches_last_7_days'] }}</div>
+                            <div class="text-muted">Ultime 7 gg</div>
+                        </div>
+                        <div class="col-3">
+                            <div class="fw-bold fs-5">{{ $block['load']['matches_last_14_days'] }}</div>
+                            <div class="text-muted">Ultime 14 gg</div>
+                        </div>
+                        <div class="col-3">
+                            <div class="fw-bold fs-5">{{ $block['load']['matches_last_30_days'] }}</div>
+                            <div class="text-muted">Ultime 30 gg</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        @endforeach
+    </div>
+</div>
+
 @if($match->status !== 'finished')
 {{-- E. Forma prima del match --}}
 <div class="mt-4">

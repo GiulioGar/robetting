@@ -7,6 +7,7 @@ use App\Models\FootballMatch;
 use App\Models\MatchEvent;
 use App\Services\Analytics\HeadToHeadCalculator;
 use App\Services\Analytics\TeamAnalyticsCalculator;
+use App\Services\Analytics\TeamScheduleLoadCalculator;
 use App\Services\Matches\PreferredMatchStatisticResolver;
 use Illuminate\Support\Collection;
 use Illuminate\View\View;
@@ -69,6 +70,15 @@ class MatchController extends Controller
 
         $headToHead = HeadToHeadCalculator::calculate($h2hMatches, $match->home_team_id, $match->away_team_id);
 
+        $homeScheduleLoad = TeamScheduleLoadCalculator::calculate(
+            $this->scheduleHistory($match, $match->home_team_id),
+            $match->kickoff_at ?? now(),
+        );
+        $awayScheduleLoad = TeamScheduleLoadCalculator::calculate(
+            $this->scheduleHistory($match, $match->away_team_id),
+            $match->kickoff_at ?? now(),
+        );
+
         return view('matches.show', [
             'match'               => $match,
             'matchStatistic'      => $matchStatistic,
@@ -84,6 +94,8 @@ class MatchController extends Controller
             'awayAwayAnalytics'   => $awayAwayAnalytics,
             'headToHead'          => $headToHead,
             'h2hMatches'          => $h2hMatches,
+            'homeScheduleLoad'    => $homeScheduleLoad,
+            'awayScheduleLoad'    => $awayScheduleLoad,
         ]);
     }
 
@@ -117,6 +129,25 @@ class MatchController extends Controller
     private function lastN(Collection $matches, int $n): Collection
     {
         return $matches->slice(-$n)->values();
+    }
+
+    /**
+     * All definitive matches (finished/awarded/walkover) for $teamId across ALL
+     * competitions, strictly before this match's kickoff. Used only for the
+     * schedule load calculator — no competition/season filter, no score filter.
+     */
+    private function scheduleHistory(FootballMatch $match, int $teamId): Collection
+    {
+        if ($match->kickoff_at === null) {
+            return collect();
+        }
+
+        return FootballMatch::whereIn('status', ['finished', 'awarded', 'walkover'])
+            ->where('kickoff_at', '<', $match->kickoff_at)
+            ->where(function ($q) use ($teamId) {
+                $q->where('home_team_id', $teamId)->orWhere('away_team_id', $teamId);
+            })
+            ->get(['id', 'kickoff_at']);
     }
 
     /**
