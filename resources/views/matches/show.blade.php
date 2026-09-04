@@ -479,6 +479,71 @@
     </div>
 </div>
 
+{{-- E4. Continuità titolari --}}
+<div class="mt-4">
+    <h2 class="fs-5 fw-semibold mb-3">Continuità titolari <span class="text-muted small fw-normal">(ultimi 5 match, solo titolari)</span></h2>
+    <div class="row g-3">
+        @foreach([
+            ['label' => $match->homeTeam->name, 'sc' => $homeStarterContinuity],
+            ['label' => $match->awayTeam->name, 'sc' => $awayStarterContinuity],
+        ] as $block)
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="fw-semibold text-muted small mb-2">{{ $block['label'] }}</div>
+                    @php $sc = $block['sc']; @endphp
+                    @if($sc['matches_considered'] === 0)
+                        <p class="text-muted small mb-0">Dati lineup non disponibili.</p>
+                    @else
+                    <table class="table table-sm table-borderless mb-0 small">
+                        <tbody>
+                            <tr>
+                                <td class="text-muted ps-0">Titolari confermati in media</td>
+                                <td class="fw-semibold text-end pe-0">
+                                    {{ $sc['average_starters_retained'] !== null ? number_format($sc['average_starters_retained'], 1) : '—' }}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted ps-0">Cambi medi nell'XI</td>
+                                <td class="fw-semibold text-end pe-0">
+                                    {{ $sc['average_starters_changed'] !== null ? number_format($sc['average_starters_changed'], 1) : '—' }}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted ps-0">Titolari ≥4/5 volte</td>
+                                <td class="fw-semibold text-end pe-0">{{ $sc['players_started_4_of_last_5'] }}</td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted ps-0">Sempre titolari (5/5)</td>
+                                <td class="fw-semibold text-end pe-0">{{ $sc['players_started_5_of_last_5'] }}</td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted ps-0">Titolari diversi usati</td>
+                                <td class="fw-semibold text-end pe-0">{{ $sc['distinct_starters_last_5'] }}</td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted ps-0">Copertura lineup</td>
+                                <td class="fw-semibold text-end pe-0">
+                                    {{ $sc['matches_with_complete_starting_xi'] }}/{{ $sc['matches_considered'] }}
+                                    @if($sc['lineup_coverage_percentage'] !== null)
+                                        ({{ number_format($sc['lineup_coverage_percentage'], 0) }}%)
+                                    @endif
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted ps-0">Transizioni complete analizzate</td>
+                                <td class="fw-semibold text-end pe-0">{{ $sc['complete_transitions_count'] }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    @endif
+                </div>
+            </div>
+        </div>
+        @endforeach
+    </div>
+</div>
+
 @if($match->status !== 'finished')
 {{-- E. Forma prima del match --}}
 <div class="mt-4">

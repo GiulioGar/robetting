@@ -11,6 +11,7 @@ use App\Services\Analytics\PlayerRecentLoadCalculator;
 use App\Services\Analytics\TeamAgeProfileCalculator;
 use App\Services\Analytics\TeamAnalyticsCalculator;
 use App\Services\Analytics\TeamScheduleLoadCalculator;
+use App\Services\Analytics\TeamStarterContinuityCalculator;
 use App\Services\Matches\PreferredMatchStatisticResolver;
 use Illuminate\Support\Collection;
 use Illuminate\View\View;
@@ -96,6 +97,9 @@ class MatchController extends Controller
         $homeAgeProfile = TeamAgeProfileCalculator::calculateForMatch($match, $match->home_team_id);
         $awayAgeProfile = TeamAgeProfileCalculator::calculateForMatch($match, $match->away_team_id);
 
+        $homeStarterContinuity = TeamStarterContinuityCalculator::calculateForMatch($match, $match->home_team_id);
+        $awayStarterContinuity = TeamStarterContinuityCalculator::calculateForMatch($match, $match->away_team_id);
+
         return view('matches.show', [
             'match'               => $match,
             'matchStatistic'      => $matchStatistic,
@@ -115,8 +119,10 @@ class MatchController extends Controller
             'awayScheduleLoad'    => $awayScheduleLoad,
             'homeTopPlayers'      => $homeTopPlayers,
             'awayTopPlayers'      => $awayTopPlayers,
-            'homeAgeProfile'      => $homeAgeProfile,
-            'awayAgeProfile'      => $awayAgeProfile,
+            'homeAgeProfile'           => $homeAgeProfile,
+            'awayAgeProfile'           => $awayAgeProfile,
+            'homeStarterContinuity'    => $homeStarterContinuity,
+            'awayStarterContinuity'    => $awayStarterContinuity,
         ]);
     }
 
