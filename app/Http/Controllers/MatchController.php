@@ -5,7 +5,10 @@ namespace App\Http\Controllers;
 use App\Models\DataSource;
 use App\Models\FootballMatch;
 use App\Models\MatchEvent;
+use App\Models\Player;
 use App\Services\Analytics\HeadToHeadCalculator;
+use App\Services\Analytics\PlayerRecentLoadCalculator;
+use App\Services\Analytics\TeamAgeProfileCalculator;
 use App\Services\Analytics\TeamAnalyticsCalculator;
 use App\Services\Analytics\TeamScheduleLoadCalculator;
 use App\Services\Matches\PreferredMatchStatisticResolver;
@@ -79,6 +82,20 @@ class MatchController extends Controller
             $match->kickoff_at ?? now(),
         );
 
+        $homePlayerLoad = PlayerRecentLoadCalculator::calculateForMatch($match, $match->home_team_id);
+        $awayPlayerLoad = PlayerRecentLoadCalculator::calculateForMatch($match, $match->away_team_id);
+
+        $allPlayerIds = array_unique(array_merge(array_keys($homePlayerLoad), array_keys($awayPlayerLoad)));
+        $playerNames  = $allPlayerIds
+            ? Player::whereIn('id', $allPlayerIds)->get(['id', 'name'])->keyBy('id')
+            : collect();
+
+        $homeTopPlayers = $this->buildTopPlayers($homePlayerLoad, $playerNames, 8);
+        $awayTopPlayers = $this->buildTopPlayers($awayPlayerLoad, $playerNames, 8);
+
+        $homeAgeProfile = TeamAgeProfileCalculator::calculateForMatch($match, $match->home_team_id);
+        $awayAgeProfile = TeamAgeProfileCalculator::calculateForMatch($match, $match->away_team_id);
+
         return view('matches.show', [
             'match'               => $match,
             'matchStatistic'      => $matchStatistic,
@@ -96,6 +113,10 @@ class MatchController extends Controller
             'h2hMatches'          => $h2hMatches,
             'homeScheduleLoad'    => $homeScheduleLoad,
             'awayScheduleLoad'    => $awayScheduleLoad,
+            'homeTopPlayers'      => $homeTopPlayers,
+            'awayTopPlayers'      => $awayTopPlayers,
+            'homeAgeProfile'      => $homeAgeProfile,
+            'awayAgeProfile'      => $awayAgeProfile,
         ]);
     }
 
@@ -129,6 +150,28 @@ class MatchController extends Controller
     private function lastN(Collection $matches, int $n): Collection
     {
         return $matches->slice(-$n)->values();
+    }
+
+    /**
+     * Sort enriched player-load rows by minutes_last_30_days DESC (null last),
+     * then by player_id ASC as a stable tiebreaker. Returns the top $limit rows.
+     */
+    private function buildTopPlayers(array $load, Collection $playerNames, int $limit): array
+    {
+        $enriched = [];
+        foreach ($load as $playerId => $metrics) {
+            $enriched[] = array_merge(
+                ['player_id' => $playerId, 'name' => $playerNames->get($playerId)?->name ?? "Player #{$playerId}"],
+                $metrics,
+            );
+        }
+
+        usort($enriched, function (array $a, array $b): int {
+            $diff = ($b['minutes_last_30_days'] ?? -1) <=> ($a['minutes_last_30_days'] ?? -1);
+            return $diff !== 0 ? $diff : $a['player_id'] <=> $b['player_id'];
+        });
+
+        return array_slice($enriched, 0, $limit);
     }
 
     /**

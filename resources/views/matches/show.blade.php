@@ -373,6 +373,112 @@
     </div>
 </div>
 
+{{-- E2. Utilizzo recente giocatori --}}
+<div class="mt-4">
+    <h2 class="fs-5 fw-semibold mb-3">Utilizzo recente giocatori <span class="text-muted small fw-normal">(top 8 per 30gg, prima del match)</span></h2>
+    <div class="row g-3">
+        @foreach([
+            ['label' => $match->homeTeam->name, 'players' => $homeTopPlayers],
+            ['label' => $match->awayTeam->name, 'players' => $awayTopPlayers],
+        ] as $block)
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-body p-0">
+                    <div class="px-3 pt-3 pb-2 small fw-semibold text-muted">{{ $block['label'] }}</div>
+                    @if(empty($block['players']))
+                        <p class="px-3 pb-3 text-muted small mb-0">Dati giocatori non disponibili.</p>
+                    @else
+                    <div class="table-responsive">
+                        <table class="table table-sm mb-0 small">
+                            <thead class="table-light">
+                                <tr>
+                                    <th class="ps-3">Giocatore</th>
+                                    <th class="text-center">7gg</th>
+                                    <th class="text-center">14gg</th>
+                                    <th class="text-center">30gg</th>
+                                    <th class="text-center">Ult.5</th>
+                                    <th class="text-center">Pres.</th>
+                                    <th class="text-center pe-3">Tit.</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($block['players'] as $p)
+                                <tr>
+                                    <td class="ps-3">{{ $p['name'] }}</td>
+                                    <td class="text-center">{{ $p['minutes_last_7_days'] !== null ? $p['minutes_last_7_days']."'" : '—' }}</td>
+                                    <td class="text-center">{{ $p['minutes_last_14_days'] !== null ? $p['minutes_last_14_days']."'" : '—' }}</td>
+                                    <td class="text-center">{{ $p['minutes_last_30_days'] !== null ? $p['minutes_last_30_days']."'" : '—' }}</td>
+                                    <td class="text-center">{{ $p['minutes_last_5_matches'] !== null ? $p['minutes_last_5_matches']."'" : '—' }}</td>
+                                    <td class="text-center">{{ $p['appearances_last_5_matches'] }}</td>
+                                    <td class="text-center pe-3">{{ $p['starts_last_5_matches'] }}</td>
+                                </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                    @endif
+                </div>
+            </div>
+        </div>
+        @endforeach
+    </div>
+</div>
+
+{{-- E3. Profilo età recente --}}
+<div class="mt-4">
+    <h2 class="fs-5 fw-semibold mb-3">Profilo età recente <span class="text-muted small fw-normal">(ultimi 5 match, età al calcio d'inizio)</span></h2>
+    <div class="row g-3">
+        @foreach([
+            ['label' => $match->homeTeam->name, 'age' => $homeAgeProfile],
+            ['label' => $match->awayTeam->name, 'age' => $awayAgeProfile],
+        ] as $block)
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="fw-semibold text-muted small mb-2">{{ $block['label'] }}</div>
+                    @php $ap = $block['age']; @endphp
+                    @if($ap['players_with_birth_date_count'] === 0)
+                        <p class="text-muted small mb-0">Dati anagrafici non disponibili.</p>
+                    @else
+                    <table class="table table-sm table-borderless mb-0 small">
+                        <tbody>
+                            <tr>
+                                <td class="text-muted ps-0">Età media utilizzati</td>
+                                <td class="fw-semibold text-end pe-0">
+                                    {{ $ap['average_age_used_last_5'] !== null ? number_format($ap['average_age_used_last_5'], 1) : '—' }}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted ps-0">Età media pesata minuti</td>
+                                <td class="fw-semibold text-end pe-0">
+                                    {{ $ap['weighted_average_age_last_5'] !== null ? number_format($ap['weighted_average_age_last_5'], 1) : '—' }}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted ps-0">Età media titolari</td>
+                                <td class="fw-semibold text-end pe-0">
+                                    {{ $ap['average_starter_age_last_5'] !== null ? number_format($ap['average_starter_age_last_5'], 1) : '—' }}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted ps-0">Copertura dati</td>
+                                <td class="fw-semibold text-end pe-0">
+                                    {{ $ap['players_with_birth_date_count'] }}/{{ $ap['players_used_count'] }}
+                                    @if($ap['birth_date_coverage_percentage'] !== null)
+                                        ({{ number_format($ap['birth_date_coverage_percentage'], 0) }}%)
+                                    @endif
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    @endif
+                </div>
+            </div>
+        </div>
+        @endforeach
+    </div>
+</div>
+
 @if($match->status !== 'finished')
 {{-- E. Forma prima del match --}}
 <div class="mt-4">
