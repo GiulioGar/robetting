@@ -89,7 +89,7 @@ class ApiFootballMatchUpdateService
         $eventsOutcome = null;
         if ($isDefinitive) {
             try {
-                $eventsOutcome = $this->eventSync->syncSingle($match, $extId);
+                $eventsOutcome = $this->eventSync->forceSyncSingle($match, $extId);
                 $apiCalls     += $eventsOutcome['api_calls'] ?? 0;
             } catch (ApiFootballException $e) {
                 $warnings[]    = "events: {$e->getMessage()}";

@@ -88,7 +88,9 @@ class ApiFootballMatchUpdateServiceTest extends TestCase
         $this->mock(ApiFootballMatchLineupSyncService::class,
             fn($m) => $m->shouldNotReceive('syncSingle'));
         $this->mock(ApiFootballMatchEventSyncService::class,
-            fn($m) => $m->shouldNotReceive('syncSingle')->shouldNotReceive('syncLiveSingle'));
+            fn($m) => $m->shouldNotReceive('syncSingle')
+                        ->shouldNotReceive('syncLiveSingle')
+                        ->shouldNotReceive('forceSyncSingle'));
         $this->mock(ApiFootballMatchStatisticsSyncService::class,
             fn($m) => $m->shouldNotReceive('syncSingle')->shouldNotReceive('syncLiveSingle'));
 
@@ -122,7 +124,9 @@ class ApiFootballMatchUpdateServiceTest extends TestCase
               ->andReturn(['outcome' => 'synced', 'api_calls' => 1])
         );
         $this->mock(ApiFootballMatchEventSyncService::class,
-            fn($m) => $m->shouldNotReceive('syncSingle')->shouldNotReceive('syncLiveSingle'));
+            fn($m) => $m->shouldNotReceive('syncSingle')
+                        ->shouldNotReceive('syncLiveSingle')
+                        ->shouldNotReceive('forceSyncSingle'));
         $this->mock(ApiFootballMatchStatisticsSyncService::class,
             fn($m) => $m->shouldNotReceive('syncSingle')->shouldNotReceive('syncLiveSingle'));
 
@@ -157,6 +161,7 @@ class ApiFootballMatchUpdateServiceTest extends TestCase
         );
         $this->mock(ApiFootballMatchEventSyncService::class, function ($m) {
             $m->shouldNotReceive('syncSingle');
+            $m->shouldNotReceive('forceSyncSingle');
             $m->shouldReceive('syncLiveSingle')->once()
               ->andReturn(['outcome' => 'synced', 'api_calls' => 1, 'events_count' => 3]);
         });
@@ -194,8 +199,9 @@ class ApiFootballMatchUpdateServiceTest extends TestCase
               ->andReturn(['outcome' => 'synced', 'api_calls' => 1])
         );
         $this->mock(ApiFootballMatchEventSyncService::class, function ($m) {
+            $m->shouldNotReceive('syncSingle');
             $m->shouldNotReceive('syncLiveSingle');
-            $m->shouldReceive('syncSingle')->once()
+            $m->shouldReceive('forceSyncSingle')->once()
               ->andReturn(['outcome' => 'skipped_complete', 'api_calls' => 0, 'events_count' => 0]);
         });
         $this->mock(ApiFootballMatchStatisticsSyncService::class, function ($m) {
@@ -232,7 +238,7 @@ class ApiFootballMatchUpdateServiceTest extends TestCase
               ->andReturn(['outcome' => 'synced', 'api_calls' => 1])
         );
         $this->mock(ApiFootballMatchEventSyncService::class, fn($m) =>
-            $m->shouldReceive('syncSingle')->once()
+            $m->shouldReceive('forceSyncSingle')->once()
               ->andThrow(new ApiFootballException('HTTP 429'))
         );
         $this->mock(ApiFootballMatchStatisticsSyncService::class, fn($m) =>
@@ -306,7 +312,7 @@ class ApiFootballMatchUpdateServiceTest extends TestCase
               ->andReturn(['outcome' => 'synced', 'api_calls' => 1])
         );
         $this->mock(ApiFootballMatchEventSyncService::class, fn($m) =>
-            $m->shouldReceive('syncSingle')->once()
+            $m->shouldReceive('forceSyncSingle')->once()
               ->andReturn(['outcome' => 'synced', 'api_calls' => 1, 'events_count' => 5])
         );
         $this->mock(ApiFootballMatchStatisticsSyncService::class, fn($m) =>
@@ -339,7 +345,7 @@ class ApiFootballMatchUpdateServiceTest extends TestCase
               ->andReturn(['outcome' => 'http_error', 'api_calls' => 0])
         );
         $this->mock(ApiFootballMatchEventSyncService::class, fn($m) =>
-            $m->shouldReceive('syncSingle')->once()
+            $m->shouldReceive('forceSyncSingle')->once()
               ->andReturn(['outcome' => 'synced', 'api_calls' => 1, 'events_count' => 0])
         );
         $this->mock(ApiFootballMatchStatisticsSyncService::class, fn($m) =>

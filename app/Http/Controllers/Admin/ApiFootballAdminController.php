@@ -11,6 +11,9 @@ use App\Models\MatchExternalId;
 use App\Models\SeasonExternalId;
 use App\Models\TeamExternalId;
 use App\Services\DataSources\ApiFootball\ApiFootballFixtureSyncService;
+use App\Services\DataSources\ApiFootball\ApiFootballInjurySyncService;
+use App\Services\DataSources\ApiFootball\ApiFootballMatchEventSyncService;
+use App\Services\DataSources\ApiFootball\ApiFootballMatchPlayerStatisticsSyncService;
 use App\Services\DataSources\ApiFootball\ApiFootballMatchStatisticsSyncService;
 use App\Services\DataSources\ApiFootball\ApiFootballFullUpdateService;
 use App\Services\DataSources\ApiFootball\ApiFootballMatchUpdateService;
@@ -275,5 +278,73 @@ class ApiFootballAdminController extends Controller
         return redirect()
             ->route('admin.api-football.statistics')
             ->with('statistics_sync_report', $result);
+    }
+
+    // -------------------------------------------------------------------------
+    // Events / Marcatori
+    // -------------------------------------------------------------------------
+
+    public function events(): View
+    {
+        return view('admin.api-football.events', [
+            'report' => session('events_sync_report'),
+        ]);
+    }
+
+    public function syncEvents(Request $request, ApiFootballMatchEventSyncService $service): RedirectResponse
+    {
+        set_time_limit(900);
+
+        $seasonYear = (int) $request->input('season', (int) date('Y'));
+        $result     = $service->syncMissingHistorical($seasonYear);
+
+        return redirect()
+            ->route('admin.api-football.events')
+            ->with('events_sync_report', array_merge($result, ['season' => $seasonYear]));
+    }
+
+    // -------------------------------------------------------------------------
+    // Player Statistics
+    // -------------------------------------------------------------------------
+
+    public function playerStats(): View
+    {
+        return view('admin.api-football.player-stats', [
+            'report' => session('player_stats_sync_report'),
+        ]);
+    }
+
+    public function syncPlayerStats(Request $request, ApiFootballMatchPlayerStatisticsSyncService $service): RedirectResponse
+    {
+        set_time_limit(900);
+
+        $seasonYear = (int) $request->input('season', (int) date('Y'));
+        $result     = $service->syncMissingHistorical($seasonYear);
+
+        return redirect()
+            ->route('admin.api-football.player-stats')
+            ->with('player_stats_sync_report', array_merge($result, ['season' => $seasonYear]));
+    }
+
+    // -------------------------------------------------------------------------
+    // Injuries
+    // -------------------------------------------------------------------------
+
+    public function injuries(): View
+    {
+        return view('admin.api-football.injuries', [
+            'report' => session('injuries_sync_report'),
+        ]);
+    }
+
+    public function syncInjuries(ApiFootballInjurySyncService $service): RedirectResponse
+    {
+        set_time_limit(300);
+
+        $result = $service->syncPending();
+
+        return redirect()
+            ->route('admin.api-football.injuries')
+            ->with('injuries_sync_report', $result);
     }
 }

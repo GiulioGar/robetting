@@ -18,6 +18,9 @@
                 <a href="{{ route('admin.api-football.teams') }}" class="btn btn-sm btn-outline-secondary">Squadre</a>
                 <a href="{{ route('admin.api-football.fixtures') }}" class="btn btn-sm btn-outline-secondary">Calendario</a>
                 <a href="{{ route('admin.api-football.statistics') }}" class="btn btn-sm btn-outline-secondary">Statistiche</a>
+                <a href="{{ route('admin.api-football.events') }}" class="btn btn-sm btn-outline-secondary">Marcatori</a>
+                <a href="{{ route('admin.api-football.player-stats') }}" class="btn btn-sm btn-outline-secondary">Stat. Giocatori</a>
+                <a href="{{ route('admin.api-football.injuries') }}" class="btn btn-sm btn-outline-secondary">Infortuni</a>
             </div>
         </div>
 
@@ -30,10 +33,12 @@
                 'result_catchup' => 'Risultati (catch-up)',
                 'calendar'       => 'Calendario',
                 'lineups'        => 'Formazioni',
-                'events_live'    => 'Eventi live',
+                'events_live'    => 'Marcatori live',
                 'stats_live'     => 'Statistiche live',
                 'stats_pending'  => 'Statistiche post-match',
-                'events_pending' => 'Eventi post-match',
+                'events_pending' => 'Marcatori post-match',
+                'player_stats'   => 'Stat. giocatori post-match',
+                'injuries'       => 'Infortuni (7 giorni)',
             ];
         @endphp
         <div class="card mb-4 border-{{ $fuBadge }}">

@@ -39,6 +39,19 @@ class ApiFootballMatchEventSyncService
     }
 
     /**
+     * Force-fetch events for a single match, ignoring events_fetched_at.
+     * Used by the admin manual tool so re-triggering always refreshes scorers.
+     * Sets events_fetched_at on any valid 2xx response.
+     * Throws ApiFootballException on HTTP failure so the caller can log and retry.
+     *
+     * @return array{outcome:string,api_calls:int,events_count:int}
+     */
+    public function forceSyncSingle(FootballMatch $match, string $extId): array
+    {
+        return $this->fetchAndUpsertEvents($match, $extId, markComplete: true);
+    }
+
+    /**
      * Fetch and upsert events for a single live match.
      * Always fetches — no sentinel guard. Never sets events_fetched_at.
      * Throws ApiFootballException on HTTP failure so the caller can log and retry.

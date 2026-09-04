@@ -19,11 +19,13 @@ class ApiFootballFullUpdateService
     private const CALENDAR_STALE_HOURS = 36;
 
     public function __construct(
-        private readonly ApiFootballResultRefreshService       $resultRefresh,
-        private readonly ApiFootballFixtureSyncService         $fixtureSync,
-        private readonly ApiFootballMatchLineupSyncService     $lineupSync,
-        private readonly ApiFootballMatchEventSyncService      $eventSync,
-        private readonly ApiFootballMatchStatisticsSyncService $statsSync,
+        private readonly ApiFootballResultRefreshService              $resultRefresh,
+        private readonly ApiFootballFixtureSyncService                $fixtureSync,
+        private readonly ApiFootballMatchLineupSyncService            $lineupSync,
+        private readonly ApiFootballMatchEventSyncService             $eventSync,
+        private readonly ApiFootballMatchStatisticsSyncService        $statsSync,
+        private readonly ApiFootballMatchPlayerStatisticsSyncService  $playerStatsSync,
+        private readonly ApiFootballInjurySyncService                 $injurySync,
     ) {}
 
     /**
@@ -68,6 +70,14 @@ class ApiFootballFullUpdateService
         // 7. Pending events post-match
         $blocks['events_pending'] = $this->run(fn() => $this->eventSync->syncPending());
         $apiCalls += $blocks['events_pending']['api_calls'] ?? 0;
+
+        // 8. Pending player statistics post-match (current season only)
+        $blocks['player_stats'] = $this->run(fn() => $this->playerStatsSync->syncPending());
+        $apiCalls += $blocks['player_stats']['api_calls'] ?? 0;
+
+        // 9. Pending injuries (upcoming 7 days)
+        $blocks['injuries'] = $this->run(fn() => $this->injurySync->syncPending());
+        $apiCalls += $blocks['injuries']['api_calls'] ?? 0;
 
         $hasErrors = collect($blocks)->contains(fn($b) => ($b['status'] ?? '') === 'error');
 
