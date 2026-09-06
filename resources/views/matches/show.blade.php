@@ -544,6 +544,88 @@
     </div>
 </div>
 
+{{-- E5. Impatto indisponibili --}}
+<div class="mt-4">
+    <h2 class="fs-5 fw-semibold mb-3">Impatto indisponibili <span class="text-muted small fw-normal">(snapshot pre-match)</span></h2>
+    <div class="row g-3">
+        @foreach([
+            ['label' => $match->homeTeam->name, 'ai' => $homeAbsenceImpact],
+            ['label' => $match->awayTeam->name, 'ai' => $awayAbsenceImpact],
+        ] as $block)
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="fw-semibold text-muted small mb-2">{{ $block['label'] }}</div>
+                    @php $ai = $block['ai']; @endphp
+                    @if($ai['absences_count'] === 0)
+                        <p class="text-muted small mb-0">Nessuna indisponibilità registrata.</p>
+                    @elseif($ai['absent_players_with_stats_count'] === 0)
+                        <table class="table table-sm table-borderless mb-0 small">
+                            <tbody>
+                                <tr>
+                                    <td class="text-muted ps-0">Assenti</td>
+                                    <td class="fw-semibold text-end pe-0">{{ $ai['absences_count'] }}</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted ps-0">Impatto recente</td>
+                                    <td class="fw-semibold text-end pe-0 text-warning">non calcolabile</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted ps-0">Copertura dati</td>
+                                    <td class="fw-semibold text-end pe-0">0/{{ $ai['absences_count'] }} (0%)</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    @else
+                        <table class="table table-sm table-borderless mb-0 small">
+                            <tbody>
+                                <tr>
+                                    <td class="text-muted ps-0">Assenti</td>
+                                    <td class="fw-semibold text-end pe-0">{{ $ai['absences_count'] }}</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted ps-0">Minuti persi ultimi 30 gg</td>
+                                    <td class="fw-semibold text-end pe-0">
+                                        {{ $ai['absent_minutes_last_30_days'] !== null ? $ai['absent_minutes_last_30_days'] . "'" : '—' }}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted ps-0">Peso sui minuti squadra</td>
+                                    <td class="fw-semibold text-end pe-0">
+                                        {{ $ai['absent_minutes_share_percentage'] !== null ? number_format($ai['absent_minutes_share_percentage'], 1) . '%' : '—' }}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted ps-0">Presenze ultime 5 degli assenti</td>
+                                    <td class="fw-semibold text-end pe-0">{{ $ai['absent_appearances_last_5'] }}</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted ps-0">Titolarità ultime 5 degli assenti</td>
+                                    <td class="fw-semibold text-end pe-0">{{ $ai['absent_starts_last_5'] }}</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted ps-0">Assenti molto utilizzati</td>
+                                    <td class="fw-semibold text-end pe-0">{{ $ai['heavily_used_absences_count'] }}</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted ps-0">Copertura dati</td>
+                                    <td class="fw-semibold text-end pe-0">
+                                        {{ $ai['absent_players_with_stats_count'] }}/{{ $ai['absences_count'] }}
+                                        @if($ai['absence_stats_coverage_percentage'] !== null)
+                                            ({{ number_format($ai['absence_stats_coverage_percentage'], 0) }}%)
+                                        @endif
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    @endif
+                </div>
+            </div>
+        </div>
+        @endforeach
+    </div>
+</div>
+
 @if($match->status !== 'finished')
 {{-- E. Forma prima del match --}}
 <div class="mt-4">
