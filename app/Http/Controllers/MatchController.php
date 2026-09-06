@@ -12,6 +12,7 @@ use App\Services\Analytics\TeamAgeProfileCalculator;
 use App\Services\Analytics\TeamAnalyticsCalculator;
 use App\Services\Analytics\TeamScheduleLoadCalculator;
 use App\Services\Analytics\TeamAbsenceImpactCalculator;
+use App\Services\Analytics\TeamEloCalculator;
 use App\Services\Analytics\TeamStarterContinuityCalculator;
 use App\Services\Matches\PreferredMatchStatisticResolver;
 use Illuminate\Support\Collection;
@@ -104,6 +105,8 @@ class MatchController extends Controller
         $homeAbsenceImpact = TeamAbsenceImpactCalculator::calculateForMatch($match, $match->home_team_id);
         $awayAbsenceImpact = TeamAbsenceImpactCalculator::calculateForMatch($match, $match->away_team_id);
 
+        $eloData = TeamEloCalculator::calculateForMatch($match);
+
         return view('matches.show', [
             'match'               => $match,
             'matchStatistic'      => $matchStatistic,
@@ -129,6 +132,7 @@ class MatchController extends Controller
             'awayStarterContinuity'    => $awayStarterContinuity,
             'homeAbsenceImpact'        => $homeAbsenceImpact,
             'awayAbsenceImpact'        => $awayAbsenceImpact,
+            'eloData'                  => $eloData,
         ]);
     }
 

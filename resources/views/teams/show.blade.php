@@ -78,6 +78,35 @@
     </div>
 </div>
 
+{{-- Forza dinamica Elo --}}
+<div class="mt-4">
+    <h2 class="fs-5 fw-semibold mb-3">Forza dinamica Elo <span class="text-muted small fw-normal">(tutte le competizioni, fino ad ora)</span></h2>
+    <div class="card">
+        <div class="card-body">
+            <table class="table table-sm table-borderless mb-0 small">
+                <tbody>
+                    <tr>
+                        <td class="text-muted ps-0">Elo attuale</td>
+                        <td class="fw-bold text-end pe-0 fs-5">{{ number_format($teamEloData['current_elo'], 1) }}</td>
+                    </tr>
+                    @if($teamEloData['elo_5_games_ago'] !== null)
+                    <tr>
+                        <td class="text-muted ps-0">Elo 5 partite fa</td>
+                        <td class="fw-semibold text-end pe-0">{{ number_format($teamEloData['elo_5_games_ago'], 1) }}</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted ps-0">Variazione ultime 5</td>
+                        <td class="fw-semibold text-end pe-0 {{ $teamEloData['elo_variation_5'] >= 0 ? 'text-success' : 'text-danger' }}">
+                            {{ $teamEloData['elo_variation_5'] >= 0 ? '+' : '' }}{{ number_format($teamEloData['elo_variation_5'], 1) }}
+                        </td>
+                    </tr>
+                    @endif
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
 {{-- Season summary --}}
 <div class="mt-4">
     <h2 class="fs-5 fw-semibold mb-3">Riepilogo stagione</h2>

@@ -626,6 +626,51 @@
     </div>
 </div>
 
+{{-- E6. Forza dinamica Elo --}}
+<div class="mt-4">
+    <h2 class="fs-5 fw-semibold mb-3">Forza dinamica Elo <span class="text-muted small fw-normal">(pre-match, tutte le competizioni)</span></h2>
+    @php
+        $absDiff  = abs($eloData['elo_difference']);
+        $eloLabel = match(true) {
+            $absDiff < 25  => 'Molto equilibrata',
+            $absDiff < 75  => 'Leggero vantaggio',
+            $absDiff < 150 => 'Vantaggio chiaro',
+            default        => 'Forte differenza',
+        };
+        $diffSign = $eloData['elo_difference'] >= 0 ? '+' : '';
+    @endphp
+    <div class="row g-3">
+        @foreach([
+            ['label' => $match->homeTeam->name, 'elo' => $eloData['home_elo']],
+            ['label' => $match->awayTeam->name, 'elo' => $eloData['away_elo']],
+        ] as $block)
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="fw-semibold text-muted small mb-1">{{ $block['label'] }}</div>
+                    <div class="fs-4 fw-bold">{{ number_format($block['elo'], 1) }}</div>
+                    <div class="text-muted small">Rating Elo</div>
+                </div>
+            </div>
+        </div>
+        @endforeach
+    </div>
+    <div class="card mt-3">
+        <div class="card-body p-3">
+            <div class="row text-center small">
+                <div class="col-6">
+                    <div class="text-muted">Differenza Elo</div>
+                    <div class="fw-semibold">{{ $diffSign }}{{ number_format($eloData['elo_difference'], 1) }}</div>
+                </div>
+                <div class="col-6">
+                    <div class="text-muted">Equilibrio</div>
+                    <div class="fw-semibold">{{ $eloLabel }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 @if($match->status !== 'finished')
 {{-- E. Forma prima del match --}}
 <div class="mt-4">

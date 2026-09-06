@@ -7,6 +7,7 @@ use App\Models\FootballMatch;
 use App\Models\Season;
 use App\Models\Team;
 use App\Services\Analytics\TeamAnalyticsCalculator;
+use App\Services\Analytics\TeamEloCalculator;
 use App\Services\Matches\PreferredMatchStatisticResolver;
 use Carbon\Carbon;
 use Illuminate\View\View;
@@ -67,6 +68,32 @@ class TeamController extends Controller
             ->reverse()
             ->values();
 
+        $now            = Carbon::now('UTC');
+        $currentRatings = TeamEloCalculator::calculateRatingsBefore($now);
+        $currentElo     = $currentRatings[$team->id] ?? TeamEloCalculator::INITIAL_ELO;
+
+        $elo5gamesAgo  = null;
+        $eloVariation5 = null;
+
+        $fifthMatch = FootballMatch::whereIn('status', ['finished', 'awarded', 'walkover'])
+            ->whereNotNull('home_score_ft')
+            ->whereNotNull('away_score_ft')
+            ->whereNotNull('kickoff_at')
+            ->where('kickoff_at', '<', $now)
+            ->where(function ($q) use ($team) {
+                $q->where('home_team_id', $team->id)->orWhere('away_team_id', $team->id);
+            })
+            ->orderByDesc('kickoff_at')
+            ->orderByDesc('id')
+            ->skip(4)
+            ->first(['kickoff_at']);
+
+        if ($fifthMatch) {
+            $ratings5ago  = TeamEloCalculator::calculateRatingsBefore($fifthMatch->kickoff_at);
+            $elo5gamesAgo  = $ratings5ago[$team->id] ?? TeamEloCalculator::INITIAL_ELO;
+            $eloVariation5 = $currentElo - $elo5gamesAgo;
+        }
+
         return view('teams.show', [
             'team'            => $team,
             'competition'     => $competition,
@@ -78,6 +105,11 @@ class TeamController extends Controller
             'awayAnalytics'   => $awayAnalytics,
             'last5Analytics'  => $last5Analytics,
             'last10Analytics' => $last10Analytics,
+            'teamEloData'     => [
+                'current_elo'    => $currentElo,
+                'elo_5_games_ago'=> $elo5gamesAgo,
+                'elo_variation_5'=> $eloVariation5,
+            ],
         ]);
     }
 
