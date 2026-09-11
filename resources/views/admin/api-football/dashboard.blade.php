@@ -21,6 +21,7 @@
                 <a href="{{ route('admin.api-football.events') }}" class="btn btn-sm btn-outline-secondary">Marcatori</a>
                 <a href="{{ route('admin.api-football.player-stats') }}" class="btn btn-sm btn-outline-secondary">Stat. Giocatori</a>
                 <a href="{{ route('admin.api-football.injuries') }}" class="btn btn-sm btn-outline-secondary">Infortuni</a>
+                <a href="{{ route('admin.api-football.structural') }}" class="btn btn-sm btn-outline-primary">Forza Strutturale</a>
             </div>
         </div>
 
@@ -127,6 +128,51 @@
                         @endforeach
                     </tbody>
                 </table>
+            </div>
+        </div>
+
+        {{-- Structural Strength summary --}}
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center py-2">
+                <strong>Forza Strutturale</strong>
+                <a href="{{ route('admin.api-football.structural') }}" class="btn btn-sm btn-outline-primary">Gestisci →</a>
+            </div>
+            <div class="card-body p-0">
+                @if(!$structuralSummary['source_exists'])
+                    <p class="text-muted small px-3 py-2 mb-0">
+                        Fonte <code>transfermarkt</code> non presente in <code>data_sources</code>.
+                        Aggiungi la sorgente prima di importare market value.
+                    </p>
+                @elseif($structuralSummary['latest_snapshot_date'] === null)
+                    <p class="text-muted small px-3 py-2 mb-0">Nessuno snapshot disponibile.</p>
+                @else
+                    <table class="table table-sm table-bordered mb-0">
+                        <tbody>
+                            <tr>
+                                <td class="text-muted small" style="width:40%">Ultimo snapshot</td>
+                                <td class="small fw-semibold">
+                                    {{ \Carbon\Carbon::parse($structuralSummary['latest_snapshot_date'])->format('d/m/Y') }}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted small">Fonte</td>
+                                <td class="small">{{ $structuralSummary['source_name'] }}</td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted small">Team con valore</td>
+                                <td class="small fw-semibold">{{ $structuralSummary['teams_with_value'] }}</td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted small {{ $structuralSummary['teams_without_value'] > 0 ? 'text-warning' : '' }}">
+                                    Team senza valore
+                                </td>
+                                <td class="small {{ $structuralSummary['teams_without_value'] > 0 ? 'fw-bold text-warning' : '' }}">
+                                    {{ $structuralSummary['teams_without_value'] }}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                @endif
             </div>
         </div>
 

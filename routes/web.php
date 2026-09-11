@@ -54,4 +54,8 @@ Route::prefix('admin/api-football')->name('admin.api-football.')->group(function
     Route::post('match-update', [ApiFootballAdminController::class, 'matchUpdate'])->name('match-update');
 
     Route::post('sync-all', [ApiFootballAdminController::class, 'syncAll'])->name('sync-all');
+
+    Route::get('structural', [ApiFootballAdminController::class, 'structural'])->name('structural');
+    Route::post('structural/preview', [ApiFootballAdminController::class, 'structuralPreview'])->name('structural.preview');
+    Route::post('structural/confirm', [ApiFootballAdminController::class, 'structuralConfirm'])->name('structural.confirm');
 });

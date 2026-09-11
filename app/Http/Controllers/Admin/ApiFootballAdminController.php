@@ -9,7 +9,10 @@ use App\Models\DataSyncRun;
 use App\Models\FootballMatch;
 use App\Models\MatchExternalId;
 use App\Models\SeasonExternalId;
+use App\Models\Team;
 use App\Models\TeamExternalId;
+use App\Models\TeamMarketValueSnapshot;
+use App\Services\Analytics\TeamStructuralRatingCalculator;
 use App\Services\DataSources\ApiFootball\ApiFootballFixtureSyncService;
 use App\Services\DataSources\ApiFootball\ApiFootballInjurySyncService;
 use App\Services\DataSources\ApiFootball\ApiFootballMatchEventSyncService;
@@ -18,9 +21,11 @@ use App\Services\DataSources\ApiFootball\ApiFootballMatchStatisticsSyncService;
 use App\Services\DataSources\ApiFootball\ApiFootballFullUpdateService;
 use App\Services\DataSources\ApiFootball\ApiFootballMatchUpdateService;
 use App\Services\DataSources\ApiFootball\ApiFootballTeamSyncService;
+use App\Services\Structural\MarketValueImportService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
 
 class ApiFootballAdminController extends Controller
@@ -159,6 +164,25 @@ class ApiFootballAdminController extends Controller
             ->limit(60)
             ->get();
 
+        // Structural summary for dashboard card
+        $tmSource = DataSource::where('slug', 'transfermarkt')->first();
+        $structuralSummary = [
+            'source_exists'        => $tmSource !== null,
+            'source_name'          => $tmSource?->name,
+            'latest_snapshot_date' => null,
+            'teams_with_value'     => 0,
+            'teams_without_value'  => 0,
+        ];
+        if ($tmSource) {
+            $agg = TeamMarketValueSnapshot::where('data_source_id', $tmSource->id)
+                ->selectRaw('COUNT(DISTINCT team_id) as teams_count, MAX(snapshot_date) as latest_date')
+                ->first();
+            $activeCount = Team::where('is_active', true)->count();
+            $structuralSummary['latest_snapshot_date'] = $agg->latest_date;
+            $structuralSummary['teams_with_value']     = (int) $agg->teams_count;
+            $structuralSummary['teams_without_value']  = max(0, $activeCount - (int) $agg->teams_count);
+        }
+
         return view('admin.api-football.dashboard', [
             'stats'             => $stats,
             'lastResultRefresh' => $lastResultRefresh,
@@ -166,6 +190,7 @@ class ApiFootballAdminController extends Controller
             'recentMatches'     => $recentMatches,
             'matchUpdateReport' => session('match_update_report'),
             'matchUpdateError'  => session('match_update_error'),
+            'structuralSummary' => $structuralSummary,
         ]);
     }
 
@@ -346,5 +371,137 @@ class ApiFootballAdminController extends Controller
         return redirect()
             ->route('admin.api-football.injuries')
             ->with('injuries_sync_report', $result);
+    }
+
+    // -------------------------------------------------------------------------
+    // Structural Strength
+    // -------------------------------------------------------------------------
+
+    public function structural(): View
+    {
+        $tmSource = DataSource::where('slug', 'transfermarkt')->first();
+
+        $summary = [
+            'source_exists'        => $tmSource !== null,
+            'source_name'          => $tmSource?->name,
+            'latest_snapshot_date' => null,
+            'teams_with_value'     => 0,
+            'teams_without_value'  => 0,
+        ];
+
+        $tableRows         = collect();
+        $teamsWithoutValue = collect();
+
+        if ($tmSource) {
+            // One query: all snapshots for this source, most recent first.
+            // unique('team_id') in PHP keeps only the first occurrence = most recent.
+            $latestSnapshots = TeamMarketValueSnapshot::with('team')
+                ->where('data_source_id', $tmSource->id)
+                ->orderByDesc('snapshot_date')
+                ->orderByDesc('id')
+                ->get()
+                ->unique('team_id');
+
+            $summary['teams_with_value']     = $latestSnapshots->count();
+            $summary['latest_snapshot_date'] = $latestSnapshots->first()?->snapshot_date;
+
+            $tableRows = $latestSnapshots
+                ->map(function ($snap) use ($tmSource) {
+                    $computed = TeamStructuralRatingCalculator::calculateFromMarketValue(
+                        (int) $snap->market_value
+                    );
+                    return [
+                        'team_name'         => $snap->team?->name ?? '—',
+                        'market_value'      => (int) $snap->market_value,
+                        'structural_rating' => $computed['structural_rating'],
+                        'snapshot_date'     => $snap->snapshot_date,
+                        'source_name'       => $tmSource->name,
+                    ];
+                })
+                ->sortByDesc('structural_rating')
+                ->values();
+
+            $teamIdsWithValue  = $latestSnapshots->pluck('team_id')->all();
+            $teamsWithoutValue = Team::where('is_active', true)
+                ->whereNotIn('id', $teamIdsWithValue)
+                ->orderBy('name')
+                ->get(['id', 'name']);
+
+            $summary['teams_without_value'] = $teamsWithoutValue->count();
+        }
+
+        return view('admin.api-football.structural', [
+            'summary'           => $summary,
+            'tableRows'         => $tableRows,
+            'teamsWithoutValue' => $teamsWithoutValue,
+            'preview'           => session('structural_import_preview'),
+            'confirmResult'     => session('structural_confirm_result'),
+            'uploadError'       => session('structural_upload_error'),
+        ]);
+    }
+
+    public function structuralPreview(Request $request, MarketValueImportService $service): RedirectResponse
+    {
+        $file = $request->file('json_file');
+
+        if (!$file || !$file->isValid()) {
+            return redirect()
+                ->route('admin.api-football.structural')
+                ->with('structural_upload_error', 'File non valido o non selezionato.');
+        }
+
+        $jsonContent = file_get_contents($file->getRealPath());
+        $preview     = $service->preview($jsonContent);
+
+        if ($preview['valid']) {
+            // Persist raw JSON (no overwrite) for auditability
+            $sourceSlug   = DataSource::find($preview['data_source_id'])?->slug ?? 'unknown';
+            $snapshotDate = $preview['snapshot_date'];
+            $path         = "structural/market_values_{$sourceSlug}_{$snapshotDate}.json";
+            $suffix       = 1;
+            while (Storage::disk('local')->exists($path)) {
+                $suffix++;
+                $path = "structural/market_values_{$sourceSlug}_{$snapshotDate}-{$suffix}.json";
+            }
+            Storage::disk('local')->put($path, $jsonContent);
+
+            // Store JSON in session for the confirm step (server-side only)
+            session(['structural_pending_json' => $jsonContent]);
+        } else {
+            session()->forget('structural_pending_json');
+        }
+
+        return redirect()
+            ->route('admin.api-football.structural')
+            ->with('structural_import_preview', $preview);
+    }
+
+    public function structuralConfirm(Request $request, MarketValueImportService $service): RedirectResponse
+    {
+        $json = session('structural_pending_json');
+
+        if (!$json) {
+            return redirect()
+                ->route('admin.api-football.structural')
+                ->with('structural_upload_error', "Nessuna preview da confermare. Analizza prima un file JSON.");
+        }
+
+        // Re-run preview to get current state (catches race conditions)
+        $preview = $service->preview($json);
+
+        if (!$preview['valid']) {
+            session()->forget(['structural_pending_json', 'structural_import_preview']);
+            return redirect()
+                ->route('admin.api-football.structural')
+                ->with('structural_upload_error', 'Preview non più valida: ' . $preview['error']);
+        }
+
+        $result = $service->confirm($preview);
+
+        session()->forget(['structural_pending_json', 'structural_import_preview']);
+
+        return redirect()
+            ->route('admin.api-football.structural')
+            ->with('structural_confirm_result', $result);
     }
 }

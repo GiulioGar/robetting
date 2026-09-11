@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Team extends Model
 {
@@ -33,5 +34,10 @@ class Team extends Model
     public function seasons(): BelongsToMany
     {
         return $this->belongsToMany(Season::class, 'season_team');
+    }
+
+    public function marketValueSnapshots(): HasMany
+    {
+        return $this->hasMany(TeamMarketValueSnapshot::class);
     }
 }
