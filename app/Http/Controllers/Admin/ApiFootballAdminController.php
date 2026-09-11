@@ -437,6 +437,8 @@ class ApiFootballAdminController extends Controller
             'preview'           => session('structural_import_preview'),
             'confirmResult'     => session('structural_confirm_result'),
             'uploadError'       => session('structural_upload_error'),
+            'generateOutput'    => session('structural_generate_output'),
+            'pendingFile'       => session('structural_pending_file'),
         ]);
     }
 
@@ -453,6 +455,9 @@ class ApiFootballAdminController extends Controller
         $jsonContent = file_get_contents($file->getRealPath());
         $preview     = $service->preview($jsonContent);
 
+        $redirect = redirect()->route('admin.api-football.structural')
+            ->with('structural_import_preview', $preview);
+
         if ($preview['valid']) {
             // Persist raw JSON (no overwrite) for auditability
             $sourceSlug   = DataSource::find($preview['data_source_id'])?->slug ?? 'unknown';
@@ -467,13 +472,17 @@ class ApiFootballAdminController extends Controller
 
             // Store JSON in session for the confirm step (server-side only)
             session(['structural_pending_json' => $jsonContent]);
+
+            $redirect = $redirect->with('structural_pending_file', [
+                'filename' => $file->getClientOriginalName(),
+                'source'   => $sourceSlug,
+                'date'     => $snapshotDate,
+            ]);
         } else {
             session()->forget('structural_pending_json');
         }
 
-        return redirect()
-            ->route('admin.api-football.structural')
-            ->with('structural_import_preview', $preview);
+        return $redirect;
     }
 
     public function structuralConfirm(Request $request, MarketValueImportService $service): RedirectResponse
@@ -503,5 +512,77 @@ class ApiFootballAdminController extends Controller
         return redirect()
             ->route('admin.api-football.structural')
             ->with('structural_confirm_result', $result);
+    }
+
+    public function structuralGenerate(MarketValueImportService $service): RedirectResponse
+    {
+        set_time_limit(120);
+
+        $snapshotDate = now()->toDateString();
+        $scriptPath   = base_path('tools/structural/collect_market_values.py');
+
+        if (!file_exists($scriptPath)) {
+            return redirect()
+                ->route('admin.api-football.structural')
+                ->with('structural_upload_error', "Script Python non trovato: {$scriptPath}");
+        }
+
+        $cmd = 'python "' . $scriptPath . '" --date ' . $snapshotDate;
+
+        $process = proc_open($cmd, [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ], $pipes, base_path());
+
+        if (!is_resource($process)) {
+            return redirect()
+                ->route('admin.api-football.structural')
+                ->with('structural_upload_error', 'Impossibile avviare il processo Python.');
+        }
+
+        fclose($pipes[0]);
+        $stdout   = stream_get_contents($pipes[1]);
+        $stderr   = stream_get_contents($pipes[2]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        $exitCode = proc_close($process);
+
+        if ($exitCode !== 0) {
+            $error = trim(($stdout ?? '') . "\n" . ($stderr ?? ''));
+            return redirect()
+                ->route('admin.api-football.structural')
+                ->with('structural_upload_error', "Collector fallito (exit {$exitCode}):\n{$error}");
+        }
+
+        // Auto-preview the generated JSON — user just needs to click "Conferma".
+        $generatedPath = storage_path("app/structural/market_values_transfermarkt_{$snapshotDate}.json");
+
+        if (!file_exists($generatedPath)) {
+            return redirect()
+                ->route('admin.api-football.structural')
+                ->with('structural_upload_error', "Collector completato ma file non trovato: {$generatedPath}");
+        }
+
+        $jsonContent = file_get_contents($generatedPath);
+        $preview     = $service->preview($jsonContent);
+
+        if ($preview['valid']) {
+            session(['structural_pending_json' => $jsonContent]);
+        } else {
+            session()->forget('structural_pending_json');
+        }
+
+        $filename = "market_values_transfermarkt_{$snapshotDate}.json";
+
+        return redirect()
+            ->route('admin.api-football.structural')
+            ->with('structural_import_preview', $preview)
+            ->with('structural_generate_output', trim($stdout ?? ''))
+            ->with('structural_pending_file', $preview['valid'] ? [
+                'filename' => $filename,
+                'source'   => 'transfermarkt',
+                'date'     => $snapshotDate,
+            ] : null);
     }
 }

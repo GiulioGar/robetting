@@ -132,35 +132,72 @@
         </div>
         @endif
 
-        {{-- ── Upload JSON ─────────────────────────────────────────────────── --}}
-        <div class="card mb-4">
-            <div class="card-header"><strong>Importa market value (JSON)</strong></div>
+        {{-- ── Genera JSON da Transfermarkt ────────────────────────────────── --}}
+        <div class="card mb-4 border-primary">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <strong>Genera JSON da Transfermarkt</strong>
+                <span class="badge bg-primary">Automatico</span>
+            </div>
             <div class="card-body">
                 <p class="small text-muted mb-3">
-                    Seleziona un file JSON nel formato snapshot Robetting.
-                    Verrà mostrata una preview prima di confermare l'import.
+                    Scarica i market value di tutte le 96 squadre (Serie A, Premier League,
+                    La Liga, Bundesliga, Ligue 1) direttamente da Transfermarkt e avvia
+                    automaticamente la preview di import. Richiede circa 20–30 secondi.
                 </p>
-                <form method="POST"
-                      action="{{ route('admin.api-football.structural.preview') }}"
-                      enctype="multipart/form-data">
+                <form method="POST" action="{{ route('admin.api-football.structural.generate') }}">
                     @csrf
-                    <div class="d-flex gap-2 align-items-end">
-                        <div class="flex-grow-1">
-                            <label for="json_file" class="form-label small mb-1">File JSON</label>
-                            <input type="file"
-                                   name="json_file"
-                                   id="json_file"
-                                   accept=".json,application/json"
-                                   class="form-control form-control-sm"
-                                   required>
-                        </div>
-                        <button type="submit" class="btn btn-sm btn-primary">
-                            &#128269; Analizza
-                        </button>
-                    </div>
+                    <button type="submit" class="btn btn-primary btn-sm"
+                            onclick="this.disabled=true; this.innerHTML='&#9203; Scraping in corso…'; this.form.submit();">
+                        &#128257; Genera &amp; Analizza (oggi — {{ now()->toDateString() }})
+                    </button>
                 </form>
+
+                @if($generateOutput)
+                <div class="mt-3">
+                    <details>
+                        <summary class="small text-muted" style="cursor:pointer">
+                            Output collector (clicca per espandere)
+                        </summary>
+                        <pre class="mt-2 p-2 bg-light border rounded small" style="white-space:pre-wrap;max-height:220px;overflow-y:auto;">{{ $generateOutput }}</pre>
+                    </details>
+                </div>
+                @endif
             </div>
         </div>
+
+        {{-- ── Upload JSON manuale (funzione avanzata) ────────────────────── --}}
+        <details class="mb-4">
+            <summary class="text-muted small" style="cursor:pointer;list-style:none;user-select:none;">
+                <span class="border rounded px-2 py-1">&#9654; Analizza JSON esistente (funzione avanzata)</span>
+            </summary>
+            <div class="card mt-2">
+                <div class="card-header py-2"><strong class="small">Analizza JSON manuale</strong></div>
+                <div class="card-body">
+                    <p class="small text-muted mb-3">
+                        Carica un file JSON nel formato snapshot Robetting generato esternamente.
+                    </p>
+                    <form method="POST"
+                          action="{{ route('admin.api-football.structural.preview') }}"
+                          enctype="multipart/form-data">
+                        @csrf
+                        <div class="d-flex gap-2 align-items-end">
+                            <div class="flex-grow-1">
+                                <label for="json_file" class="form-label small mb-1">File JSON</label>
+                                <input type="file"
+                                       name="json_file"
+                                       id="json_file"
+                                       accept=".json,application/json"
+                                       class="form-control form-control-sm"
+                                       required>
+                            </div>
+                            <button type="submit" class="btn btn-sm btn-outline-secondary">
+                                &#128269; Analizza
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </details>
 
         {{-- ── Preview ─────────────────────────────────────────────────────── --}}
         @if($preview)
@@ -178,8 +215,33 @@
                 @if(!$pv['valid'])
                     <p class="text-danger mb-0"><strong>Errore:</strong> {{ $pv['error'] }}</p>
                 @else
-                    {{-- Summary badges --}}
                     @php $s = $pv['summary']; @endphp
+
+                    {{-- File metadata --}}
+                    <table class="table table-sm table-borderless mb-3 small" style="width:auto">
+                        <tbody>
+                            @if($pendingFile)
+                            <tr>
+                                <td class="text-muted pe-3 py-1">File</td>
+                                <td class="py-1 font-monospace">{{ $pendingFile['filename'] }}</td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted pe-3 py-1">Source</td>
+                                <td class="py-1">{{ $pendingFile['source'] }}</td>
+                            </tr>
+                            @endif
+                            <tr>
+                                <td class="text-muted pe-3 py-1">Snapshot date</td>
+                                <td class="py-1 fw-semibold">{{ $pv['snapshot_date'] }}</td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted pe-3 py-1">Teams</td>
+                                <td class="py-1 fw-semibold">{{ $s['total_teams'] }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    {{-- Summary badges --}}
                     <div class="d-flex flex-wrap gap-2 mb-3">
                         <span class="badge bg-secondary">Totale: {{ $s['total_teams'] }}</span>
                         <span class="badge bg-success">Mappati: {{ $s['mapped_teams'] }}</span>
