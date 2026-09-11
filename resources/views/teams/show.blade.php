@@ -23,6 +23,20 @@
         @if($competition->country) · {{ $competition->country->name }} @endif
         · {{ $season->name }}
     </div>
+    <div class="mt-1 small">
+        <span class="text-muted">Market Value</span>
+        <span class="fw-semibold ms-1">
+            @if($marketValue === null)
+                N/D
+            @elseif($marketValue >= 1_000_000_000)
+                €{{ number_format($marketValue / 1_000_000_000, 2, ',', '.') }} mld
+            @elseif($marketValue >= 1_000_000)
+                €{{ number_format($marketValue / 1_000_000, 2, ',', '.') }} mln
+            @else
+                €{{ number_format($marketValue / 1_000, 2, ',', '.') }} mila
+            @endif
+        </span>
+    </div>
 </div>
 
 {{-- Next match --}}

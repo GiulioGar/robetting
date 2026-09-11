@@ -6,6 +6,7 @@ use App\Models\Competition;
 use App\Models\FootballMatch;
 use App\Models\Season;
 use App\Models\Team;
+use App\Models\TeamMarketValueSnapshot;
 use App\Services\Analytics\TeamAnalyticsCalculator;
 use App\Services\Analytics\TeamEloCalculator;
 use App\Services\Matches\PreferredMatchStatisticResolver;
@@ -94,6 +95,12 @@ class TeamController extends Controller
             $eloVariation5 = $currentElo - $elo5gamesAgo;
         }
 
+        $marketValue = TeamMarketValueSnapshot::where('team_id', $team->id)
+            ->whereHas('dataSource', fn ($q) => $q->where('slug', 'transfermarkt'))
+            ->orderByDesc('snapshot_date')
+            ->orderByDesc('id')
+            ->value('market_value');
+
         return view('teams.show', [
             'team'            => $team,
             'competition'     => $competition,
@@ -110,6 +117,7 @@ class TeamController extends Controller
                 'elo_5_games_ago'=> $elo5gamesAgo,
                 'elo_variation_5'=> $eloVariation5,
             ],
+            'marketValue'     => $marketValue !== null ? (int) $marketValue : null,
         ]);
     }
 
