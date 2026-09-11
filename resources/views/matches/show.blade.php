@@ -671,6 +671,80 @@
     </div>
 </div>
 
+{{-- E7. Confronto forza squadre --}}
+<div class="mt-4">
+    <h2 class="fs-5 fw-semibold mb-3">Confronto forza squadre <span class="text-muted small fw-normal">(analytics)</span></h2>
+
+    <div class="row g-3">
+        @foreach([
+            ['label' => $match->homeTeam->name, 'structural' => $strengthComparison['home_structural'], 'elo' => $strengthComparison['home_elo']],
+            ['label' => $match->awayTeam->name, 'structural' => $strengthComparison['away_structural'], 'elo' => $strengthComparison['away_elo']],
+        ] as $block)
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="fw-semibold text-muted small mb-2">{{ $block['label'] }}</div>
+                    <table class="table table-sm table-borderless mb-0 small">
+                        <tbody>
+                            <tr>
+                                <td class="text-muted ps-0">Structural Rating</td>
+                                <td class="fw-semibold text-end pe-0">
+                                    @if($block['structural']['structural_rating'] !== null)
+                                        {{ number_format($block['structural']['structural_rating'], 1) }}
+                                    @else
+                                        <span class="text-muted">N/D</span>
+                                    @endif
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="text-muted ps-0">Elo dinamico</td>
+                                <td class="fw-semibold text-end pe-0">{{ number_format($block['elo'], 1) }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        @endforeach
+    </div>
+
+    <div class="card mt-3">
+        <div class="card-body p-3">
+            @php
+                $sc_sd = $strengthComparison['structural_rating_diff'];
+                $sc_ed = $strengthComparison['elo_diff'];
+                $sc_eSign  = $sc_ed >= 0 ? '+' : '';
+                $sc_eLabel = $sc_ed > 0 ? 'HOME' : ($sc_ed < 0 ? 'AWAY' : 'EVEN');
+            @endphp
+            <div class="row text-center small">
+                <div class="col-4">
+                    <div class="text-muted">Differenza Structural</div>
+                    @if($sc_sd !== null)
+                        @php $sc_sSign = $sc_sd >= 0 ? '+' : ''; $sc_sLabel = $sc_sd > 0 ? 'HOME' : ($sc_sd < 0 ? 'AWAY' : 'EVEN'); @endphp
+                        <div class="fw-semibold">{{ $sc_sSign }}{{ number_format($sc_sd, 1) }} {{ $sc_sLabel }}</div>
+                    @else
+                        <div class="fw-semibold text-muted">N/D</div>
+                    @endif
+                </div>
+                <div class="col-4">
+                    <div class="text-muted">Differenza Elo</div>
+                    <div class="fw-semibold">{{ $sc_eSign }}{{ number_format($sc_ed, 1) }} {{ $sc_eLabel }}</div>
+                </div>
+                <div class="col-4">
+                    <div class="text-muted">Segnali</div>
+                    @if($strengthComparison['signals_agree'] === true)
+                        <div class="fw-semibold">CONCORDI</div>
+                    @elseif($strengthComparison['signals_agree'] === false)
+                        <div class="fw-semibold">DIVERGENTI</div>
+                    @else
+                        <div class="fw-semibold text-muted">NON VALUTABILE</div>
+                    @endif
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 @if($match->status !== 'finished')
 {{-- E. Forma prima del match --}}
 <div class="mt-4">

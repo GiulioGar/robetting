@@ -12,8 +12,8 @@ use App\Services\Analytics\TeamAgeProfileCalculator;
 use App\Services\Analytics\TeamAnalyticsCalculator;
 use App\Services\Analytics\TeamScheduleLoadCalculator;
 use App\Services\Analytics\TeamAbsenceImpactCalculator;
-use App\Services\Analytics\TeamEloCalculator;
 use App\Services\Analytics\TeamStarterContinuityCalculator;
+use App\Services\Analytics\TeamStrengthComparisonCalculator;
 use App\Services\Matches\PreferredMatchStatisticResolver;
 use Illuminate\Support\Collection;
 use Illuminate\View\View;
@@ -105,7 +105,14 @@ class MatchController extends Controller
         $homeAbsenceImpact = TeamAbsenceImpactCalculator::calculateForMatch($match, $match->home_team_id);
         $awayAbsenceImpact = TeamAbsenceImpactCalculator::calculateForMatch($match, $match->away_team_id);
 
-        $eloData = TeamEloCalculator::calculateForMatch($match);
+        $strengthComparison = TeamStrengthComparisonCalculator::calculateForMatch($match);
+
+        // Preserve the eloData shape expected by the E6 blade (no view changes needed there).
+        $eloData = [
+            'home_elo'       => $strengthComparison['home_elo'],
+            'away_elo'       => $strengthComparison['away_elo'],
+            'elo_difference' => $strengthComparison['elo_diff'],
+        ];
 
         return view('matches.show', [
             'match'               => $match,
@@ -133,6 +140,7 @@ class MatchController extends Controller
             'homeAbsenceImpact'        => $homeAbsenceImpact,
             'awayAbsenceImpact'        => $awayAbsenceImpact,
             'eloData'                  => $eloData,
+            'strengthComparison'       => $strengthComparison,
         ]);
     }
 
