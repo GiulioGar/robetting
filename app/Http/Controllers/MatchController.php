@@ -68,11 +68,13 @@ class MatchController extends Controller
         $homeLast5Analytics  = TeamAnalyticsCalculator::calculate($this->lastN($homePrevious, 5), $match->home_team_id, $matchStatistics);
         $homeLast10Analytics = TeamAnalyticsCalculator::calculate($this->lastN($homePrevious, 10), $match->home_team_id, $matchStatistics);
         $homeHomeAnalytics   = TeamAnalyticsCalculator::calculate($homeHomeOnly, $match->home_team_id, $matchStatistics);
+        $homeRecentHomeAnalytics = TeamAnalyticsCalculator::calculate($this->lastN($homeHomeOnly, 5), $match->home_team_id, $matchStatistics);
 
         $awaySeasonAnalytics = TeamAnalyticsCalculator::calculate($awayPrevious, $match->away_team_id, $matchStatistics);
         $awayLast5Analytics  = TeamAnalyticsCalculator::calculate($this->lastN($awayPrevious, 5), $match->away_team_id, $matchStatistics);
         $awayLast10Analytics = TeamAnalyticsCalculator::calculate($this->lastN($awayPrevious, 10), $match->away_team_id, $matchStatistics);
         $awayAwayAnalytics   = TeamAnalyticsCalculator::calculate($awayAwayOnly, $match->away_team_id, $matchStatistics);
+        $awayRecentAwayAnalytics = TeamAnalyticsCalculator::calculate($this->lastN($awayAwayOnly, 5), $match->away_team_id, $matchStatistics);
 
         $headToHead = HeadToHeadCalculator::calculate($h2hMatches, $match->home_team_id, $match->away_team_id);
 
@@ -139,6 +141,8 @@ class MatchController extends Controller
             'awayStarterContinuity'    => $awayStarterContinuity,
             'homeAbsenceImpact'        => $homeAbsenceImpact,
             'awayAbsenceImpact'        => $awayAbsenceImpact,
+            'homeRecentHomeAnalytics'  => $homeRecentHomeAnalytics,
+            'awayRecentAwayAnalytics'  => $awayRecentAwayAnalytics,
             'eloData'                  => $eloData,
             'strengthComparison'       => $strengthComparison,
         ]);

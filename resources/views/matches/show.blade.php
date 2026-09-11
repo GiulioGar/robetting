@@ -745,6 +745,109 @@
     </div>
 </div>
 
+{{-- E8. Prestazione recente --}}
+<div class="mt-4">
+    @php
+        $rtpDiff = fn(?float $v) => $v === null ? 'N/D' : ($v > 0 ? '+' : '') . number_format($v, 2);
+        $rtpFrac = fn(int $num, int $den) => $den > 0 ? $num . ' / ' . $den : 'N/D';
+        $rtpAvg  = fn(?float $v) => $v === null ? 'N/D' : number_format($v, 2);
+    @endphp
+    <h2 class="fs-5 fw-semibold mb-3">Prestazione recente <span class="text-muted small fw-normal">(analytics)</span></h2>
+    <ul class="nav nav-tabs mb-0" id="rtpTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active small" id="rtp-5-tab" data-bs-toggle="tab" data-bs-target="#rtp-5" type="button" role="tab">Ultime 5</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link small" id="rtp-10-tab" data-bs-toggle="tab" data-bs-target="#rtp-10" type="button" role="tab">Ultime 10</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link small" id="rtp-venue-tab" data-bs-toggle="tab" data-bs-target="#rtp-venue" type="button" role="tab">Sede del match</button>
+        </li>
+    </ul>
+    <div class="tab-content border border-top-0 rounded-bottom p-3" id="rtpTabContent">
+        @foreach([
+            ['id' => 'rtp-5',  'active' => true,  'hs' => $homeLast5Analytics['summary'],  'ht' => $homeLast5Analytics['technical'],  'as' => $awayLast5Analytics['summary'],  'at' => $awayLast5Analytics['technical']],
+            ['id' => 'rtp-10', 'active' => false, 'hs' => $homeLast10Analytics['summary'], 'ht' => $homeLast10Analytics['technical'], 'as' => $awayLast10Analytics['summary'], 'at' => $awayLast10Analytics['technical']],
+        ] as $rtpPanel)
+        <div class="tab-pane fade {{ $rtpPanel['active'] ? 'show active' : '' }}" id="{{ $rtpPanel['id'] }}" role="tabpanel">
+            @php $hs = $rtpPanel['hs']; $ht = $rtpPanel['ht']; $as = $rtpPanel['as']; $at = $rtpPanel['at']; @endphp
+            @if($hs['matches_played'] === 0 && $as['matches_played'] === 0)
+                <p class="text-muted mb-0">Dati precedenti non disponibili.</p>
+            @else
+            <div class="table-responsive">
+                <table class="table table-sm mb-0 text-center align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="text-start">&nbsp;</th>
+                            <th>{{ $match->homeTeam->name }} <span class="text-muted fw-normal small">({{ $hs['matches_played'] }} PG)</span></th>
+                            <th>{{ $match->awayTeam->name }} <span class="text-muted fw-normal small">({{ $as['matches_played'] }} PG)</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="table-light"><td class="text-start fw-semibold small text-muted" colspan="3">Gol</td></tr>
+                        <tr><td class="text-start text-muted">Media GF</td><td>{{ $rtpAvg($hs['avg_goals_for']) }}</td><td>{{ $rtpAvg($as['avg_goals_for']) }}</td></tr>
+                        <tr><td class="text-start text-muted">Media GS</td><td>{{ $rtpAvg($hs['avg_goals_against']) }}</td><td>{{ $rtpAvg($as['avg_goals_against']) }}</td></tr>
+                        <tr><td class="text-start text-muted">Diff. reti/partita</td><td>{{ $rtpDiff($hs['goal_diff_per_match']) }}</td><td>{{ $rtpDiff($as['goal_diff_per_match']) }}</td></tr>
+                        <tr class="table-light"><td class="text-start fw-semibold small text-muted" colspan="3">Tiri</td></tr>
+                        <tr><td class="text-start text-muted">Media tiri fatti</td><td>{{ $rtpAvg($ht['avg_shots_for']) }}</td><td>{{ $rtpAvg($at['avg_shots_for']) }}</td></tr>
+                        <tr><td class="text-start text-muted">Media tiri subiti</td><td>{{ $rtpAvg($ht['avg_shots_against']) }}</td><td>{{ $rtpAvg($at['avg_shots_against']) }}</td></tr>
+                        <tr><td class="text-start text-muted">Diff. tiri/partita</td><td>{{ $rtpDiff($ht['avg_shot_diff']) }}</td><td>{{ $rtpDiff($at['avg_shot_diff']) }}</td></tr>
+                        <tr class="table-light"><td class="text-start fw-semibold small text-muted" colspan="3">Tiri in porta</td></tr>
+                        <tr><td class="text-start text-muted">Media TiP fatti</td><td>{{ $rtpAvg($ht['avg_shots_on_target_for']) }}</td><td>{{ $rtpAvg($at['avg_shots_on_target_for']) }}</td></tr>
+                        <tr><td class="text-start text-muted">Media TiP subiti</td><td>{{ $rtpAvg($ht['avg_shots_on_target_against']) }}</td><td>{{ $rtpAvg($at['avg_shots_on_target_against']) }}</td></tr>
+                        <tr><td class="text-start text-muted">Diff. TiP/partita</td><td>{{ $rtpDiff($ht['avg_shots_on_target_diff']) }}</td><td>{{ $rtpDiff($at['avg_shots_on_target_diff']) }}</td></tr>
+                        <tr class="table-light"><td class="text-start fw-semibold small text-muted" colspan="3">Esiti</td></tr>
+                        <tr><td class="text-start text-muted">Clean sheet</td><td>{{ $rtpFrac($hs['clean_sheets'], $hs['matches_played']) }}</td><td>{{ $rtpFrac($as['clean_sheets'], $as['matches_played']) }}</td></tr>
+                        <tr><td class="text-start text-muted">Zero gol segnati</td><td>{{ $rtpFrac($hs['failed_to_score'], $hs['matches_played']) }}</td><td>{{ $rtpFrac($as['failed_to_score'], $as['matches_played']) }}</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            @endif
+        </div>
+        @endforeach
+        <div class="tab-pane fade" id="rtp-venue" role="tabpanel">
+            @php
+                $hVs = $homeRecentHomeAnalytics['summary'];
+                $hVt = $homeRecentHomeAnalytics['technical'];
+                $aVs = $awayRecentAwayAnalytics['summary'];
+                $aVt = $awayRecentAwayAnalytics['technical'];
+            @endphp
+            @if($hVs['matches_played'] === 0 && $aVs['matches_played'] === 0)
+                <p class="text-muted mb-0">Dati precedenti non disponibili.</p>
+            @else
+            <div class="table-responsive">
+                <table class="table table-sm mb-0 text-center align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="text-start">&nbsp;</th>
+                            <th>{{ $match->homeTeam->name }} <span class="text-muted fw-normal small">({{ $hVs['matches_played'] }} in casa)</span></th>
+                            <th>{{ $match->awayTeam->name }} <span class="text-muted fw-normal small">({{ $aVs['matches_played'] }} in trasf.)</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="table-light"><td class="text-start fw-semibold small text-muted" colspan="3">Gol</td></tr>
+                        <tr><td class="text-start text-muted">Media GF</td><td>{{ $rtpAvg($hVs['avg_goals_for']) }}</td><td>{{ $rtpAvg($aVs['avg_goals_for']) }}</td></tr>
+                        <tr><td class="text-start text-muted">Media GS</td><td>{{ $rtpAvg($hVs['avg_goals_against']) }}</td><td>{{ $rtpAvg($aVs['avg_goals_against']) }}</td></tr>
+                        <tr><td class="text-start text-muted">Diff. reti/partita</td><td>{{ $rtpDiff($hVs['goal_diff_per_match']) }}</td><td>{{ $rtpDiff($aVs['goal_diff_per_match']) }}</td></tr>
+                        <tr class="table-light"><td class="text-start fw-semibold small text-muted" colspan="3">Tiri</td></tr>
+                        <tr><td class="text-start text-muted">Media tiri fatti</td><td>{{ $rtpAvg($hVt['avg_shots_for']) }}</td><td>{{ $rtpAvg($aVt['avg_shots_for']) }}</td></tr>
+                        <tr><td class="text-start text-muted">Media tiri subiti</td><td>{{ $rtpAvg($hVt['avg_shots_against']) }}</td><td>{{ $rtpAvg($aVt['avg_shots_against']) }}</td></tr>
+                        <tr><td class="text-start text-muted">Diff. tiri/partita</td><td>{{ $rtpDiff($hVt['avg_shot_diff']) }}</td><td>{{ $rtpDiff($aVt['avg_shot_diff']) }}</td></tr>
+                        <tr class="table-light"><td class="text-start fw-semibold small text-muted" colspan="3">Tiri in porta</td></tr>
+                        <tr><td class="text-start text-muted">Media TiP fatti</td><td>{{ $rtpAvg($hVt['avg_shots_on_target_for']) }}</td><td>{{ $rtpAvg($aVt['avg_shots_on_target_for']) }}</td></tr>
+                        <tr><td class="text-start text-muted">Media TiP subiti</td><td>{{ $rtpAvg($hVt['avg_shots_on_target_against']) }}</td><td>{{ $rtpAvg($aVt['avg_shots_on_target_against']) }}</td></tr>
+                        <tr><td class="text-start text-muted">Diff. TiP/partita</td><td>{{ $rtpDiff($hVt['avg_shots_on_target_diff']) }}</td><td>{{ $rtpDiff($aVt['avg_shots_on_target_diff']) }}</td></tr>
+                        <tr class="table-light"><td class="text-start fw-semibold small text-muted" colspan="3">Esiti</td></tr>
+                        <tr><td class="text-start text-muted">Clean sheet</td><td>{{ $rtpFrac($hVs['clean_sheets'], $hVs['matches_played']) }}</td><td>{{ $rtpFrac($aVs['clean_sheets'], $aVs['matches_played']) }}</td></tr>
+                        <tr><td class="text-start text-muted">Zero gol segnati</td><td>{{ $rtpFrac($hVs['failed_to_score'], $hVs['matches_played']) }}</td><td>{{ $rtpFrac($aVs['failed_to_score'], $aVs['matches_played']) }}</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            @endif
+        </div>
+    </div>
+</div>
+
 @if($match->status !== 'finished')
 {{-- E. Forma prima del match --}}
 <div class="mt-4">

@@ -82,7 +82,7 @@ class TeamAnalyticsCalculator
 
         return [
             'team_id'       => $teamId,
-            'summary'       => self::summary($teamMatches, $teamId),
+            'summary'       => self::summary($teamMatches, $finished, $teamId),
             'form'          => self::form($finished, $teamId),
             'technical'     => $technical['technical'],
             'coverage'      => $technical['coverage'],
@@ -95,10 +95,11 @@ class TeamAnalyticsCalculator
      *     matches_played: int, wins: int, draws: int, losses: int, points: int,
      *     goals_for: int, goals_against: int, goal_difference: int,
      *     avg_goals_for: ?float, avg_goals_against: ?float, avg_total_goals: ?float,
-     *     win_percentage: ?float, draw_percentage: ?float, loss_percentage: ?float
+     *     win_percentage: ?float, draw_percentage: ?float, loss_percentage: ?float,
+     *     clean_sheets: int, failed_to_score: int, goal_diff_per_match: ?float
      * }
      */
-    private static function summary(Collection $teamMatches, int $teamId): array
+    private static function summary(Collection $teamMatches, Collection $finished, int $teamId): array
     {
         $row = collect(LeagueStandingsCalculator::calculate($teamMatches))
             ->firstWhere('team_id', $teamId);
@@ -111,21 +112,38 @@ class TeamAnalyticsCalculator
         $gf     = $row['goals_for'] ?? 0;
         $ga     = $row['goals_against'] ?? 0;
 
+        $cleanSheets   = 0;
+        $failedToScore = 0;
+        foreach ($finished as $match) {
+            $isHome   = (int) $match->home_team_id === $teamId;
+            $scored   = $isHome ? (int) $match->home_score_ft : (int) $match->away_score_ft;
+            $conceded = $isHome ? (int) $match->away_score_ft : (int) $match->home_score_ft;
+            if ($conceded === 0) {
+                $cleanSheets++;
+            }
+            if ($scored === 0) {
+                $failedToScore++;
+            }
+        }
+
         return [
-            'matches_played'    => $played,
-            'wins'              => $wins,
-            'draws'             => $draws,
-            'losses'            => $losses,
-            'points'            => $points,
-            'goals_for'         => $gf,
-            'goals_against'     => $ga,
-            'goal_difference'   => $gf - $ga,
-            'avg_goals_for'     => $played > 0 ? round($gf / $played, 2) : null,
-            'avg_goals_against' => $played > 0 ? round($ga / $played, 2) : null,
-            'avg_total_goals'   => $played > 0 ? round(($gf + $ga) / $played, 2) : null,
-            'win_percentage'    => $played > 0 ? round($wins / $played * 100, 2) : null,
-            'draw_percentage'   => $played > 0 ? round($draws / $played * 100, 2) : null,
-            'loss_percentage'   => $played > 0 ? round($losses / $played * 100, 2) : null,
+            'matches_played'      => $played,
+            'wins'                => $wins,
+            'draws'               => $draws,
+            'losses'              => $losses,
+            'points'              => $points,
+            'goals_for'           => $gf,
+            'goals_against'       => $ga,
+            'goal_difference'     => $gf - $ga,
+            'avg_goals_for'       => $played > 0 ? round($gf / $played, 2) : null,
+            'avg_goals_against'   => $played > 0 ? round($ga / $played, 2) : null,
+            'avg_total_goals'     => $played > 0 ? round(($gf + $ga) / $played, 2) : null,
+            'win_percentage'      => $played > 0 ? round($wins / $played * 100, 2) : null,
+            'draw_percentage'     => $played > 0 ? round($draws / $played * 100, 2) : null,
+            'loss_percentage'     => $played > 0 ? round($losses / $played * 100, 2) : null,
+            'clean_sheets'        => $cleanSheets,
+            'failed_to_score'     => $failedToScore,
+            'goal_diff_per_match' => $played > 0 ? round(($gf - $ga) / $played, 2) : null,
         ];
     }
 
@@ -215,6 +233,14 @@ class TeamAnalyticsCalculator
             $technical["avg_{$metric}"] = $count > 0 ? round($sums[$metric]['sum'] / $count, 2) : null;
             $coverage[$metric] = self::coverageRow($count, $totalFinished);
         }
+
+        $technical['avg_shot_diff'] = ($technical['avg_shots_for'] !== null && $technical['avg_shots_against'] !== null)
+            ? round($technical['avg_shots_for'] - $technical['avg_shots_against'], 2)
+            : null;
+
+        $technical['avg_shots_on_target_diff'] = ($technical['avg_shots_on_target_for'] !== null && $technical['avg_shots_on_target_against'] !== null)
+            ? round($technical['avg_shots_on_target_for'] - $technical['avg_shots_on_target_against'], 2)
+            : null;
 
         return ['technical' => $technical, 'coverage' => $coverage];
     }
