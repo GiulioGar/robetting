@@ -13,6 +13,7 @@ use App\Services\Analytics\TeamAnalyticsCalculator;
 use App\Services\Analytics\TeamScheduleLoadCalculator;
 use App\Services\Analytics\TeamAbsenceImpactCalculator;
 use App\Services\Analytics\TeamStarterContinuityCalculator;
+use App\Services\Analytics\TeamOpponentAdjustedPerformanceCalculator;
 use App\Services\Analytics\TeamOpponentQualityCalculator;
 use App\Services\Analytics\TeamStrengthComparisonCalculator;
 use App\Services\Matches\PreferredMatchStatisticResolver;
@@ -127,8 +128,13 @@ class MatchController extends Controller
         ];
 
         // E9 — Opponent Quality: Elo (pre-match) + Structural (per-match as-of).
+        // E10 — Opponent-Adjusted Performance: uses the Elo context from E9.
         $rawTransfermarktId = DataSource::where('slug', 'transfermarkt')->value('id');
         $transfermarktDsId  = $rawTransfermarktId !== null ? (int) $rawTransfermarktId : null;
+
+        // League team IDs for this season — used by E9 to compute per-match
+        // league_mean_elo (required by E10).  Loaded once, shared by both teams.
+        $leagueTeamIds = $match->season->teams()->pluck('teams.id');
 
         $homeOpponentQuality = TeamOpponentQualityCalculator::calculate(
             (int) $match->home_team_id,
@@ -136,7 +142,8 @@ class MatchController extends Controller
             $homeLast10,
             $homeLast5Home,
             $transfermarktDsId,
-            $match->season
+            $match->season,
+            $leagueTeamIds
         );
         $awayOpponentQuality = TeamOpponentQualityCalculator::calculate(
             (int) $match->away_team_id,
@@ -144,7 +151,29 @@ class MatchController extends Controller
             $awayLast10,
             $awayLast5Away,
             $transfermarktDsId,
-            $match->season
+            $match->season,
+            $leagueTeamIds
+        );
+
+        // E10 — extract Elo context produced by E9 and compute adjusted performance.
+        $homeEloContext = $homeOpponentQuality['_elo_context'] ?? [];
+        $awayEloContext = $awayOpponentQuality['_elo_context'] ?? [];
+
+        $homeAdjustedPerformance = TeamOpponentAdjustedPerformanceCalculator::calculate(
+            (int) $match->home_team_id,
+            $homeLast5,
+            $homeLast10,
+            $homeLast5Home,
+            $homeEloContext,
+            $matchStatistics
+        );
+        $awayAdjustedPerformance = TeamOpponentAdjustedPerformanceCalculator::calculate(
+            (int) $match->away_team_id,
+            $awayLast5,
+            $awayLast10,
+            $awayLast5Away,
+            $awayEloContext,
+            $matchStatistics
         );
 
         return view('matches.show', [
@@ -176,8 +205,10 @@ class MatchController extends Controller
             'awayRecentAwayAnalytics'  => $awayRecentAwayAnalytics,
             'eloData'                  => $eloData,
             'strengthComparison'       => $strengthComparison,
-            'homeOpponentQuality'      => $homeOpponentQuality,
-            'awayOpponentQuality'      => $awayOpponentQuality,
+            'homeOpponentQuality'         => $homeOpponentQuality,
+            'awayOpponentQuality'         => $awayOpponentQuality,
+            'homeAdjustedPerformance'     => $homeAdjustedPerformance,
+            'awayAdjustedPerformance'     => $awayAdjustedPerformance,
         ]);
     }
 

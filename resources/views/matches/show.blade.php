@@ -971,6 +971,111 @@
     </div>
 </div>
 
+{{-- E10. Performance corretta per qualità avversari --}}
+<div class="mt-4" id="adjusted-performance-section">
+    @php
+        $apFmt = fn(?float $v) => $v === null ? 'N/D' : ($v > 0 ? '+' : '') . number_format($v, 2);
+        $apCov = fn(int $n, int $total) => $total === 0 ? 'N/D' : $n . ' / ' . $total;
+    @endphp
+    <h2 class="fs-5 fw-semibold mb-3">Performance corretta per qualità avversari <span class="text-muted small fw-normal">(analytics)</span></h2>
+    <ul class="nav nav-tabs mb-0" id="apTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active small" id="ap-5-tab" data-bs-toggle="tab" data-bs-target="#ap-5" type="button" role="tab">Ultime 5</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link small" id="ap-10-tab" data-bs-toggle="tab" data-bs-target="#ap-10" type="button" role="tab">Ultime 10</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link small" id="ap-venue-tab" data-bs-toggle="tab" data-bs-target="#ap-venue" type="button" role="tab">Sede del match</button>
+        </li>
+    </ul>
+    <div class="tab-content border border-top-0 rounded-bottom p-3" id="apTabContent">
+
+        @foreach([
+            ['id' => 'ap-5',  'active' => true,  'hap' => $homeAdjustedPerformance['last5'],  'aap' => $awayAdjustedPerformance['last5']],
+            ['id' => 'ap-10', 'active' => false, 'hap' => $homeAdjustedPerformance['last10'], 'aap' => $awayAdjustedPerformance['last10']],
+        ] as $apPanel)
+        @php $hap = $apPanel['hap']; $aap = $apPanel['aap']; @endphp
+        <div class="tab-pane fade {{ $apPanel['active'] ? 'show active' : '' }}" id="{{ $apPanel['id'] }}" role="tabpanel">
+            @if($hap['matches_considered'] === 0 && $aap['matches_considered'] === 0)
+                <p class="text-muted mb-0">Dati precedenti non disponibili.</p>
+            @else
+            <div class="table-responsive">
+                <table class="table table-sm mb-0 text-center align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="text-start">&nbsp;</th>
+                            <th>{{ $match->homeTeam->name }} <span class="text-muted fw-normal small">({{ $hap['matches_considered'] }} PG)</span></th>
+                            <th>{{ $match->awayTeam->name }} <span class="text-muted fw-normal small">({{ $aap['matches_considered'] }} PG)</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="table-light"><td class="text-start fw-semibold small text-muted" colspan="3">Differenziale gol</td></tr>
+                        <tr><td class="text-start text-muted ps-3">· grezzo</td><td>{{ $apFmt($hap['goal_diff_raw_avg']) }}</td><td>{{ $apFmt($aap['goal_diff_raw_avg']) }}</td></tr>
+                        <tr><td class="text-start text-muted ps-3">· corretto</td><td>{{ $apFmt($hap['goal_diff_adjusted_avg']) }}</td><td>{{ $apFmt($aap['goal_diff_adjusted_avg']) }}</td></tr>
+                        <tr><td class="text-start text-muted ps-3">· correzione media</td><td>{{ $apFmt($hap['goal_diff_avg_adjustment']) }}</td><td>{{ $apFmt($aap['goal_diff_avg_adjustment']) }}</td></tr>
+                        <tr class="table-light"><td class="text-start fw-semibold small text-muted" colspan="3">Differenziale tiri</td></tr>
+                        <tr><td class="text-start text-muted ps-3">· grezzo</td><td>{{ $apFmt($hap['shot_diff_raw_avg']) }}</td><td>{{ $apFmt($aap['shot_diff_raw_avg']) }}</td></tr>
+                        <tr><td class="text-start text-muted ps-3">· corretto</td><td>{{ $apFmt($hap['shot_diff_adjusted_avg']) }}</td><td>{{ $apFmt($aap['shot_diff_adjusted_avg']) }}</td></tr>
+                        <tr><td class="text-start text-muted ps-3">· correzione media</td><td>{{ $apFmt($hap['shot_diff_avg_adjustment']) }}</td><td>{{ $apFmt($aap['shot_diff_avg_adjustment']) }}</td></tr>
+                        <tr class="table-light"><td class="text-start fw-semibold small text-muted" colspan="3">Differenziale tiri in porta</td></tr>
+                        <tr><td class="text-start text-muted ps-3">· grezzo</td><td>{{ $apFmt($hap['sot_diff_raw_avg']) }}</td><td>{{ $apFmt($aap['sot_diff_raw_avg']) }}</td></tr>
+                        <tr><td class="text-start text-muted ps-3">· corretto</td><td>{{ $apFmt($hap['sot_diff_adjusted_avg']) }}</td><td>{{ $apFmt($aap['sot_diff_adjusted_avg']) }}</td></tr>
+                        <tr><td class="text-start text-muted ps-3">· correzione media</td><td>{{ $apFmt($hap['sot_diff_avg_adjustment']) }}</td><td>{{ $apFmt($aap['sot_diff_avg_adjustment']) }}</td></tr>
+                        <tr class="table-light"><td class="text-start fw-semibold small text-muted" colspan="3">Copertura statistiche</td></tr>
+                        <tr><td class="text-start text-muted ps-3">Copertura gol</td><td>{{ $apCov($hap['goal_diff_coverage'], $hap['matches_considered']) }}</td><td>{{ $apCov($aap['goal_diff_coverage'], $aap['matches_considered']) }}</td></tr>
+                        <tr><td class="text-start text-muted ps-3">Copertura tiri</td><td>{{ $apCov($hap['shot_diff_coverage'], $hap['matches_considered']) }}</td><td>{{ $apCov($aap['shot_diff_coverage'], $aap['matches_considered']) }}</td></tr>
+                        <tr><td class="text-start text-muted ps-3">Copertura SoT</td><td>{{ $apCov($hap['sot_diff_coverage'], $hap['matches_considered']) }}</td><td>{{ $apCov($aap['sot_diff_coverage'], $aap['matches_considered']) }}</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            @endif
+        </div>
+        @endforeach
+
+        <div class="tab-pane fade" id="ap-venue" role="tabpanel">
+            @php
+                $hapV = $homeAdjustedPerformance['venue'];
+                $aapV = $awayAdjustedPerformance['venue'];
+            @endphp
+            @if($hapV['matches_considered'] === 0 && $aapV['matches_considered'] === 0)
+                <p class="text-muted mb-0">Dati precedenti non disponibili.</p>
+            @else
+            <div class="table-responsive">
+                <table class="table table-sm mb-0 text-center align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="text-start">&nbsp;</th>
+                            <th>{{ $match->homeTeam->name }} <span class="text-muted fw-normal small">({{ $hapV['matches_considered'] }} in casa)</span></th>
+                            <th>{{ $match->awayTeam->name }} <span class="text-muted fw-normal small">({{ $aapV['matches_considered'] }} in trasferta)</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="table-light"><td class="text-start fw-semibold small text-muted" colspan="3">Differenziale gol</td></tr>
+                        <tr><td class="text-start text-muted ps-3">· grezzo</td><td>{{ $apFmt($hapV['goal_diff_raw_avg']) }}</td><td>{{ $apFmt($aapV['goal_diff_raw_avg']) }}</td></tr>
+                        <tr><td class="text-start text-muted ps-3">· corretto</td><td>{{ $apFmt($hapV['goal_diff_adjusted_avg']) }}</td><td>{{ $apFmt($aapV['goal_diff_adjusted_avg']) }}</td></tr>
+                        <tr><td class="text-start text-muted ps-3">· correzione media</td><td>{{ $apFmt($hapV['goal_diff_avg_adjustment']) }}</td><td>{{ $apFmt($aapV['goal_diff_avg_adjustment']) }}</td></tr>
+                        <tr class="table-light"><td class="text-start fw-semibold small text-muted" colspan="3">Differenziale tiri</td></tr>
+                        <tr><td class="text-start text-muted ps-3">· grezzo</td><td>{{ $apFmt($hapV['shot_diff_raw_avg']) }}</td><td>{{ $apFmt($aapV['shot_diff_raw_avg']) }}</td></tr>
+                        <tr><td class="text-start text-muted ps-3">· corretto</td><td>{{ $apFmt($hapV['shot_diff_adjusted_avg']) }}</td><td>{{ $apFmt($aapV['shot_diff_adjusted_avg']) }}</td></tr>
+                        <tr><td class="text-start text-muted ps-3">· correzione media</td><td>{{ $apFmt($hapV['shot_diff_avg_adjustment']) }}</td><td>{{ $apFmt($aapV['shot_diff_avg_adjustment']) }}</td></tr>
+                        <tr class="table-light"><td class="text-start fw-semibold small text-muted" colspan="3">Differenziale tiri in porta</td></tr>
+                        <tr><td class="text-start text-muted ps-3">· grezzo</td><td>{{ $apFmt($hapV['sot_diff_raw_avg']) }}</td><td>{{ $apFmt($aapV['sot_diff_raw_avg']) }}</td></tr>
+                        <tr><td class="text-start text-muted ps-3">· corretto</td><td>{{ $apFmt($hapV['sot_diff_adjusted_avg']) }}</td><td>{{ $apFmt($aapV['sot_diff_adjusted_avg']) }}</td></tr>
+                        <tr><td class="text-start text-muted ps-3">· correzione media</td><td>{{ $apFmt($hapV['sot_diff_avg_adjustment']) }}</td><td>{{ $apFmt($aapV['sot_diff_avg_adjustment']) }}</td></tr>
+                        <tr class="table-light"><td class="text-start fw-semibold small text-muted" colspan="3">Copertura statistiche</td></tr>
+                        <tr><td class="text-start text-muted ps-3">Copertura gol</td><td>{{ $apCov($hapV['goal_diff_coverage'], $hapV['matches_considered']) }}</td><td>{{ $apCov($aapV['goal_diff_coverage'], $aapV['matches_considered']) }}</td></tr>
+                        <tr><td class="text-start text-muted ps-3">Copertura tiri</td><td>{{ $apCov($hapV['shot_diff_coverage'], $hapV['matches_considered']) }}</td><td>{{ $apCov($aapV['shot_diff_coverage'], $aapV['matches_considered']) }}</td></tr>
+                        <tr><td class="text-start text-muted ps-3">Copertura SoT</td><td>{{ $apCov($hapV['sot_diff_coverage'], $hapV['matches_considered']) }}</td><td>{{ $apCov($aapV['sot_diff_coverage'], $aapV['matches_considered']) }}</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            @endif
+        </div>
+
+    </div>
+</div>
+
 @if($match->status !== 'finished')
 {{-- E. Forma prima del match --}}
 <div class="mt-4">

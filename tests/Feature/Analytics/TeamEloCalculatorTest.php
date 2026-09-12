@@ -663,6 +663,164 @@ class TeamEloCalculatorTest extends TestCase
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // [Y] calculateRatingsBeforeMatchesWithLeagueMean: league_mean key present,
+    //     fresh teams → INITIAL_ELO
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function test_with_league_mean_fresh_teams_returns_initial_elo_mean(): void
+    {
+        $target = $this->makeMatch(
+            Carbon::parse(self::TARGET),
+            $this->teamA, $this->teamB, 0, 0, 'scheduled'
+        );
+
+        $leagueTeamIds = collect([$this->teamA->id, $this->teamB->id]);
+        $result = TeamEloCalculator::calculateRatingsBeforeMatchesWithLeagueMean(
+            collect([$target]),
+            $leagueTeamIds
+        );
+
+        $this->assertArrayHasKey('league_mean_elo', $result[$target->id]);
+        $this->assertEqualsWithDelta(
+            TeamEloCalculator::INITIAL_ELO,
+            $result[$target->id]['league_mean_elo'],
+            self::DELTA
+        );
+        // home_elo / away_elo still present and correct
+        $this->assertEqualsWithDelta(TeamEloCalculator::INITIAL_ELO, $result[$target->id]['home_elo'], self::DELTA);
+        $this->assertEqualsWithDelta(TeamEloCalculator::INITIAL_ELO, $result[$target->id]['away_elo'], self::DELTA);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // [Z] league_mean_elo reflects actual ratings state:
+    //     an external team's victory over a league team lowers the league mean.
+    //
+    //   League = [A, B].  C is external (not in league).
+    //   Prior: C (home) beats A (away) → A falls below INITIAL_ELO.
+    //   Target: A vs B.  Before target: A_elo < 1500, B_elo = 1500.
+    //   Expected league_mean = (A_elo + 1500) / 2 < 1500.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function test_league_mean_reflects_actual_ratings(): void
+    {
+        $teamC = Team::create(['name' => 'TeamC', 'type' => 'club', 'is_active' => true]);
+
+        // C (home) beats A (away) — A is a league member, C is not.
+        $this->makeMatch(Carbon::parse(self::TARGET)->subDays(7), $teamC, $this->teamA, 2, 0);
+
+        // Target match: A vs B.
+        $target = $this->makeMatch(
+            Carbon::parse(self::TARGET),
+            $this->teamA, $this->teamB, 0, 0, 'scheduled'
+        );
+
+        $leagueTeamIds = collect([$this->teamA->id, $this->teamB->id]);
+        $result = TeamEloCalculator::calculateRatingsBeforeMatchesWithLeagueMean(
+            collect([$target]),
+            $leagueTeamIds
+        );
+
+        // Compute expected values manually.
+        $prior     = TeamEloCalculator::calculateRatingsBefore(Carbon::parse(self::TARGET));
+        $aElo      = $prior[$this->teamA->id] ?? TeamEloCalculator::INITIAL_ELO;
+        $bElo      = TeamEloCalculator::INITIAL_ELO; // B has no history
+
+        $expectedMean = ($aElo + $bElo) / 2.0;
+
+        $this->assertEqualsWithDelta($expectedMean, $result[$target->id]['league_mean_elo'], self::DELTA);
+        // A lost → A_elo < INITIAL_ELO → mean < INITIAL_ELO
+        $this->assertLessThan(TeamEloCalculator::INITIAL_ELO, $result[$target->id]['league_mean_elo']);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // [AA] league_mean_elo is computed per-match from its own snapshot:
+    //      two target matches in sequence have different league means because
+    //      the state evolves between them.
+    //
+    //   League = [A, B].  C is external.
+    //   day−15: C beats A → A falls.
+    //   M1 at day−10: league mean = (A_fallen + B_still_1500) / 2  < 1500
+    //   day−6:  C beats B → B falls.
+    //   M2 at day−3: league mean = (A_fallen + B_fallen) / 2  < M1_mean
+    //
+    //   C beats B happens AFTER M1 but BEFORE M2, so M2 captures the extra drop.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function test_league_mean_varies_per_match_timestamp(): void
+    {
+        $teamC = Team::create(['name' => 'TeamC', 'type' => 'club', 'is_active' => true]);
+
+        // C beats A at day-15 (before both target matches).
+        $this->makeMatch(Carbon::parse(self::TARGET)->subDays(15), $teamC, $this->teamA, 1, 0);
+
+        $m1 = $this->makeMatch(
+            Carbon::parse(self::TARGET)->subDays(10),
+            $this->teamA, $this->teamB, 0, 0, 'scheduled'
+        );
+
+        // C beats B at day-6: AFTER M1, BEFORE M2.
+        $this->makeMatch(Carbon::parse(self::TARGET)->subDays(6), $teamC, $this->teamB, 1, 0);
+
+        $m2 = $this->makeMatch(
+            Carbon::parse(self::TARGET)->subDays(3),
+            $this->teamA, $this->teamB, 0, 0, 'scheduled'
+        );
+
+        $leagueTeamIds = collect([$this->teamA->id, $this->teamB->id]);
+        $result = TeamEloCalculator::calculateRatingsBeforeMatchesWithLeagueMean(
+            collect([$m1, $m2]),
+            $leagueTeamIds
+        );
+
+        $mean1 = $result[$m1->id]['league_mean_elo'];
+        $mean2 = $result[$m2->id]['league_mean_elo'];
+
+        // Before M2, B also lost to C → M2 mean is lower than M1 mean.
+        $this->assertLessThan($mean1, $mean2, 'M2 mean should be less than M1 mean');
+
+        // Both are below INITIAL_ELO: A fell before M1, B also fell before M2.
+        $this->assertLessThan(TeamEloCalculator::INITIAL_ELO, $mean1);
+        $this->assertLessThan(TeamEloCalculator::INITIAL_ELO, $mean2);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // [AB] calculateRatingsBeforeMatchesWithLeagueMean: only leagueTeamIds
+    //      contribute to the mean — external teams' Elo is irrelevant.
+    //
+    //   C and D (external) exchange Elo between themselves.
+    //   League = [A, B] — both fresh with no history.
+    //   Expected league_mean = INITIAL_ELO regardless of C/D activity.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function test_league_mean_ignores_teams_outside_league(): void
+    {
+        $teamC = Team::create(['name' => 'TeamC', 'type' => 'club', 'is_active' => true]);
+        $teamD = Team::create(['name' => 'TeamD', 'type' => 'club', 'is_active' => true]);
+
+        // C and D have an active Elo exchange — unrelated to the league.
+        $this->makeMatch(Carbon::parse(self::TARGET)->subDays(14), $teamC, $teamD, 3, 0);
+        $this->makeMatch(Carbon::parse(self::TARGET)->subDays(7),  $teamD, $teamC, 2, 1);
+
+        $target = $this->makeMatch(
+            Carbon::parse(self::TARGET),
+            $this->teamA, $this->teamB, 0, 0, 'scheduled'
+        );
+
+        // League contains only A and B — both have zero history.
+        $leagueTeamIds = collect([$this->teamA->id, $this->teamB->id]);
+        $result = TeamEloCalculator::calculateRatingsBeforeMatchesWithLeagueMean(
+            collect([$target]),
+            $leagueTeamIds
+        );
+
+        $this->assertEqualsWithDelta(
+            TeamEloCalculator::INITIAL_ELO,
+            $result[$target->id]['league_mean_elo'],
+            self::DELTA
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Helpers
     // ─────────────────────────────────────────────────────────────────────────
 

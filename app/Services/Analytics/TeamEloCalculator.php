@@ -189,6 +189,55 @@ class TeamEloCalculator
      */
     public static function calculateRatingsBeforeMatches(Collection $matches): array
     {
+        return self::replayAndCapture($matches, null);
+    }
+
+    /**
+     * Extended batch variant: identical to calculateRatingsBeforeMatches() but
+     * also computes the mean Elo of all $leagueTeamIds immediately before each
+     * match's kickoff.  Teams in $leagueTeamIds with no prior history contribute
+     * INITIAL_ELO to the mean (same fallback used everywhere else in this class).
+     *
+     * Use this when E9/E10 need opponent_elo_delta = opponent_elo - league_mean.
+     *
+     * ── Complexity ────────────────────────────────────────────────────────────
+     *
+     *   Same DB query and replay as calculateRatingsBeforeMatches.
+     *   Extra cost in the result mapping step: O(L × K) where L = league team
+     *   count (18–20) and K = distinct target cutoff timestamps (≤ window size).
+     *   For typical usage: ≤ 20 × 15 = 300 PHP array lookups — negligible.
+     *
+     * @param  Collection  $matches        FootballMatch instances.
+     * @param  Collection  $leagueTeamIds  Collection<int> of team IDs in the season
+     *                                     (e.g. $season->teams()->pluck('id')).
+     * @return array<int, array{home_elo: float, away_elo: float, league_mean_elo: float}>
+     */
+    public static function calculateRatingsBeforeMatchesWithLeagueMean(
+        Collection $matches,
+        Collection $leagueTeamIds
+    ): array {
+        return self::replayAndCapture($matches, $leagueTeamIds);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Private implementation
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Shared implementation for the two public batch methods.
+     *
+     * When $leagueTeamIds is null the return shape is
+     *   [match_id => {home_elo, away_elo}]
+     * When $leagueTeamIds is non-null the return shape is
+     *   [match_id => {home_elo, away_elo, league_mean_elo}]
+     *
+     * The Elo formula, constants, and capture semantics live here ONLY.
+     * Neither public method duplicates any part of the update logic.
+     */
+    private static function replayAndCapture(
+        Collection  $matches,
+        ?Collection $leagueTeamIds
+    ): array {
         if ($matches->isEmpty()) {
             return [];
         }
@@ -206,7 +255,11 @@ class TeamEloCalculator
         if (empty($targetTs)) {
             $result = [];
             foreach ($matches as $m) {
-                $result[$m->id] = ['home_elo' => self::INITIAL_ELO, 'away_elo' => self::INITIAL_ELO];
+                $row = ['home_elo' => self::INITIAL_ELO, 'away_elo' => self::INITIAL_ELO];
+                if ($leagueTeamIds !== null) {
+                    $row['league_mean_elo'] = self::computeLeagueMean([], $leagueTeamIds);
+                }
+                $result[$m->id] = $row;
             }
             return $result;
         }
@@ -242,7 +295,8 @@ class TeamEloCalculator
                 $capturedIdx++;
             }
 
-            // Apply Elo update — same formula as calculateRatingsBefore.
+            // Apply Elo update — single source of truth for all Elo constants
+            // and formulae.  No duplication outside this method.
             $homeId  = (int) $hm->home_team_id;
             $awayId  = (int) $hm->away_team_id;
             $homeElo = $ratings[$homeId] ?? self::INITIAL_ELO;
@@ -273,20 +327,60 @@ class TeamEloCalculator
         }
 
         // Map results back to match ids.
-        $result = [];
+        // League mean is computed at most once per distinct timestamp (cache).
+        $leagueMeanCache = []; // [timestamp => float]
+        $result          = [];
+
         foreach ($matches as $m) {
             if ($m->kickoff_at === null) {
-                $result[$m->id] = ['home_elo' => self::INITIAL_ELO, 'away_elo' => self::INITIAL_ELO];
+                $row = ['home_elo' => self::INITIAL_ELO, 'away_elo' => self::INITIAL_ELO];
+                if ($leagueTeamIds !== null) {
+                    $row['league_mean_elo'] = self::computeLeagueMean([], $leagueTeamIds);
+                }
+                $result[$m->id] = $row;
                 continue;
             }
+
             $ts    = $m->kickoff_at->getTimestamp();
             $state = $snapshots[$ts] ?? [];
-            $result[$m->id] = [
+
+            $row = [
                 'home_elo' => $state[(int) $m->home_team_id] ?? self::INITIAL_ELO,
                 'away_elo' => $state[(int) $m->away_team_id] ?? self::INITIAL_ELO,
             ];
+
+            if ($leagueTeamIds !== null) {
+                if (!array_key_exists($ts, $leagueMeanCache)) {
+                    $leagueMeanCache[$ts] = self::computeLeagueMean($state, $leagueTeamIds);
+                }
+                $row['league_mean_elo'] = $leagueMeanCache[$ts];
+            }
+
+            $result[$m->id] = $row;
         }
 
         return $result;
+    }
+
+    /**
+     * Mean Elo of all $teamIds against a ratings snapshot.
+     * Teams absent from $ratings contribute INITIAL_ELO to the mean.
+     * Returns INITIAL_ELO when $teamIds is empty.
+     *
+     * @param  array<int, float>  $ratings
+     * @param  Collection<int>    $teamIds
+     */
+    private static function computeLeagueMean(array $ratings, Collection $teamIds): float
+    {
+        if ($teamIds->isEmpty()) {
+            return self::INITIAL_ELO;
+        }
+
+        $sum = 0.0;
+        foreach ($teamIds as $id) {
+            $sum += $ratings[(int) $id] ?? self::INITIAL_ELO;
+        }
+
+        return $sum / $teamIds->count();
     }
 }

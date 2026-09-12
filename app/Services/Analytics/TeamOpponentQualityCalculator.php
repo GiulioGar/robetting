@@ -67,11 +67,23 @@ class TeamOpponentQualityCalculator
      *                  start_date/end_date define the snapshot window; if those
      *                  fields are null the calculator falls back to year_start-07-01
      *                  / year_end-06-30.
+     * $leagueTeamIds = when non-null, the full set of team IDs in this season's
+     *                  league (via $season->teams()->pluck('id')).  Enables the
+     *                  per-match league_mean_elo computation needed by E10.
+     *                  When null the Elo map uses the simpler batch (no league mean).
+     *                  Backward compatible: existing callers without this arg are
+     *                  unaffected.
+     *
+     * When $leagueTeamIds is provided the Elo map entries have the shape:
+     *   {home_elo, away_elo, league_mean_elo}
+     * and the output includes:
+     *   '_elo_context' => $eloMap   (internal; consumed by E10, not rendered)
      *
      * @return array{
-     *   last5:  array,
-     *   last10: array,
-     *   venue:  array,
+     *   last5:         array,
+     *   last10:        array,
+     *   venue:         array,
+     *   _elo_context?: array,
      * }
      */
     public static function calculate(
@@ -80,25 +92,40 @@ class TeamOpponentQualityCalculator
         Collection $last10,
         Collection $venue,
         ?int       $dataSourceId,
-        Season     $season
+        Season     $season,
+        ?Collection $leagueTeamIds = null
     ): array {
         // Union of all matches to batch both Elo replay and structural lookup.
         // last5 ⊆ last10 for the overall windows; venue may differ.
         $allMatches = $last10->merge($venue)->unique('id');
 
         // ── Elo: one replay covers all windows ────────────────────────────────
-        $eloMap = $allMatches->isNotEmpty()
-            ? TeamEloCalculator::calculateRatingsBeforeMatches($allMatches)
-            : [];
+        // When leagueTeamIds is provided each entry gets an extra league_mean_elo
+        // key, required by TeamOpponentAdjustedPerformanceCalculator (E10).
+        if ($allMatches->isNotEmpty()) {
+            $eloMap = $leagueTeamIds !== null
+                ? TeamEloCalculator::calculateRatingsBeforeMatchesWithLeagueMean($allMatches, $leagueTeamIds)
+                : TeamEloCalculator::calculateRatingsBeforeMatches($allMatches);
+        } else {
+            $eloMap = [];
+        }
 
         // ── Structural: one bulk query, season-baseline selection in PHP ─────
         $structuralMap = self::loadStructuralBaselines($allMatches, $teamId, $dataSourceId, $season);
 
-        return [
+        $result = [
             'last5'  => self::computeWindow($last5,  $teamId, $eloMap, $structuralMap),
             'last10' => self::computeWindow($last10, $teamId, $eloMap, $structuralMap),
             'venue'  => self::computeWindow($venue,  $teamId, $eloMap, $structuralMap),
         ];
+
+        // Expose the Elo map for E10 consumption only when the league context was
+        // requested.  Not rendered in any Blade template.
+        if ($leagueTeamIds !== null) {
+            $result['_elo_context'] = $eloMap;
+        }
+
+        return $result;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
