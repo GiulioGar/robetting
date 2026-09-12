@@ -27,6 +27,138 @@ class CompetitionStatisticsCalculator
     private const TEAM_SINGLE_METRICS = ['yellow_cards', 'red_cards'];
 
     /**
+     * Compute per-match league averages for a single competition up to a cutoff.
+     *
+     * The caller is responsible for filtering $matches to the target competition,
+     * target season, and kickoff_at < target kickoff — this method only applies
+     * an internal defensive filter (finished + non-null FT scores).
+     *
+     * Shot / SoT averages are split by side (home vs away) rather than collapsed
+     * to a per-team reading.  When statistics are unavailable for a match the
+     * match is simply skipped for that metric; `shots_coverage` reflects how many
+     * of the finished matches had shot data, and `shots_on_target_coverage` reflects
+     * how many had SoT data — they are tracked independently because some sources
+     * report total shots but omit on-target counts.
+     *
+     * @param  Collection  $matches          Pre-filtered match collection.
+     * @param  ?Collection $matchStatistics  Preferred MatchStatistic per match_id.
+     * @return array{
+     *     matches_considered: int,
+     *     avg_goals_per_match: ?float,
+     *     avg_home_goals: ?float,
+     *     avg_away_goals: ?float,
+     *     home_win_rate: ?float,
+     *     draw_rate: ?float,
+     *     away_win_rate: ?float,
+     *     home_vs_away_goal_diff: ?float,
+     *     avg_home_shots: ?float,
+     *     avg_away_shots: ?float,
+     *     avg_home_shots_on_target: ?float,
+     *     avg_away_shots_on_target: ?float,
+     *     shots_coverage: int,
+     *     shots_on_target_coverage: int,
+     * }
+     */
+    public static function calculateLeagueContext(
+        Collection  $matches,
+        ?Collection $matchStatistics = null
+    ): array {
+        $matchStatistics ??= collect();
+
+        $finished = $matches->filter(static fn($m): bool =>
+            $m->status === 'finished'
+            && $m->home_score_ft !== null
+            && $m->away_score_ft !== null
+        );
+
+        $n = $finished->count();
+
+        $empty = [
+            'matches_considered'       => 0,
+            'avg_goals_per_match'      => null,
+            'avg_home_goals'           => null,
+            'avg_away_goals'           => null,
+            'home_win_rate'            => null,
+            'draw_rate'                => null,
+            'away_win_rate'            => null,
+            'home_vs_away_goal_diff'   => null,
+            'avg_home_shots'           => null,
+            'avg_away_shots'           => null,
+            'avg_home_shots_on_target'  => null,
+            'avg_away_shots_on_target'  => null,
+            'shots_coverage'            => 0,
+            'shots_on_target_coverage'  => 0,
+        ];
+
+        if ($n === 0) {
+            return $empty;
+        }
+
+        $totalGoals     = 0;
+        $totalHomeGoals = 0;
+        $totalAwayGoals = 0;
+        $homeWins       = 0;
+        $draws          = 0;
+        $awayWins       = 0;
+
+        foreach ($finished as $m) {
+            $h = (int) $m->home_score_ft;
+            $a = (int) $m->away_score_ft;
+            $totalGoals     += $h + $a;
+            $totalHomeGoals += $h;
+            $totalAwayGoals += $a;
+            if ($h > $a) {
+                $homeWins++;
+            } elseif ($h === $a) {
+                $draws++;
+            } else {
+                $awayWins++;
+            }
+        }
+
+        $avgHomeGoals = round($totalHomeGoals / $n, 2);
+        $avgAwayGoals = round($totalAwayGoals / $n, 2);
+
+        // Shot averages — home and away tracked separately.
+        $sumHomeShots   = 0; $sumAwayShots   = 0; $shotsCoverage = 0;
+        $sumHomeSoT     = 0; $sumAwaySoT     = 0; $sotCoverage   = 0;
+
+        foreach ($finished as $m) {
+            $stat = $matchStatistics->get($m->id);
+            if ($stat === null) {
+                continue;
+            }
+            if ($stat->home_shots !== null && $stat->away_shots !== null) {
+                $sumHomeShots += (int) $stat->home_shots;
+                $sumAwayShots += (int) $stat->away_shots;
+                $shotsCoverage++;
+            }
+            if ($stat->home_shots_on_target !== null && $stat->away_shots_on_target !== null) {
+                $sumHomeSoT += (int) $stat->home_shots_on_target;
+                $sumAwaySoT += (int) $stat->away_shots_on_target;
+                $sotCoverage++;
+            }
+        }
+
+        return [
+            'matches_considered'       => $n,
+            'avg_goals_per_match'      => round($totalGoals / $n, 2),
+            'avg_home_goals'           => $avgHomeGoals,
+            'avg_away_goals'           => $avgAwayGoals,
+            'home_win_rate'            => round($homeWins / $n, 4),
+            'draw_rate'                => round($draws / $n, 4),
+            'away_win_rate'            => round($awayWins / $n, 4),
+            'home_vs_away_goal_diff'   => round($avgHomeGoals - $avgAwayGoals, 2),
+            'avg_home_shots'           => $shotsCoverage > 0 ? round($sumHomeShots / $shotsCoverage, 2) : null,
+            'avg_away_shots'           => $shotsCoverage > 0 ? round($sumAwayShots / $shotsCoverage, 2) : null,
+            'avg_home_shots_on_target'  => $sotCoverage > 0 ? round($sumHomeSoT / $sotCoverage, 2) : null,
+            'avg_away_shots_on_target'  => $sotCoverage > 0 ? round($sumAwaySoT / $sotCoverage, 2) : null,
+            'shots_coverage'            => $shotsCoverage,
+            'shots_on_target_coverage'  => $sotCoverage,
+        ];
+    }
+
+    /**
      * Calculate aggregate season statistics from a season's full match collection
      * and its already-computed standings (see LeagueStandingsCalculator).
      *

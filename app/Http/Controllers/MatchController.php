@@ -13,6 +13,7 @@ use App\Services\Analytics\TeamAnalyticsCalculator;
 use App\Services\Analytics\TeamScheduleLoadCalculator;
 use App\Services\Analytics\TeamAbsenceImpactCalculator;
 use App\Services\Analytics\TeamStarterContinuityCalculator;
+use App\Services\Analytics\CompetitionStatisticsCalculator;
 use App\Services\Analytics\TeamOpponentAdjustedPerformanceCalculator;
 use App\Services\Analytics\TeamOpponentQualityCalculator;
 use App\Services\Analytics\TeamStrengthComparisonCalculator;
@@ -155,6 +156,16 @@ class MatchController extends Controller
             $leagueTeamIds
         );
 
+        // E11 — League Context: all finished competition matches before target kickoff.
+        $allCompetitionPrevious   = $this->allCompetitionPreviousMatches($match);
+        $allCompetitionStatistics = PreferredMatchStatisticResolver::forMatchIds(
+            $allCompetitionPrevious->pluck('id')
+        );
+        $leagueContext = CompetitionStatisticsCalculator::calculateLeagueContext(
+            $allCompetitionPrevious,
+            $allCompetitionStatistics
+        );
+
         // E10 — extract Elo context produced by E9 and compute adjusted performance.
         $homeEloContext = $homeOpponentQuality['_elo_context'] ?? [];
         $awayEloContext = $awayOpponentQuality['_elo_context'] ?? [];
@@ -209,7 +220,30 @@ class MatchController extends Controller
             'awayOpponentQuality'         => $awayOpponentQuality,
             'homeAdjustedPerformance'     => $homeAdjustedPerformance,
             'awayAdjustedPerformance'     => $awayAdjustedPerformance,
+            'leagueContext'               => $leagueContext,
         ]);
+    }
+
+    /**
+     * All finished competition+season matches strictly before target kickoff,
+     * regardless of which teams played — used for E11 league-level statistics.
+     * Only the columns needed by CompetitionStatisticsCalculator::calculateLeagueContext()
+     * are selected to keep the result set slim.
+     */
+    private function allCompetitionPreviousMatches(FootballMatch $match): Collection
+    {
+        if ($match->kickoff_at === null) {
+            return collect();
+        }
+
+        return FootballMatch::where('competition_id', $match->competition_id)
+            ->where('season_id', $match->season_id)
+            ->where('kickoff_at', '<', $match->kickoff_at)
+            ->where('status', 'finished')
+            ->whereNotNull('home_score_ft')
+            ->whereNotNull('away_score_ft')
+            ->get(['id', 'competition_id', 'season_id', 'kickoff_at', 'status',
+                   'home_team_id', 'away_team_id', 'home_score_ft', 'away_score_ft']);
     }
 
     /**

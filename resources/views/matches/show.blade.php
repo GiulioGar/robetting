@@ -1076,6 +1076,93 @@
     </div>
 </div>
 
+{{-- E11. Contesto campionato --}}
+<div class="mt-4" id="league-context-section">
+    @php
+        $lcFmt  = fn(?float $v, int $dec = 2) => $v === null ? 'N/D' : number_format($v, $dec);
+        $lcPct  = fn(?float $v) => $v === null ? 'N/D' : number_format($v * 100, 1) . '%';
+    @endphp
+    <h2 class="fs-5 fw-semibold mb-3">Contesto campionato <span class="text-muted small fw-normal">(analytics)</span></h2>
+    @if($leagueContext['matches_considered'] === 0)
+        <div class="card"><div class="card-body text-muted small">Dati campionato precedenti non disponibili.</div></div>
+    @else
+    <div class="card">
+        <div class="table-responsive">
+            <table class="table table-sm mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-3">Metrica</th>
+                        <th class="pe-3 text-end">Valore</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td class="ps-3 text-muted small" colspan="2"><strong>Partite campionato (stagione in corso, ante partita)</strong></td></tr>
+                    <tr>
+                        <td class="ps-3">Partite considerate</td>
+                        <td class="pe-3 text-end">{{ $leagueContext['matches_considered'] }}</td>
+                    </tr>
+
+                    <tr class="table-light"><td class="ps-3 fw-semibold small text-muted" colspan="2">Ambiente gol</td></tr>
+                    <tr>
+                        <td class="ps-3">Media gol / partita</td>
+                        <td class="pe-3 text-end">{{ $lcFmt($leagueContext['avg_goals_per_match']) }}</td>
+                    </tr>
+                    <tr>
+                        <td class="ps-3">Media gol casa</td>
+                        <td class="pe-3 text-end">{{ $lcFmt($leagueContext['avg_home_goals']) }}</td>
+                    </tr>
+                    <tr>
+                        <td class="ps-3">Media gol trasferta</td>
+                        <td class="pe-3 text-end">{{ $lcFmt($leagueContext['avg_away_goals']) }}</td>
+                    </tr>
+                    <tr>
+                        <td class="ps-3">Differenziale casa/trasferta</td>
+                        <td class="pe-3 text-end">{{ $lcFmt($leagueContext['home_vs_away_goal_diff']) }}</td>
+                    </tr>
+
+                    <tr class="table-light"><td class="ps-3 fw-semibold small text-muted" colspan="2">Baseline risultati</td></tr>
+                    <tr>
+                        <td class="ps-3">Vittorie casa</td>
+                        <td class="pe-3 text-end">{{ $lcPct($leagueContext['home_win_rate']) }}</td>
+                    </tr>
+                    <tr>
+                        <td class="ps-3">Pareggi</td>
+                        <td class="pe-3 text-end">{{ $lcPct($leagueContext['draw_rate']) }}</td>
+                    </tr>
+                    <tr>
+                        <td class="ps-3">Vittorie trasferta</td>
+                        <td class="pe-3 text-end">{{ $lcPct($leagueContext['away_win_rate']) }}</td>
+                    </tr>
+
+                    @if($leagueContext['avg_home_shots'] !== null || $leagueContext['avg_away_shots'] !== null)
+                    <tr class="table-light"><td class="ps-3 fw-semibold small text-muted" colspan="2">Tiri <span class="fw-normal">({{ $leagueContext['shots_coverage'] }} / {{ $leagueContext['matches_considered'] }} partite)</span></td></tr>
+                    <tr>
+                        <td class="ps-3">Media tiri casa</td>
+                        <td class="pe-3 text-end">{{ $lcFmt($leagueContext['avg_home_shots']) }}</td>
+                    </tr>
+                    <tr>
+                        <td class="ps-3">Media tiri trasferta</td>
+                        <td class="pe-3 text-end">{{ $lcFmt($leagueContext['avg_away_shots']) }}</td>
+                    </tr>
+                    @endif
+                    @if($leagueContext['avg_home_shots_on_target'] !== null || $leagueContext['avg_away_shots_on_target'] !== null)
+                    <tr class="table-light"><td class="ps-3 fw-semibold small text-muted" colspan="2">Tiri in porta <span class="fw-normal">({{ $leagueContext['shots_on_target_coverage'] }} / {{ $leagueContext['matches_considered'] }} partite)</span></td></tr>
+                    <tr>
+                        <td class="ps-3">Media SoT casa</td>
+                        <td class="pe-3 text-end">{{ $lcFmt($leagueContext['avg_home_shots_on_target']) }}</td>
+                    </tr>
+                    <tr>
+                        <td class="ps-3">Media SoT trasferta</td>
+                        <td class="pe-3 text-end">{{ $lcFmt($leagueContext['avg_away_shots_on_target']) }}</td>
+                    </tr>
+                    @endif
+                </tbody>
+            </table>
+        </div>
+    </div>
+    @endif
+</div>
+
 @if($match->status !== 'finished')
 {{-- E. Forma prima del match --}}
 <div class="mt-4">
