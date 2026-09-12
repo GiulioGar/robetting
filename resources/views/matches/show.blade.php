@@ -848,6 +848,129 @@
     </div>
 </div>
 
+{{-- E9. Qualità avversari recenti --}}
+<div class="mt-4" id="opponent-quality-section">
+    <h2 class="fs-5 fw-semibold mb-3">Qualità avversari recenti <span class="text-muted small fw-normal">(analytics)</span></h2>
+    <ul class="nav nav-tabs mb-0" id="oqTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active small" id="oq-5-tab" data-bs-toggle="tab" data-bs-target="#oq-5" type="button" role="tab">Ultime 5</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link small" id="oq-10-tab" data-bs-toggle="tab" data-bs-target="#oq-10" type="button" role="tab">Ultime 10</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link small" id="oq-venue-tab" data-bs-toggle="tab" data-bs-target="#oq-venue" type="button" role="tab">Sede del match</button>
+        </li>
+    </ul>
+    <div class="tab-content border border-top-0 rounded-bottom p-3" id="oqTabContent">
+
+        @foreach([
+            ['id' => 'oq-5',  'active' => true,  'hoq' => $homeOpponentQuality['last5'],  'aoq' => $awayOpponentQuality['last5']],
+            ['id' => 'oq-10', 'active' => false, 'hoq' => $homeOpponentQuality['last10'], 'aoq' => $awayOpponentQuality['last10']],
+        ] as $oqPanel)
+        @php $hoq = $oqPanel['hoq']; $aoq = $oqPanel['aoq']; @endphp
+        <div class="tab-pane fade {{ $oqPanel['active'] ? 'show active' : '' }}" id="{{ $oqPanel['id'] }}" role="tabpanel">
+            @if($hoq['matches_considered'] === 0 && $aoq['matches_considered'] === 0)
+                <p class="text-muted mb-0">Dati precedenti non disponibili.</p>
+            @else
+            <div class="table-responsive">
+                <table class="table table-sm mb-0 text-center align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="text-start">&nbsp;</th>
+                            <th>{{ $match->homeTeam->name }} <span class="text-muted fw-normal small">({{ $hoq['matches_considered'] }} PG)</span></th>
+                            <th>{{ $match->awayTeam->name }} <span class="text-muted fw-normal small">({{ $aoq['matches_considered'] }} PG)</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="table-light"><td class="text-start fw-semibold small text-muted" colspan="3">Elo avversari</td></tr>
+                        <tr>
+                            <td class="text-start text-muted">Elo medio avversari</td>
+                            <td>{{ $hoq['average_opponent_elo'] !== null ? number_format($hoq['average_opponent_elo'], 1) : 'N/D' }}</td>
+                            <td>{{ $aoq['average_opponent_elo'] !== null ? number_format($aoq['average_opponent_elo'], 1) : 'N/D' }}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-start text-muted">Elo mediano avversari</td>
+                            <td>{{ $hoq['median_opponent_elo'] !== null ? number_format($hoq['median_opponent_elo'], 1) : 'N/D' }}</td>
+                            <td>{{ $aoq['median_opponent_elo'] !== null ? number_format($aoq['median_opponent_elo'], 1) : 'N/D' }}</td>
+                        </tr>
+                        <tr class="table-light"><td class="text-start fw-semibold small text-muted" colspan="3">Structural avversari</td></tr>
+                        <tr>
+                            <td class="text-start text-muted">Structural media avversari</td>
+                            <td>{{ $hoq['average_opponent_structural'] !== null ? number_format($hoq['average_opponent_structural'], 1) : 'N/D' }}</td>
+                            <td>{{ $aoq['average_opponent_structural'] !== null ? number_format($aoq['average_opponent_structural'], 1) : 'N/D' }}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-start text-muted">Structural mediana avversari</td>
+                            <td>{{ $hoq['median_opponent_structural'] !== null ? number_format($hoq['median_opponent_structural'], 1) : 'N/D' }}</td>
+                            <td>{{ $aoq['median_opponent_structural'] !== null ? number_format($aoq['median_opponent_structural'], 1) : 'N/D' }}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-start text-muted">Coverage Structural</td>
+                            <td>{{ $hoq['structural_matches_available'] }} / {{ $hoq['matches_considered'] }}</td>
+                            <td>{{ $aoq['structural_matches_available'] }} / {{ $aoq['matches_considered'] }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            @endif
+        </div>
+        @endforeach
+
+        <div class="tab-pane fade" id="oq-venue" role="tabpanel">
+            @php
+                $hoqV = $homeOpponentQuality['venue'];
+                $aoqV = $awayOpponentQuality['venue'];
+            @endphp
+            @if($hoqV['matches_considered'] === 0 && $aoqV['matches_considered'] === 0)
+                <p class="text-muted mb-0">Dati precedenti non disponibili.</p>
+            @else
+            <div class="table-responsive">
+                <table class="table table-sm mb-0 text-center align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="text-start">&nbsp;</th>
+                            <th>{{ $match->homeTeam->name }} <span class="text-muted fw-normal small">({{ $hoqV['matches_considered'] }} in casa)</span></th>
+                            <th>{{ $match->awayTeam->name }} <span class="text-muted fw-normal small">({{ $aoqV['matches_considered'] }} in trasferta)</span></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="table-light"><td class="text-start fw-semibold small text-muted" colspan="3">Elo avversari</td></tr>
+                        <tr>
+                            <td class="text-start text-muted">Elo medio avversari</td>
+                            <td>{{ $hoqV['average_opponent_elo'] !== null ? number_format($hoqV['average_opponent_elo'], 1) : 'N/D' }}</td>
+                            <td>{{ $aoqV['average_opponent_elo'] !== null ? number_format($aoqV['average_opponent_elo'], 1) : 'N/D' }}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-start text-muted">Elo mediano avversari</td>
+                            <td>{{ $hoqV['median_opponent_elo'] !== null ? number_format($hoqV['median_opponent_elo'], 1) : 'N/D' }}</td>
+                            <td>{{ $aoqV['median_opponent_elo'] !== null ? number_format($aoqV['median_opponent_elo'], 1) : 'N/D' }}</td>
+                        </tr>
+                        <tr class="table-light"><td class="text-start fw-semibold small text-muted" colspan="3">Structural avversari</td></tr>
+                        <tr>
+                            <td class="text-start text-muted">Structural media avversari</td>
+                            <td>{{ $hoqV['average_opponent_structural'] !== null ? number_format($hoqV['average_opponent_structural'], 1) : 'N/D' }}</td>
+                            <td>{{ $aoqV['average_opponent_structural'] !== null ? number_format($aoqV['average_opponent_structural'], 1) : 'N/D' }}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-start text-muted">Structural mediana avversari</td>
+                            <td>{{ $hoqV['median_opponent_structural'] !== null ? number_format($hoqV['median_opponent_structural'], 1) : 'N/D' }}</td>
+                            <td>{{ $aoqV['median_opponent_structural'] !== null ? number_format($aoqV['median_opponent_structural'], 1) : 'N/D' }}</td>
+                        </tr>
+                        <tr>
+                            <td class="text-start text-muted">Coverage Structural</td>
+                            <td>{{ $hoqV['structural_matches_available'] }} / {{ $hoqV['matches_considered'] }}</td>
+                            <td>{{ $aoqV['structural_matches_available'] }} / {{ $aoqV['matches_considered'] }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            @endif
+        </div>
+
+    </div>
+</div>
+
 @if($match->status !== 'finished')
 {{-- E. Forma prima del match --}}
 <div class="mt-4">

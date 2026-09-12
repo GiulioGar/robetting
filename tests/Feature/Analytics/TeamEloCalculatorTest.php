@@ -587,6 +587,82 @@ class TeamEloCalculatorTest extends TestCase
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // [U] calculateRatingsBeforeMatches: empty collection → empty result
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function test_batch_empty_collection_returns_empty_array(): void
+    {
+        $result = TeamEloCalculator::calculateRatingsBeforeMatches(collect());
+        $this->assertSame([], $result);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // [V] calculateRatingsBeforeMatches: result equals calculateRatingsBefore
+    //     for each match independently
+    //
+    // Three sequential matches A vs B.  For each match, verify that the batch
+    // method's home_elo / away_elo equals calculateRatingsBefore(kickoff_at).
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function test_batch_matches_per_match_calculateRatingsBefore(): void
+    {
+        $m1 = $this->makeMatch(Carbon::parse(self::TARGET)->subDays(21), $this->teamA, $this->teamB, 2, 0);
+        $m2 = $this->makeMatch(Carbon::parse(self::TARGET)->subDays(14), $this->teamA, $this->teamB, 1, 1);
+        $m3 = $this->makeMatch(Carbon::parse(self::TARGET)->subDays(7),  $this->teamA, $this->teamB, 0, 1);
+
+        $batchResult = TeamEloCalculator::calculateRatingsBeforeMatches(collect([$m1, $m2, $m3]));
+
+        foreach ([$m1, $m2, $m3] as $m) {
+            $expected = TeamEloCalculator::calculateRatingsBefore($m->kickoff_at);
+            $homeElo  = $expected[$this->teamA->id] ?? TeamEloCalculator::INITIAL_ELO;
+            $awayElo  = $expected[$this->teamB->id] ?? TeamEloCalculator::INITIAL_ELO;
+
+            $this->assertEqualsWithDelta($homeElo, $batchResult[$m->id]['home_elo'], self::DELTA,
+                "home_elo mismatch for match {$m->id}");
+            $this->assertEqualsWithDelta($awayElo, $batchResult[$m->id]['away_elo'], self::DELTA,
+                "away_elo mismatch for match {$m->id}");
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // [W] calculateRatingsBeforeMatches: single DB query for the batch
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function test_batch_uses_single_db_query(): void
+    {
+        $m1 = $this->makeMatch(Carbon::parse(self::TARGET)->subDays(14), $this->teamA, $this->teamB, 1, 0);
+        $m2 = $this->makeMatch(Carbon::parse(self::TARGET)->subDays(7),  $this->teamA, $this->teamB, 0, 1);
+
+        DB::enableQueryLog();
+        TeamEloCalculator::calculateRatingsBeforeMatches(collect([$m1, $m2]));
+        $queries = DB::getQueryLog();
+        DB::disableQueryLog();
+
+        $this->assertCount(1, $queries);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // [X] calculateRatingsBeforeMatches: all-null-kickoff collection → INITIAL_ELO
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function test_batch_null_kickoff_returns_initial_elo(): void
+    {
+        $m = FootballMatch::create([
+            'competition_id' => $this->comp->id,
+            'season_id'      => $this->season->id,
+            'home_team_id'   => $this->teamA->id,
+            'away_team_id'   => $this->teamB->id,
+            'kickoff_at'     => null,
+            'status'         => 'scheduled',
+        ]);
+
+        $result = TeamEloCalculator::calculateRatingsBeforeMatches(collect([$m]));
+
+        $this->assertEqualsWithDelta(TeamEloCalculator::INITIAL_ELO, $result[$m->id]['home_elo'], self::DELTA);
+        $this->assertEqualsWithDelta(TeamEloCalculator::INITIAL_ELO, $result[$m->id]['away_elo'], self::DELTA);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Helpers
     // ─────────────────────────────────────────────────────────────────────────
 

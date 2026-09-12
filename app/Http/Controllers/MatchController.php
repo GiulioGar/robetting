@@ -13,6 +13,7 @@ use App\Services\Analytics\TeamAnalyticsCalculator;
 use App\Services\Analytics\TeamScheduleLoadCalculator;
 use App\Services\Analytics\TeamAbsenceImpactCalculator;
 use App\Services\Analytics\TeamStarterContinuityCalculator;
+use App\Services\Analytics\TeamOpponentQualityCalculator;
 use App\Services\Analytics\TeamStrengthComparisonCalculator;
 use App\Services\Matches\PreferredMatchStatisticResolver;
 use Illuminate\Support\Collection;
@@ -64,17 +65,26 @@ class MatchController extends Controller
         $homeHomeOnly = $homePrevious->where('home_team_id', $match->home_team_id)->values();
         $awayAwayOnly = $awayPrevious->where('away_team_id', $match->away_team_id)->values();
 
-        $homeSeasonAnalytics = TeamAnalyticsCalculator::calculate($homePrevious, $match->home_team_id, $matchStatistics);
-        $homeLast5Analytics  = TeamAnalyticsCalculator::calculate($this->lastN($homePrevious, 5), $match->home_team_id, $matchStatistics);
-        $homeLast10Analytics = TeamAnalyticsCalculator::calculate($this->lastN($homePrevious, 10), $match->home_team_id, $matchStatistics);
-        $homeHomeAnalytics   = TeamAnalyticsCalculator::calculate($homeHomeOnly, $match->home_team_id, $matchStatistics);
-        $homeRecentHomeAnalytics = TeamAnalyticsCalculator::calculate($this->lastN($homeHomeOnly, 5), $match->home_team_id, $matchStatistics);
+        // Extract window collections as variables so they can be reused by both
+        // TeamAnalyticsCalculator (E8) and TeamOpponentQualityCalculator (E9).
+        $homeLast5     = $this->lastN($homePrevious, 5);
+        $homeLast10    = $this->lastN($homePrevious, 10);
+        $awayLast5     = $this->lastN($awayPrevious, 5);
+        $awayLast10    = $this->lastN($awayPrevious, 10);
+        $homeLast5Home = $this->lastN($homeHomeOnly, 5);
+        $awayLast5Away = $this->lastN($awayAwayOnly, 5);
 
-        $awaySeasonAnalytics = TeamAnalyticsCalculator::calculate($awayPrevious, $match->away_team_id, $matchStatistics);
-        $awayLast5Analytics  = TeamAnalyticsCalculator::calculate($this->lastN($awayPrevious, 5), $match->away_team_id, $matchStatistics);
-        $awayLast10Analytics = TeamAnalyticsCalculator::calculate($this->lastN($awayPrevious, 10), $match->away_team_id, $matchStatistics);
-        $awayAwayAnalytics   = TeamAnalyticsCalculator::calculate($awayAwayOnly, $match->away_team_id, $matchStatistics);
-        $awayRecentAwayAnalytics = TeamAnalyticsCalculator::calculate($this->lastN($awayAwayOnly, 5), $match->away_team_id, $matchStatistics);
+        $homeSeasonAnalytics     = TeamAnalyticsCalculator::calculate($homePrevious, $match->home_team_id, $matchStatistics);
+        $homeLast5Analytics      = TeamAnalyticsCalculator::calculate($homeLast5, $match->home_team_id, $matchStatistics);
+        $homeLast10Analytics     = TeamAnalyticsCalculator::calculate($homeLast10, $match->home_team_id, $matchStatistics);
+        $homeHomeAnalytics       = TeamAnalyticsCalculator::calculate($homeHomeOnly, $match->home_team_id, $matchStatistics);
+        $homeRecentHomeAnalytics = TeamAnalyticsCalculator::calculate($homeLast5Home, $match->home_team_id, $matchStatistics);
+
+        $awaySeasonAnalytics     = TeamAnalyticsCalculator::calculate($awayPrevious, $match->away_team_id, $matchStatistics);
+        $awayLast5Analytics      = TeamAnalyticsCalculator::calculate($awayLast5, $match->away_team_id, $matchStatistics);
+        $awayLast10Analytics     = TeamAnalyticsCalculator::calculate($awayLast10, $match->away_team_id, $matchStatistics);
+        $awayAwayAnalytics       = TeamAnalyticsCalculator::calculate($awayAwayOnly, $match->away_team_id, $matchStatistics);
+        $awayRecentAwayAnalytics = TeamAnalyticsCalculator::calculate($awayLast5Away, $match->away_team_id, $matchStatistics);
 
         $headToHead = HeadToHeadCalculator::calculate($h2hMatches, $match->home_team_id, $match->away_team_id);
 
@@ -116,6 +126,27 @@ class MatchController extends Controller
             'elo_difference' => $strengthComparison['elo_diff'],
         ];
 
+        // E9 — Opponent Quality: Elo (pre-match) + Structural (per-match as-of).
+        $rawTransfermarktId = DataSource::where('slug', 'transfermarkt')->value('id');
+        $transfermarktDsId  = $rawTransfermarktId !== null ? (int) $rawTransfermarktId : null;
+
+        $homeOpponentQuality = TeamOpponentQualityCalculator::calculate(
+            (int) $match->home_team_id,
+            $homeLast5,
+            $homeLast10,
+            $homeLast5Home,
+            $transfermarktDsId,
+            $match->season
+        );
+        $awayOpponentQuality = TeamOpponentQualityCalculator::calculate(
+            (int) $match->away_team_id,
+            $awayLast5,
+            $awayLast10,
+            $awayLast5Away,
+            $transfermarktDsId,
+            $match->season
+        );
+
         return view('matches.show', [
             'match'               => $match,
             'matchStatistic'      => $matchStatistic,
@@ -145,6 +176,8 @@ class MatchController extends Controller
             'awayRecentAwayAnalytics'  => $awayRecentAwayAnalytics,
             'eloData'                  => $eloData,
             'strengthComparison'       => $strengthComparison,
+            'homeOpponentQuality'      => $homeOpponentQuality,
+            'awayOpponentQuality'      => $awayOpponentQuality,
         ]);
     }
 
