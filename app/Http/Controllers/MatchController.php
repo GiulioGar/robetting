@@ -17,6 +17,7 @@ use App\Services\Analytics\CompetitionStatisticsCalculator;
 use App\Services\Analytics\TeamOpponentAdjustedPerformanceCalculator;
 use App\Services\Analytics\TeamOpponentQualityCalculator;
 use App\Services\Analytics\TeamStrengthComparisonCalculator;
+use App\Services\Analytics\TeamTimeDecayedPerformanceCalculator;
 use App\Services\Matches\PreferredMatchStatisticResolver;
 use Illuminate\Support\Collection;
 use Illuminate\View\View;
@@ -187,6 +188,25 @@ class MatchController extends Controller
             $matchStatistics
         );
 
+        // E12 — Recent Performance with Time Decay.
+        // Reuses $homePrevious / $awayPrevious (no new queries) and the Elo context
+        // already produced by E9.  Window selection (max 10, ≤ 90 days) is applied
+        // inside the calculator — no pre-slicing needed here.
+        $homeTimeDecay = TeamTimeDecayedPerformanceCalculator::calculate(
+            (int) $match->home_team_id,
+            $homePrevious,
+            $match->kickoff_at ?? now(),
+            $homeEloContext,
+            $matchStatistics
+        );
+        $awayTimeDecay = TeamTimeDecayedPerformanceCalculator::calculate(
+            (int) $match->away_team_id,
+            $awayPrevious,
+            $match->kickoff_at ?? now(),
+            $awayEloContext,
+            $matchStatistics
+        );
+
         return view('matches.show', [
             'match'               => $match,
             'matchStatistic'      => $matchStatistic,
@@ -221,6 +241,8 @@ class MatchController extends Controller
             'homeAdjustedPerformance'     => $homeAdjustedPerformance,
             'awayAdjustedPerformance'     => $awayAdjustedPerformance,
             'leagueContext'               => $leagueContext,
+            'homeTimeDecay'               => $homeTimeDecay,
+            'awayTimeDecay'               => $awayTimeDecay,
         ]);
     }
 

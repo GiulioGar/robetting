@@ -1163,6 +1163,75 @@
     @endif
 </div>
 
+{{-- E12. Forma recente ponderata (time decay) --}}
+<div class="mt-4" id="time-decay-section">
+    @php
+        $tdFmt = fn(?float $v) => $v === null ? 'N/D' : ($v > 0 ? '+' : '') . number_format($v, 2);
+        $tdBlocks = [
+            ['label' => $match->homeTeam->name, 'td' => $homeTimeDecay],
+            ['label' => $match->awayTeam->name, 'td' => $awayTimeDecay],
+        ];
+    @endphp
+    <h2 class="fs-5 fw-semibold mb-3">Forma recente ponderata <span class="text-muted small fw-normal">(E12 · half-life {{ $homeTimeDecay['half_life_days'] }}gg · max {{ $homeTimeDecay['max_horizon_days'] }}gg)</span></h2>
+    <div class="row g-3">
+        @foreach($tdBlocks as $block)
+        @php $td = $block['td']; @endphp
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-header py-2 small fw-semibold">{{ $block['label'] }}</div>
+                <div class="table-responsive">
+                    <table class="table table-sm mb-0 align-middle">
+                        <tbody>
+                            <tr class="table-light">
+                                <td class="ps-3 text-muted small fw-semibold" colspan="3">Partite considerate</td>
+                            </tr>
+                            <tr>
+                                <td class="ps-3">Partite nel range</td>
+                                <td class="pe-3 text-end" colspan="2">{{ $td['matches_considered'] }}</td>
+                            </tr>
+                            <tr>
+                                <td class="ps-3">Peso effettivo totale</td>
+                                <td class="pe-3 text-end" colspan="2">{{ number_format($td['effective_weight_sum'], 3) }}</td>
+                            </tr>
+
+                            <tr class="table-light">
+                                <td class="ps-3 text-muted small fw-semibold">Metrica</td>
+                                <td class="text-end text-muted small fw-semibold">Raw</td>
+                                <td class="pe-3 text-end text-muted small fw-semibold">Adj (E10)</td>
+                            </tr>
+                            <tr>
+                                <td class="ps-3">
+                                    Diff gol ponderata
+                                    <span class="text-muted small">({{ $td['goal_matches_available'] }} match)</span>
+                                </td>
+                                <td class="text-end">{{ $tdFmt($td['weighted_goal_diff']) }}</td>
+                                <td class="pe-3 text-end text-muted">{{ $tdFmt($td['weighted_adjusted_goal_diff']) }}</td>
+                            </tr>
+                            <tr>
+                                <td class="ps-3">
+                                    Diff tiri ponderata
+                                    <span class="text-muted small">({{ $td['shot_matches_available'] }} match)</span>
+                                </td>
+                                <td class="text-end">{{ $tdFmt($td['weighted_shot_diff']) }}</td>
+                                <td class="pe-3 text-end text-muted">{{ $tdFmt($td['weighted_adjusted_shot_diff']) }}</td>
+                            </tr>
+                            <tr>
+                                <td class="ps-3">
+                                    Diff SoT ponderata
+                                    <span class="text-muted small">({{ $td['sot_matches_available'] }} match)</span>
+                                </td>
+                                <td class="text-end">{{ $tdFmt($td['weighted_sot_diff']) }}</td>
+                                <td class="pe-3 text-end text-muted">{{ $tdFmt($td['weighted_adjusted_sot_diff']) }}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        @endforeach
+    </div>
+</div>
+
 @if($match->status !== 'finished')
 {{-- E. Forma prima del match --}}
 <div class="mt-4">
