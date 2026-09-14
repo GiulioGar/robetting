@@ -1029,6 +1029,163 @@ class ApiFootballMatchStatisticsSyncServiceTest extends TestCase
     }
 
     // =========================================================================
+    // xG parsing — floatStat helper via parseResponse
+    // =========================================================================
+
+    // T1: expected_goals as string "1.08" → float 1.08
+    public function test_xg_string_format_parsed(): void
+    {
+        $match = $this->makeFinishedMatch(9400);
+        Http::fake(['*fixtures/statistics*' => Http::response($this->xgStatsResponse(), 200)]);
+        app(ApiFootballMatchStatisticsSyncService::class)->syncAll();
+
+        $stat = MatchStatistic::where('match_id', $match->id)->where('data_source_id', $this->ds->id)->first();
+        $this->assertEqualsWithDelta(1.08, $stat->home_expected_goals, 0.001);
+    }
+
+    // T2: expected_goals as float 2.79 → float 2.79
+    public function test_xg_float_format_parsed(): void
+    {
+        $match = $this->makeFinishedMatch(9401);
+        Http::fake(['*fixtures/statistics*' => Http::response($this->xgStatsResponse(), 200)]);
+        app(ApiFootballMatchStatisticsSyncService::class)->syncAll();
+
+        $stat = MatchStatistic::where('match_id', $match->id)->where('data_source_id', $this->ds->id)->first();
+        $this->assertEqualsWithDelta(2.79, $stat->away_expected_goals, 0.001);
+    }
+
+    // T3: expected_goals "0.00" → 0.0 (not null)
+    public function test_xg_zero_string_parsed_as_zero(): void
+    {
+        $match = $this->makeFinishedMatch(9402);
+        $response = $this->xgStatsResponse();
+        foreach ($response['response'] as &$team) {
+            foreach ($team['statistics'] as &$s) {
+                if ($s['type'] === 'expected_goals') {
+                    $s['value'] = '0.00';
+                }
+            }
+        }
+        Http::fake(['*fixtures/statistics*' => Http::response($response, 200)]);
+        app(ApiFootballMatchStatisticsSyncService::class)->syncAll();
+
+        $stat = MatchStatistic::where('match_id', $match->id)->where('data_source_id', $this->ds->id)->first();
+        $this->assertNotNull($stat->home_expected_goals);
+        $this->assertEqualsWithDelta(0.0, $stat->home_expected_goals, 0.001);
+    }
+
+    // T4: expected_goals null → null
+    public function test_xg_null_preserved_as_null(): void
+    {
+        $match = $this->makeFinishedMatch(9403);
+        $response = $this->xgStatsResponse();
+        foreach ($response['response'] as &$team) {
+            foreach ($team['statistics'] as &$s) {
+                if ($s['type'] === 'expected_goals') {
+                    $s['value'] = null;
+                }
+            }
+        }
+        Http::fake(['*fixtures/statistics*' => Http::response($response, 200)]);
+        app(ApiFootballMatchStatisticsSyncService::class)->syncAll();
+
+        $stat = MatchStatistic::where('match_id', $match->id)->where('data_source_id', $this->ds->id)->first();
+        $this->assertNull($stat->home_expected_goals);
+        $this->assertNull($stat->away_expected_goals);
+    }
+
+    // T5: goals_prevented negative string "-1.34" → -1.34
+    public function test_goals_prevented_negative_string(): void
+    {
+        $match = $this->makeFinishedMatch(9404);
+        Http::fake(['*fixtures/statistics*' => Http::response($this->xgStatsResponse(), 200)]);
+        app(ApiFootballMatchStatisticsSyncService::class)->syncAll();
+
+        $stat = MatchStatistic::where('match_id', $match->id)->where('data_source_id', $this->ds->id)->first();
+        $this->assertEqualsWithDelta(-1.34, $stat->home_goals_prevented, 0.001);
+    }
+
+    // T6: goals_prevented positive float 0.89 → 0.89
+    public function test_goals_prevented_positive_float(): void
+    {
+        $match = $this->makeFinishedMatch(9405);
+        Http::fake(['*fixtures/statistics*' => Http::response($this->xgStatsResponse(), 200)]);
+        app(ApiFootballMatchStatisticsSyncService::class)->syncAll();
+
+        $stat = MatchStatistic::where('match_id', $match->id)->where('data_source_id', $this->ds->id)->first();
+        $this->assertEqualsWithDelta(0.89, $stat->away_goals_prevented, 0.001);
+    }
+
+    // T7: empty string → null
+    public function test_empty_string_xg_returns_null(): void
+    {
+        $match = $this->makeFinishedMatch(9406);
+        $response = $this->xgStatsResponse();
+        foreach ($response['response'] as &$team) {
+            foreach ($team['statistics'] as &$s) {
+                if ($s['type'] === 'expected_goals') {
+                    $s['value'] = '';
+                }
+            }
+        }
+        Http::fake(['*fixtures/statistics*' => Http::response($response, 200)]);
+        app(ApiFootballMatchStatisticsSyncService::class)->syncAll();
+
+        $stat = MatchStatistic::where('match_id', $match->id)->where('data_source_id', $this->ds->id)->first();
+        $this->assertNull($stat->home_expected_goals);
+        $this->assertNull($stat->away_expected_goals);
+    }
+
+    // T8: comma decimal "1,08" → 1.08
+    public function test_comma_decimal_xg_normalized(): void
+    {
+        $match = $this->makeFinishedMatch(9407);
+        $response = $this->xgStatsResponse();
+        foreach ($response['response'] as &$team) {
+            foreach ($team['statistics'] as &$s) {
+                if ($s['type'] === 'expected_goals') {
+                    $s['value'] = '1,08';
+                }
+            }
+        }
+        Http::fake(['*fixtures/statistics*' => Http::response($response, 200)]);
+        app(ApiFootballMatchStatisticsSyncService::class)->syncAll();
+
+        $stat = MatchStatistic::where('match_id', $match->id)->where('data_source_id', $this->ds->id)->first();
+        $this->assertEqualsWithDelta(1.08, $stat->home_expected_goals, 0.001);
+    }
+
+    // T9: raw_stats still contains expected_goals key (not replaced by dedicated columns)
+    public function test_raw_stats_still_contains_xg_keys(): void
+    {
+        $match = $this->makeFinishedMatch(9408);
+        Http::fake(['*fixtures/statistics*' => Http::response($this->xgStatsResponse(), 200)]);
+        app(ApiFootballMatchStatisticsSyncService::class)->syncAll();
+
+        $stat = MatchStatistic::where('match_id', $match->id)->where('data_source_id', $this->ds->id)->first();
+        $this->assertNotNull($stat->raw_stats);
+        $this->assertArrayHasKey('expected_goals', $stat->raw_stats['home']);
+        $this->assertArrayHasKey('expected_goals', $stat->raw_stats['away']);
+        $this->assertArrayHasKey('goals_prevented', $stat->raw_stats['home']);
+        $this->assertArrayHasKey('goals_prevented', $stat->raw_stats['away']);
+    }
+
+    // T10: home/away assigned to correct team (ext_id matching)
+    public function test_home_away_xg_correctly_assigned(): void
+    {
+        $match = $this->makeFinishedMatch(9409);
+        Http::fake(['*fixtures/statistics*' => Http::response($this->xgStatsResponse(), 200)]);
+        app(ApiFootballMatchStatisticsSyncService::class)->syncAll();
+
+        $stat = MatchStatistic::where('match_id', $match->id)->where('data_source_id', $this->ds->id)->first();
+        // Home: "1.08" (string), Away: 2.79 (float) — values differ so assignment is verifiable
+        $this->assertEqualsWithDelta(1.08, $stat->home_expected_goals, 0.001);
+        $this->assertEqualsWithDelta(2.79, $stat->away_expected_goals, 0.001);
+        $this->assertEqualsWithDelta(-1.34, $stat->home_goals_prevented, 0.001);
+        $this->assertEqualsWithDelta(0.89,  $stat->away_goals_prevented, 0.001);
+    }
+
+    // =========================================================================
     // Helpers
     // =========================================================================
 
@@ -1122,6 +1279,49 @@ class ApiFootballMatchStatisticsSyncServiceTest extends TestCase
             'response' => [
                 ['team' => ['id' => (int) self::HOME_EXT_ID, 'name' => 'Inter'], 'statistics' => $homeStats],
                 ['team' => ['id' => (int) self::AWAY_EXT_ID, 'name' => 'Milan'], 'statistics' => $awayStats],
+            ],
+        ];
+    }
+
+    /**
+     * Fake response that includes expected_goals and goals_prevented.
+     * Home: xG as string "1.08", goals_prevented as string "-1.34".
+     * Away: xG as float 2.79, goals_prevented as float 0.89.
+     * Covers both the string (2026/27) and float (2025/26) API value formats.
+     */
+    private function xgStatsResponse(): array
+    {
+        return [
+            'errors'   => [],
+            'results'  => 2,
+            'paging'   => ['current' => 1, 'total' => 1],
+            'response' => [
+                [
+                    'team'       => ['id' => (int) self::HOME_EXT_ID, 'name' => 'Inter'],
+                    'statistics' => [
+                        ['type' => 'Total Shots',      'value' => 12],
+                        ['type' => 'Shots on Goal',    'value' => 5],
+                        ['type' => 'Fouls',            'value' => 11],
+                        ['type' => 'Corner Kicks',     'value' => 6],
+                        ['type' => 'Yellow Cards',     'value' => 1],
+                        ['type' => 'Red Cards',        'value' => 0],
+                        ['type' => 'expected_goals',   'value' => '1.08'],   // string format (2026/27)
+                        ['type' => 'goals_prevented',  'value' => '-1.34'],  // negative string
+                    ],
+                ],
+                [
+                    'team'       => ['id' => (int) self::AWAY_EXT_ID, 'name' => 'Milan'],
+                    'statistics' => [
+                        ['type' => 'Total Shots',      'value' => 9],
+                        ['type' => 'Shots on Goal',    'value' => 3],
+                        ['type' => 'Fouls',            'value' => 14],
+                        ['type' => 'Corner Kicks',     'value' => 4],
+                        ['type' => 'Yellow Cards',     'value' => 2],
+                        ['type' => 'Red Cards',        'value' => 0],
+                        ['type' => 'expected_goals',   'value' => 2.79],     // float format (2025/26)
+                        ['type' => 'goals_prevented',  'value' => 0.89],     // float positive
+                    ],
+                ],
             ],
         ];
     }

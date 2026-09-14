@@ -705,6 +705,11 @@ class ApiFootballMatchStatisticsSyncService
             'away_passes_accurate'    => $this->intStat($awayStats, 'Passes accurate'),
             'home_passes_percentage'  => $this->percentStat($homeStats, 'Passes %'),
             'away_passes_percentage'  => $this->percentStat($awayStats, 'Passes %'),
+            // --- xG (unmapped by default; stored in raw_stats AND dedicated columns) ---
+            'home_expected_goals'     => $this->floatStat($homeStats, 'expected_goals'),
+            'away_expected_goals'     => $this->floatStat($awayStats, 'expected_goals'),
+            'home_goals_prevented'    => $this->floatStat($homeStats, 'goals_prevented'),
+            'away_goals_prevented'    => $this->floatStat($awayStats, 'goals_prevented'),
             // --- raw payload: preserves ALL API keys including unmapped ones ---
             'raw_stats'               => ['home' => $homeStats, 'away' => $awayStats],
         ];
@@ -731,6 +736,31 @@ class ApiFootballMatchStatisticsSyncService
             return null;
         }
         return (int) $value;
+    }
+
+    /**
+     * Parse a decimal/float stat from the API.
+     * Handles string "1.08", float 1.43, negative "-1.34", "0.00", null, "", comma decimals.
+     * Returns null for null, empty string, or non-numeric values — never throws.
+     * Differs from percentStat: no "%" stripping; supports negative values.
+     */
+    private function floatStat(array $stats, string $key): ?float
+    {
+        $value = $stats[$key] ?? null;
+        if ($value === null) {
+            return null;
+        }
+        if (is_string($value)) {
+            $normalized = str_replace(',', '.', trim($value));
+            if ($normalized === '' || !is_numeric($normalized)) {
+                return null;
+            }
+            return (float) $normalized;
+        }
+        if (is_numeric($value)) {
+            return (float) $value;
+        }
+        return null;
     }
 
     /**

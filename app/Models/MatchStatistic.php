@@ -50,6 +50,11 @@ class MatchStatistic extends Model
         'away_passes_percentage',
         // raw payload
         'raw_stats',
+        // xG
+        'home_expected_goals',
+        'away_expected_goals',
+        'home_goals_prevented',
+        'away_goals_prevented',
     ];
 
     protected $casts = [
@@ -59,6 +64,10 @@ class MatchStatistic extends Model
         'home_passes_percentage' => 'float',
         'away_passes_percentage' => 'float',
         'raw_stats'              => 'array',
+        'home_expected_goals'    => 'float',
+        'away_expected_goals'    => 'float',
+        'home_goals_prevented'   => 'float',
+        'away_goals_prevented'   => 'float',
     ];
 
     public function match(): BelongsTo
