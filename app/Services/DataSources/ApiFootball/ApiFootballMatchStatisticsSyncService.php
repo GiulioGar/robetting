@@ -13,6 +13,17 @@ use Illuminate\Support\Facades\Log;
 
 class ApiFootballMatchStatisticsSyncService
 {
+    /**
+     * Current statistics schema version.
+     *
+     * A row at this version was processed with the full current parser.
+     * See migration 2026_09_15_000001 for the full version history.
+     *
+     *   1 = fetched before extended-stats / xG columns existed → incomplete
+     *   2 = current: extended stats + expected_goals + goals_prevented + raw_stats
+     */
+    public const CURRENT_STATS_SCHEMA_VERSION = 2;
+
     private ?DataSource $ds = null;
 
     public function __construct(private readonly ApiFootballClient $client) {}
@@ -23,8 +34,8 @@ class ApiFootballMatchStatisticsSyncService
     }
 
     /**
-     * Fetch statistics for all definitive matches that are absent or incomplete.
-     * Completeness: row exists AND home_shots IS NOT NULL.
+     * Fetch statistics for all definitive matches that are absent or below the current schema version.
+     * Completeness gate: stats_schema_version >= CURRENT_STATS_SCHEMA_VERSION.
      * One API call per candidate match (no batch endpoint for statistics).
      *
      * @return array{status:string,candidates:int,created:int,updated:int,unchanged:int,skipped:int,warnings:list<string>,api_calls:int,daily_remaining:int|null}
@@ -55,15 +66,16 @@ class ApiFootballMatchStatisticsSyncService
             ->keyBy('match_id')
             ->all();
 
-        // Completeness: row exists AND fetched_at IS NOT NULL.
-        // fetched_at is set on any successful HTTP response (even empty/partial),
-        // so a fetched row is never re-fetched regardless of which metric values are null.
+        // Completeness: row exists AND stats_schema_version >= CURRENT_STATS_SCHEMA_VERSION.
+        // A versioned row was processed with the full current parser; any null metric values
+        // reflect genuinely absent data from the source (e.g. Bundesliga returns no xG).
+        // fetched_at remains informative (last fetch timestamp) but is no longer the gate.
         $candidates = [];
         $unchanged  = 0;
 
         foreach ($extIdByMatchId as $matchId => $extId) {
             $stat = $existingStats[$matchId] ?? null;
-            if ($stat !== null && $stat->fetched_at !== null) {
+            if ($stat !== null && $stat->stats_schema_version !== null && $stat->stats_schema_version >= self::CURRENT_STATS_SCHEMA_VERSION) {
                 $unchanged++;
             } else {
                 $candidates[$matchId] = $extId;
@@ -112,10 +124,10 @@ class ApiFootballMatchStatisticsSyncService
 
                     if (empty($response->response)) {
                         // Valid HTTP response but source has no stats for this fixture.
-                        // Mark as fetched so we never loop on it again.
+                        // Treat as permanently complete: source confirms no stats exist.
                         MatchStatistic::updateOrCreate(
                             ['match_id' => $matchId, 'data_source_id' => $ds->id],
-                            ['fetched_at' => $fetchedAt],
+                            ['fetched_at' => $fetchedAt, 'stats_schema_version' => self::CURRENT_STATS_SCHEMA_VERSION],
                         );
                         $skipped++;
                         $warnings[] = "fixture {$extId}: empty statistics response";
@@ -126,7 +138,7 @@ class ApiFootballMatchStatisticsSyncService
 
                     if ($parsed === null) {
                         // Non-empty response but home/away identification failed (unexpected format).
-                        // Do NOT set fetched_at: the data was present but unreadable;
+                        // Do NOT set fetched_at or stats_schema_version: data present but unreadable;
                         // a future sync or parser fix should be able to recover it.
                         $skipped++;
                         $warnings[] = "fixture {$extId}: could not map home/away stats — will retry on next sync";
@@ -138,7 +150,7 @@ class ApiFootballMatchStatisticsSyncService
 
                     MatchStatistic::updateOrCreate(
                         ['match_id' => $matchId, 'data_source_id' => $ds->id],
-                        array_merge($parsed, ['fetched_at' => $fetchedAt]),
+                        array_merge($parsed, ['fetched_at' => $fetchedAt, 'stats_schema_version' => self::CURRENT_STATS_SCHEMA_VERSION]),
                     );
 
                     if ($existing === null) {
@@ -189,8 +201,8 @@ class ApiFootballMatchStatisticsSyncService
 
     /**
      * Fetch and upsert statistics for a single definitive match.
-     * Skips the API call if fetched_at is already set (already complete).
-     * Sets fetched_at on any valid 2xx response.
+     * Skips the API call if stats_schema_version >= CURRENT_STATS_SCHEMA_VERSION.
+     * Sets fetched_at and stats_schema_version on any valid 2xx response.
      * Throws ApiFootballException on HTTP failure so the caller can log and continue.
      *
      * @return array{outcome:string,api_calls:int}
@@ -203,7 +215,7 @@ class ApiFootballMatchStatisticsSyncService
             ->where('data_source_id', $ds->id)
             ->first();
 
-        if ($existing !== null && $existing->fetched_at !== null) {
+        if ($existing !== null && $existing->stats_schema_version !== null && $existing->stats_schema_version >= self::CURRENT_STATS_SCHEMA_VERSION) {
             return ['outcome' => 'skipped_complete', 'api_calls' => 0];
         }
 
@@ -289,17 +301,17 @@ class ApiFootballMatchStatisticsSyncService
 
     /**
      * Backfill statistics for all definitive matches in the target season that have an
-     * API-Football external ID but have no statistics yet (absent row OR fetched_at IS NULL).
+     * API-Football external ID but are absent or below the current schema version.
      *
      * @param  int|null  $seasonYear  year_start of the target season; null = current season(s).
      *
-     * Candidacy: absent MatchStatistic row OR row with fetched_at IS NULL.
-     * Resolved (excluded): row with fetched_at IS NOT NULL — regardless of which metrics are null.
+     * Candidacy: absent MatchStatistic row OR stats_schema_version < CURRENT_STATS_SCHEMA_VERSION (or null).
+     * Resolved (excluded): stats_schema_version >= CURRENT_STATS_SCHEMA_VERSION.
      *
      * Retryability:
-     *  - HTTP failure (ApiFootballException) → failed++, fetched_at unchanged → retryable.
-     *  - Unparsable response → fetched_at unchanged → retryable.
-     *  - Empty [] response → fetched_at SET (permanent, source confirmed no data) → not retried.
+     *  - HTTP failure (ApiFootballException) → failed++, version unchanged → retryable.
+     *  - Unparsable response → version unchanged → retryable.
+     *  - Empty [] response → stats_schema_version SET to CURRENT (source confirmed no data) → not retried.
      *
      * Ordering: kickoff_at DESC. No hard limit — caller responsible for timeout (set_time_limit(0)).
      *
@@ -350,7 +362,7 @@ class ApiFootballMatchStatisticsSyncService
 
         foreach ($extIdByMatchId as $matchId => $extId) {
             $stat = $existingByMatchId[$matchId] ?? null;
-            if ($stat !== null && $stat->fetched_at !== null) {
+            if ($stat !== null && $stat->stats_schema_version !== null && $stat->stats_schema_version >= self::CURRENT_STATS_SCHEMA_VERSION) {
                 $unchanged++;
             } else {
                 $candidateExtIds[$matchId] = $extId;
@@ -451,10 +463,10 @@ class ApiFootballMatchStatisticsSyncService
             return ['status' => 'ok', 'candidates' => 0, 'synced' => 0, 'skipped' => 0, 'failed' => 0, 'api_calls' => 0];
         }
 
-        // Exclude matches that already have fetched_at — these are permanently complete.
-        $alreadyFetched = MatchStatistic::where('data_source_id', $ds->id)
+        // Exclude matches already at the current schema version — these are complete.
+        $alreadyComplete = MatchStatistic::where('data_source_id', $ds->id)
             ->whereIn('match_id', array_keys($extIdByMatchId))
-            ->whereNotNull('fetched_at')
+            ->where('stats_schema_version', '>=', self::CURRENT_STATS_SCHEMA_VERSION)
             ->pluck('match_id')
             ->flip()
             ->all();
@@ -471,7 +483,7 @@ class ApiFootballMatchStatisticsSyncService
         $apiCalls   = 0;
 
         foreach ($extIdByMatchId as $matchId => $extId) {
-            if (isset($alreadyFetched[$matchId])) {
+            if (isset($alreadyComplete[$matchId])) {
                 continue;
             }
 
@@ -511,8 +523,14 @@ class ApiFootballMatchStatisticsSyncService
 
     /**
      * Core fetch + upsert for a single match.
-     * $markComplete=true → sets fetched_at on success (post-match flow).
-     * $markComplete=false → never touches fetched_at (live flow).
+     * $markComplete=true  → sets fetched_at + stats_schema_version = CURRENT on success (post-match).
+     * $markComplete=false → never touches fetched_at or stats_schema_version (live flow).
+     *
+     * Version is set ONLY on success (synced or empty):
+     *  - HTTP failure → version unchanged (retryable).
+     *  - Unparsable response → version unchanged (retryable).
+     *  - Empty API response → treated as permanently complete (source has no stats).
+     *  - Null metric values from source (e.g. Bundesliga no xG) are NOT a failure → version set.
      *
      * @return array{outcome:string,api_calls:int}
      */
@@ -531,7 +549,7 @@ class ApiFootballMatchStatisticsSyncService
             if ($markComplete) {
                 MatchStatistic::updateOrCreate(
                     ['match_id' => $match->id, 'data_source_id' => $ds->id],
-                    ['fetched_at' => now()],
+                    ['fetched_at' => now(), 'stats_schema_version' => self::CURRENT_STATS_SCHEMA_VERSION],
                 );
             }
             return ['outcome' => 'empty', 'api_calls' => 1];
@@ -544,7 +562,9 @@ class ApiFootballMatchStatisticsSyncService
             return ['outcome' => 'unparsable', 'api_calls' => 1];
         }
 
-        $data = $markComplete ? array_merge($parsed, ['fetched_at' => now()]) : $parsed;
+        $data = $markComplete
+            ? array_merge($parsed, ['fetched_at' => now(), 'stats_schema_version' => self::CURRENT_STATS_SCHEMA_VERSION])
+            : $parsed;
 
         MatchStatistic::updateOrCreate(
             ['match_id' => $match->id, 'data_source_id' => $ds->id],
@@ -555,23 +575,27 @@ class ApiFootballMatchStatisticsSyncService
     }
 
     /**
-     * Fetch and upsert statistics for all definitive matches in the requested season,
-     * regardless of whether fetched_at is already set. Used to populate extended
-     * columns added after the initial backfill without resetting the global sentinel.
+     * Fetch and upsert statistics for all definitive matches in the requested season
+     * that are below the current schema version (v1 or null).
      *
-     * Every candidate triggers one API call. HTTP failures are caught per-fixture so
-     * a single error never blocks the remaining matches.
-     * Always sets fetched_at = now() on a successful response (refreshes the timestamp).
+     * Completeness gate: rows with stats_schema_version >= CURRENT_STATS_SCHEMA_VERSION
+     * are skipped unless $force = true.
      *
-     * @return array{status:string,candidates:int,updated:int,failed:int,api_calls:int,daily_remaining:null}
+     * $force = true bypasses the gate and re-fetches every definitive match in the
+     * season regardless of existing version. Use only for schema upgrades or data repair.
+     *
+     * HTTP failures are caught per-fixture so a single error never blocks remaining matches.
+     * Always sets fetched_at = now() and stats_schema_version = CURRENT on success.
+     *
+     * @return array{status:string,candidates:int,updated:int,unchanged:int,failed:int,api_calls:int,daily_remaining:null}
      */
-    public function backfillExtendedHistorical(int $seasonYear): array
+    public function backfillExtendedHistorical(int $seasonYear, bool $force = false): array
     {
         $ds = $this->dataSource();
 
         $seasonIds = Season::where('year_start', $seasonYear)->pluck('id');
         if ($seasonIds->isEmpty()) {
-            return ['status' => 'no_season_found', 'candidates' => 0, 'updated' => 0, 'failed' => 0, 'api_calls' => 0, 'daily_remaining' => null];
+            return ['status' => 'no_season_found', 'candidates' => 0, 'updated' => 0, 'unchanged' => 0, 'failed' => 0, 'api_calls' => 0, 'daily_remaining' => null];
         }
 
         $matchIds = FootballMatch::whereIn('season_id', $seasonIds)
@@ -579,7 +603,7 @@ class ApiFootballMatchStatisticsSyncService
             ->pluck('id');
 
         if ($matchIds->isEmpty()) {
-            return ['status' => 'ok', 'candidates' => 0, 'updated' => 0, 'failed' => 0, 'api_calls' => 0, 'daily_remaining' => null];
+            return ['status' => 'ok', 'candidates' => 0, 'updated' => 0, 'unchanged' => 0, 'failed' => 0, 'api_calls' => 0, 'daily_remaining' => null];
         }
 
         $extIdByMatchId = MatchExternalId::where('data_source_id', $ds->id)
@@ -588,8 +612,15 @@ class ApiFootballMatchStatisticsSyncService
             ->all();
 
         if (empty($extIdByMatchId)) {
-            return ['status' => 'ok', 'candidates' => 0, 'updated' => 0, 'failed' => 0, 'api_calls' => 0, 'daily_remaining' => null];
+            return ['status' => 'ok', 'candidates' => 0, 'updated' => 0, 'unchanged' => 0, 'failed' => 0, 'api_calls' => 0, 'daily_remaining' => null];
         }
+
+        // Pre-load existing stats to apply the version gate efficiently.
+        $existingByMatchId = MatchStatistic::where('data_source_id', $ds->id)
+            ->whereIn('match_id', array_keys($extIdByMatchId))
+            ->get()
+            ->keyBy('match_id')
+            ->all();
 
         $matchModels = FootballMatch::whereIn('id', array_keys($extIdByMatchId))
             ->orderByDesc('kickoff_at')
@@ -598,6 +629,7 @@ class ApiFootballMatchStatisticsSyncService
 
         $candidates = 0;
         $updated    = 0;
+        $unchanged  = 0;
         $failed     = 0;
         $apiCalls   = 0;
 
@@ -607,10 +639,20 @@ class ApiFootballMatchStatisticsSyncService
                 continue;
             }
 
+            // Version gate: skip rows already at the current schema version unless forced.
+            $existingStat = $existingByMatchId[$match->id] ?? null;
+            if (!$force
+                && $existingStat !== null
+                && $existingStat->stats_schema_version !== null
+                && $existingStat->stats_schema_version >= self::CURRENT_STATS_SCHEMA_VERSION
+            ) {
+                $unchanged++;
+                continue;
+            }
+
             $candidates++;
 
             try {
-                // Always fetch regardless of existing fetched_at; always mark complete.
                 $result    = $this->fetchAndUpsertStats($match, $extId, markComplete: true);
                 $apiCalls += $result['api_calls'];
 
@@ -627,6 +669,7 @@ class ApiFootballMatchStatisticsSyncService
             'status'          => 'ok',
             'candidates'      => $candidates,
             'updated'         => $updated,
+            'unchanged'       => $unchanged,
             'failed'          => $failed,
             'api_calls'       => $apiCalls,
             'daily_remaining' => null,

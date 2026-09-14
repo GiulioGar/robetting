@@ -154,9 +154,10 @@ class ServeLocalPendingEventsTest extends TestCase
 
         $ds = DataSource::where('slug', 'api-football')->firstOrFail();
         MatchStatistic::create([
-            'match_id'       => $match->id,
-            'data_source_id' => $ds->id,
-            'fetched_at'     => now()->subMinutes(5),
+            'match_id'             => $match->id,
+            'data_source_id'       => $ds->id,
+            'fetched_at'           => now()->subMinutes(5),
+            'stats_schema_version' => \App\Services\DataSources\ApiFootball\ApiFootballMatchStatisticsSyncService::CURRENT_STATS_SCHEMA_VERSION,
         ]);
 
         Http::fake();

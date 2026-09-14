@@ -55,6 +55,8 @@ class MatchStatistic extends Model
         'away_expected_goals',
         'home_goals_prevented',
         'away_goals_prevented',
+        // schema version
+        'stats_schema_version',
     ];
 
     protected $casts = [
@@ -68,6 +70,7 @@ class MatchStatistic extends Model
         'away_expected_goals'    => 'float',
         'home_goals_prevented'   => 'float',
         'away_goals_prevented'   => 'float',
+        'stats_schema_version'   => 'integer',
     ];
 
     public function match(): BelongsTo

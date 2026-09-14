@@ -207,9 +207,10 @@ class ApiFootballAutoStatsOnDefinitiveTest extends TestCase
         $match = $this->makeMatchWithExtId(now()->subMinutes(110), 'finished', 9505);
 
         MatchStatistic::create([
-            'match_id'       => $match->id,
-            'data_source_id' => $this->ds->id,
-            'fetched_at'     => now()->subMinutes(30),
+            'match_id'             => $match->id,
+            'data_source_id'       => $this->ds->id,
+            'fetched_at'           => now()->subMinutes(30),
+            'stats_schema_version' => ApiFootballMatchStatisticsSyncService::CURRENT_STATS_SCHEMA_VERSION,
         ]);
 
         Http::fake();

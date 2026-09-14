@@ -613,6 +613,7 @@ class ApiFootballMatchStatisticsSyncServiceTest extends TestCase
             'match_id'             => $matchId,
             'data_source_id'       => $this->ds->id,
             'fetched_at'           => now(),
+            'stats_schema_version' => \App\Services\DataSources\ApiFootball\ApiFootballMatchStatisticsSyncService::CURRENT_STATS_SCHEMA_VERSION,
             'home_shots'           => 10,
             'away_shots'           => 8,
             'home_shots_on_target' => 4,
@@ -632,13 +633,14 @@ class ApiFootballMatchStatisticsSyncServiceTest extends TestCase
     private function makePartiallyFetchedStats(int $matchId): MatchStatistic
     {
         return MatchStatistic::create([
-            'match_id'       => $matchId,
-            'data_source_id' => $this->ds->id,
-            'fetched_at'     => now(),   // already fetched
-            'home_shots'     => 10,
-            'away_shots'     => 8,
-            'home_fouls'     => null,    // source did not provide this metric
-            'away_fouls'     => null,
+            'match_id'             => $matchId,
+            'data_source_id'       => $this->ds->id,
+            'fetched_at'           => now(),   // already fetched
+            'stats_schema_version' => \App\Services\DataSources\ApiFootball\ApiFootballMatchStatisticsSyncService::CURRENT_STATS_SCHEMA_VERSION,
+            'home_shots'           => 10,
+            'away_shots'           => 8,
+            'home_fouls'           => null,    // source did not provide this metric
+            'away_fouls'           => null,
         ]);
     }
 
@@ -953,15 +955,23 @@ class ApiFootballMatchStatisticsSyncServiceTest extends TestCase
 
         $service = app(ApiFootballMatchStatisticsSyncService::class);
 
-        $first  = $service->backfillExtendedHistorical(2026);
+        $first = $service->backfillExtendedHistorical(2026);
+
+        Http::fake(); // reset recorded calls — second run must not send any request
+
         $second = $service->backfillExtendedHistorical(2026);
 
+        // First run: row was absent → fetched → created
         $this->assertSame(1, $first['candidates']);
         $this->assertSame(1, $first['updated']);
-        $this->assertSame(1, $second['candidates']);
-        $this->assertSame(1, $second['updated']);
 
-        // Exactly one row in DB
+        // Second run: row is now v2 → skipped via version gate, 0 API calls
+        $this->assertSame(0, $second['candidates'], 'v2 row must be skipped on second run');
+        $this->assertSame(1, $second['unchanged']);
+        $this->assertSame(0, $second['api_calls']);
+        Http::assertNothingSent();
+
+        // Exactly one row in DB (no duplicates)
         $this->assertSame(
             1,
             MatchStatistic::where('match_id', $match->id)->where('data_source_id', $this->ds->id)->count(),
@@ -1026,6 +1036,323 @@ class ApiFootballMatchStatisticsSyncServiceTest extends TestCase
 
         $this->artisan('robetting:backfill-extended-statistics --season=2026')
             ->assertExitCode(\Illuminate\Console\Command::SUCCESS);
+    }
+
+    // =========================================================================
+    // Stats schema versioning
+    // =========================================================================
+
+    // V1: row with stats_schema_version=1 (old fetch) is a candidate for resync
+    public function test_v1_row_is_candidate_for_resync(): void
+    {
+        $match = $this->makeFinishedMatch(9500);
+        MatchStatistic::create([
+            'match_id'             => $match->id,
+            'data_source_id'       => $this->ds->id,
+            'fetched_at'           => now()->subDay(),
+            'stats_schema_version' => 1,   // old schema — incomplete
+            'home_shots'           => 5,
+            'away_shots'           => 3,
+        ]);
+
+        Http::fake(['*fixtures/statistics*' => Http::response($this->extendedStatsResponse(), 200)]);
+
+        $result = app(ApiFootballMatchStatisticsSyncService::class)->syncAll();
+
+        $this->assertSame(1, $result['candidates'], 'v1 row must be a candidate');
+        $this->assertSame(1, $result['api_calls']);
+    }
+
+    // V-null: row with stats_schema_version=null (legacy or never set) is a candidate
+    public function test_null_version_row_is_candidate(): void
+    {
+        $match = $this->makeFinishedMatch(9501);
+        MatchStatistic::create([
+            'match_id'             => $match->id,
+            'data_source_id'       => $this->ds->id,
+            'fetched_at'           => now()->subDay(),
+            'stats_schema_version' => null,
+            'home_shots'           => 7,
+        ]);
+
+        Http::fake(['*fixtures/statistics*' => Http::response($this->extendedStatsResponse(), 200)]);
+
+        $result = app(ApiFootballMatchStatisticsSyncService::class)->syncAll();
+
+        $this->assertSame(1, $result['candidates'], 'null-version row must be a candidate');
+        $this->assertSame(1, $result['api_calls']);
+    }
+
+    // V2: row with stats_schema_version=CURRENT is skipped (complete)
+    public function test_v2_row_is_skipped_no_api_call(): void
+    {
+        $match = $this->makeFinishedMatch(9502);
+        MatchStatistic::create([
+            'match_id'             => $match->id,
+            'data_source_id'       => $this->ds->id,
+            'fetched_at'           => now()->subDay(),
+            'stats_schema_version' => ApiFootballMatchStatisticsSyncService::CURRENT_STATS_SCHEMA_VERSION,
+            'home_shots'           => 10,
+        ]);
+
+        Http::fake();
+
+        $result = app(ApiFootballMatchStatisticsSyncService::class)->syncAll();
+
+        $this->assertSame(0, $result['candidates']);
+        $this->assertSame(1, $result['unchanged']);
+        $this->assertSame(0, $result['api_calls']);
+        Http::assertNothingSent();
+    }
+
+    // Successful fetch → stats_schema_version set to CURRENT
+    public function test_successful_fetch_sets_schema_version_current(): void
+    {
+        $match = $this->makeFinishedMatch(9503);
+
+        Http::fake(['*fixtures/statistics*' => Http::response($this->extendedStatsResponse(), 200)]);
+
+        app(ApiFootballMatchStatisticsSyncService::class)->syncAll();
+
+        $stat = MatchStatistic::where('match_id', $match->id)->where('data_source_id', $this->ds->id)->first();
+        $this->assertSame(
+            ApiFootballMatchStatisticsSyncService::CURRENT_STATS_SCHEMA_VERSION,
+            $stat->stats_schema_version,
+        );
+    }
+
+    // Empty API response (source has no stats) → stats_schema_version = CURRENT (permanent)
+    public function test_empty_api_response_sets_schema_version_current(): void
+    {
+        $match = $this->makeFinishedMatch(9504);
+
+        $emptyResponse = ['errors' => [], 'results' => 0, 'paging' => ['current' => 1, 'total' => 1], 'response' => []];
+        Http::fake(['*fixtures/statistics*' => Http::response($emptyResponse, 200)]);
+
+        app(ApiFootballMatchStatisticsSyncService::class)->syncAll();
+
+        $stat = MatchStatistic::where('match_id', $match->id)->where('data_source_id', $this->ds->id)->first();
+        $this->assertNotNull($stat);
+        $this->assertSame(
+            ApiFootballMatchStatisticsSyncService::CURRENT_STATS_SCHEMA_VERSION,
+            $stat->stats_schema_version,
+            'Empty response (no stats available for fixture) must be treated as permanently complete',
+        );
+    }
+
+    // HTTP failure (ApiFootballException) → stats_schema_version NOT updated
+    public function test_api_failure_does_not_update_schema_version(): void
+    {
+        $match = $this->makeFinishedMatch(9505);
+        $existing = MatchStatistic::create([
+            'match_id'             => $match->id,
+            'data_source_id'       => $this->ds->id,
+            'fetched_at'           => null,
+            'stats_schema_version' => null,
+        ]);
+
+        Http::fake(['*fixtures/statistics*' => Http::response(null, 500)]);
+
+        app(ApiFootballMatchStatisticsSyncService::class)->syncAll();
+
+        $existing->refresh();
+        $this->assertNull($existing->stats_schema_version, 'HTTP failure must not advance schema version');
+    }
+
+    // Bundesliga-style payload (no xG) → version still set to CURRENT (null metrics ≠ failure)
+    public function test_payload_without_xg_still_sets_schema_version_current(): void
+    {
+        $match = $this->makeFinishedMatch(9506);
+
+        // Bundesliga response: standard stats, no expected_goals, no goals_prevented
+        $bundesligaResponse = [
+            'errors'   => [],
+            'results'  => 2,
+            'paging'   => ['current' => 1, 'total' => 1],
+            'response' => [
+                ['team' => ['id' => (int) self::HOME_EXT_ID, 'name' => 'Bayern'],
+                 'statistics' => [
+                     ['type' => 'Total Shots', 'value' => 12],
+                     ['type' => 'Shots on Goal', 'value' => 5],
+                     ['type' => 'Fouls', 'value' => 11],
+                     ['type' => 'Corner Kicks', 'value' => 6],
+                     ['type' => 'Yellow Cards', 'value' => 1],
+                     ['type' => 'Red Cards', 'value' => 0],
+                     ['type' => 'Free Kicks', 'value' => 8],  // Bundesliga-specific
+                 ]],
+                ['team' => ['id' => (int) self::AWAY_EXT_ID, 'name' => 'Dortmund'],
+                 'statistics' => [
+                     ['type' => 'Total Shots', 'value' => 9],
+                     ['type' => 'Shots on Goal', 'value' => 3],
+                     ['type' => 'Fouls', 'value' => 14],
+                     ['type' => 'Corner Kicks', 'value' => 4],
+                     ['type' => 'Yellow Cards', 'value' => 2],
+                     ['type' => 'Red Cards', 'value' => 0],
+                     ['type' => 'Free Kicks', 'value' => 9],
+                 ]],
+            ],
+        ];
+
+        Http::fake(['*fixtures/statistics*' => Http::response($bundesligaResponse, 200)]);
+
+        app(ApiFootballMatchStatisticsSyncService::class)->syncAll();
+
+        $stat = MatchStatistic::where('match_id', $match->id)->where('data_source_id', $this->ds->id)->first();
+        $this->assertSame(
+            ApiFootballMatchStatisticsSyncService::CURRENT_STATS_SCHEMA_VERSION,
+            $stat->stats_schema_version,
+            'xG absent in source does not prevent version upgrade — parser ran successfully',
+        );
+        $this->assertNull($stat->home_expected_goals, 'Bundesliga xG is null — correctly absent');
+        $this->assertNotNull($stat->home_shots, 'Standard shots still present');
+    }
+
+    // Idempotency: v2 row → second run skips with 0 API calls
+    public function test_v2_row_idempotent_no_api_call_on_second_run(): void
+    {
+        $this->makeFinishedMatch(9507);
+
+        Http::fake(['*fixtures/statistics*' => Http::response($this->extendedStatsResponse(), 200)]);
+
+        app(ApiFootballMatchStatisticsSyncService::class)->syncAll();
+
+        Http::fake(); // reset
+
+        $result = app(ApiFootballMatchStatisticsSyncService::class)->syncAll();
+
+        $this->assertSame(0, $result['candidates']);
+        $this->assertSame(0, $result['api_calls']);
+        $this->assertSame(1, $result['unchanged']);
+        Http::assertNothingSent();
+    }
+
+    // fetched_at is still set alongside version (informative, not removed)
+    public function test_fetched_at_still_set_after_versioned_sync(): void
+    {
+        $match = $this->makeFinishedMatch(9508);
+
+        Http::fake(['*fixtures/statistics*' => Http::response($this->extendedStatsResponse(), 200)]);
+
+        app(ApiFootballMatchStatisticsSyncService::class)->syncAll();
+
+        $stat = MatchStatistic::where('match_id', $match->id)->where('data_source_id', $this->ds->id)->first();
+        $this->assertNotNull($stat->fetched_at, 'fetched_at must remain set as informative timestamp');
+        $this->assertSame(ApiFootballMatchStatisticsSyncService::CURRENT_STATS_SCHEMA_VERSION, $stat->stats_schema_version);
+    }
+
+    // v1 row via syncMissingHistorical → should be a candidate (not skipped)
+    public function test_v1_row_is_candidate_in_sync_missing_historical(): void
+    {
+        $match = $this->makeFinishedMatch(9509);
+        MatchStatistic::create([
+            'match_id'             => $match->id,
+            'data_source_id'       => $this->ds->id,
+            'fetched_at'           => now()->subDay(),
+            'stats_schema_version' => 1,
+            'home_shots'           => 5,
+        ]);
+
+        Http::fake(['*fixtures/statistics*' => Http::response($this->extendedStatsResponse(), 200)]);
+
+        $result = app(ApiFootballMatchStatisticsSyncService::class)->syncMissingHistorical(2026);
+
+        $this->assertSame(1, $result['candidates'], 'v1 row must be a candidate in syncMissingHistorical');
+        $this->assertSame(1, $result['api_calls']);
+
+        $stat = MatchStatistic::where('match_id', $match->id)->where('data_source_id', $this->ds->id)->first();
+        $this->assertSame(ApiFootballMatchStatisticsSyncService::CURRENT_STATS_SCHEMA_VERSION, $stat->stats_schema_version);
+    }
+
+    // =========================================================================
+    // backfillExtendedHistorical — version gate
+    // =========================================================================
+
+    // v1 row → backfill treats it as candidate → 1 API call
+    public function test_backfill_v1_row_is_candidate(): void
+    {
+        $match = $this->makeFinishedMatch(9600);
+        MatchStatistic::create([
+            'match_id'             => $match->id,
+            'data_source_id'       => $this->ds->id,
+            'fetched_at'           => now()->subDay(),
+            'stats_schema_version' => 1,
+            'home_shots'           => 5,
+        ]);
+
+        Http::fake(['*fixtures/statistics*' => Http::response($this->extendedStatsResponse(), 200)]);
+
+        $result = app(ApiFootballMatchStatisticsSyncService::class)->backfillExtendedHistorical(2026);
+
+        $this->assertSame(1, $result['candidates'], 'v1 row must be a backfill candidate');
+        $this->assertSame(1, $result['api_calls']);
+        $this->assertSame(0, $result['unchanged']);
+
+        $stat = MatchStatistic::where('match_id', $match->id)->where('data_source_id', $this->ds->id)->first();
+        $this->assertSame(ApiFootballMatchStatisticsSyncService::CURRENT_STATS_SCHEMA_VERSION, $stat->stats_schema_version);
+    }
+
+    // v2 row without --force → skipped (unchanged), 0 API calls
+    public function test_backfill_v2_row_is_skipped_without_force(): void
+    {
+        $match = $this->makeFinishedMatch(9601);
+        MatchStatistic::create([
+            'match_id'             => $match->id,
+            'data_source_id'       => $this->ds->id,
+            'fetched_at'           => now()->subDay(),
+            'stats_schema_version' => ApiFootballMatchStatisticsSyncService::CURRENT_STATS_SCHEMA_VERSION,
+            'home_shots'           => 12,
+        ]);
+
+        Http::fake();
+
+        $result = app(ApiFootballMatchStatisticsSyncService::class)->backfillExtendedHistorical(2026);
+
+        $this->assertSame(0, $result['candidates'], 'v2 row must not be a candidate without --force');
+        $this->assertSame(1, $result['unchanged']);
+        $this->assertSame(0, $result['api_calls']);
+        Http::assertNothingSent();
+    }
+
+    // After a successful backfill (v1→v2), a second run produces zero API calls
+    public function test_backfill_second_run_after_upgrade_is_idempotent(): void
+    {
+        $this->makeFinishedMatch(9602);
+
+        Http::fake(['*fixtures/statistics*' => Http::response($this->extendedStatsResponse(), 200)]);
+
+        $first = app(ApiFootballMatchStatisticsSyncService::class)->backfillExtendedHistorical(2026);
+        $this->assertSame(1, $first['candidates']);
+        $this->assertSame(1, $first['api_calls']);
+
+        Http::fake(); // reset recorded calls
+
+        $second = app(ApiFootballMatchStatisticsSyncService::class)->backfillExtendedHistorical(2026);
+
+        $this->assertSame(0, $second['candidates'], 'row upgraded to v2 must be skipped on second run');
+        $this->assertSame(1, $second['unchanged']);
+        $this->assertSame(0, $second['api_calls']);
+        Http::assertNothingSent();
+    }
+
+    // v2 row with force=true → version gate bypassed → 1 API call
+    public function test_backfill_v2_row_with_force_triggers_api_call(): void
+    {
+        $match = $this->makeFinishedMatch(9603);
+        MatchStatistic::create([
+            'match_id'             => $match->id,
+            'data_source_id'       => $this->ds->id,
+            'fetched_at'           => now()->subDay(),
+            'stats_schema_version' => ApiFootballMatchStatisticsSyncService::CURRENT_STATS_SCHEMA_VERSION,
+            'home_shots'           => 12,
+        ]);
+
+        Http::fake(['*fixtures/statistics*' => Http::response($this->extendedStatsResponse(), 200)]);
+
+        $result = app(ApiFootballMatchStatisticsSyncService::class)->backfillExtendedHistorical(2026, force: true);
+
+        $this->assertSame(1, $result['candidates'], 'v2 row with force=true must be a candidate');
+        $this->assertSame(1, $result['api_calls']);
+        $this->assertSame(0, $result['unchanged']);
     }
 
     // =========================================================================
