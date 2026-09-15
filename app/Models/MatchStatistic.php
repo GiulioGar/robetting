@@ -57,10 +57,13 @@ class MatchStatistic extends Model
         'away_goals_prevented',
         // schema version
         'stats_schema_version',
+        // late enrichment throttle
+        'advanced_stats_checked_at',
     ];
 
     protected $casts = [
-        'fetched_at'             => 'datetime',
+        'fetched_at'                 => 'datetime',
+        'advanced_stats_checked_at'  => 'datetime',
         'home_possession'        => 'float',
         'away_possession'        => 'float',
         'home_passes_percentage' => 'float',

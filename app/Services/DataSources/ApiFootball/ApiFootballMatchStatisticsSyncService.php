@@ -677,6 +677,226 @@ class ApiFootballMatchStatisticsSyncService
     }
 
     /**
+     * Attempt late enrichment for v2 rows that are missing any advanced statistic.
+     *
+     * API-Football adds expected_goals and goals_prevented retroactively. This method
+     * targets rows already at the current schema version but missing any of the four
+     * advanced columns, re-fetching them according to a configurable timing policy.
+     *
+     * Candidate criteria:
+     *  1. stats_schema_version >= CURRENT (already fully processed, not a backfill gap)
+     *  2. Any of: home_expected_goals, away_expected_goals,
+     *             home_goals_prevented, away_goals_prevented IS NULL
+     *  3. Match kickoff_at >= now() - late_stats_max_age_days
+     *  4. Match status IN DEFINITIVE_STATUSES
+     *  5. Timing gate (two-phase):
+     *     A) Never enrichment-checked (advanced_stats_checked_at IS NULL):
+     *        COALESCE(fetched_at, kickoff_at) <= now() - late_stats_initial_delay_days
+     *        Using kickoff_at as fallback covers v2 rows where fetched_at was never set
+     *        (not re-fetched by normal sync since they are already v2). If both are null
+     *        (degenerate row), COALESCE returns NULL → condition fails → excluded.
+     *     B) Already enrichment-checked (advanced_stats_checked_at IS NOT NULL):
+     *        advanced_stats_checked_at <= now() - late_stats_retry_days
+     *
+     * @param  int|null  $seasonYear  year_start of the target season; null = current season(s).
+     *
+     * @return array{status:string,candidates:int,api_calls:int,xg_recovered:int,goals_prevented_recovered:int,still_missing_advanced:int,updated:int,failed:int,skipped:int}
+     */
+    public function refreshLateStats(?int $seasonYear = null): array
+    {
+        $ds = $this->dataSource();
+
+        $initialDelayDays   = (int) config('api-football.late_stats_initial_delay_days', 2);
+        $retryDays          = (int) config('api-football.late_stats_retry_days', 7);
+        $maxAgeDays         = (int) config('api-football.late_stats_max_age_days', 90);
+        $initialDelayBefore = now()->subDays($initialDelayDays);
+        $retryBefore        = now()->subDays($retryDays);
+        $ageCutoff          = now()->subDays($maxAgeDays);
+
+        if ($seasonYear !== null) {
+            $seasonIds = Season::where('year_start', $seasonYear)->pluck('id');
+        } else {
+            $seasonIds = Season::where('is_current', true)->pluck('id');
+        }
+
+        if ($seasonIds->isEmpty()) {
+            return ['status' => 'no_season_found', 'candidates' => 0, 'api_calls' => 0, 'xg_recovered' => 0, 'goals_prevented_recovered' => 0, 'still_missing_advanced' => 0, 'updated' => 0, 'failed' => 0, 'skipped' => 0];
+        }
+
+        // Definitive matches within the age window for the target seasons.
+        $matchIds = FootballMatch::whereIn('season_id', $seasonIds)
+            ->whereIn('status', ApiFootballFixtureSyncService::DEFINITIVE_STATUSES)
+            ->where('kickoff_at', '>=', $ageCutoff)
+            ->pluck('id');
+
+        if ($matchIds->isEmpty()) {
+            return ['status' => 'ok', 'candidates' => 0, 'api_calls' => 0, 'xg_recovered' => 0, 'goals_prevented_recovered' => 0, 'still_missing_advanced' => 0, 'updated' => 0, 'failed' => 0, 'skipped' => 0];
+        }
+
+        // External IDs for the candidate matches.
+        $extIdByMatchId = MatchExternalId::where('data_source_id', $ds->id)
+            ->whereIn('match_id', $matchIds)
+            ->pluck('external_id', 'match_id')
+            ->all();
+
+        if (empty($extIdByMatchId)) {
+            return ['status' => 'ok', 'candidates' => 0, 'api_calls' => 0, 'xg_recovered' => 0, 'goals_prevented_recovered' => 0, 'still_missing_advanced' => 0, 'updated' => 0, 'failed' => 0, 'skipped' => 0];
+        }
+
+        // Narrow to v2 rows missing any advanced stat, past the two-phase timing gate.
+        // JOIN with matches to access kickoff_at as COALESCE fallback for fetched_at.
+        $candidateMatchIds = MatchStatistic::from('match_statistics')
+            ->join('matches', 'match_statistics.match_id', '=', 'matches.id')
+            ->where('match_statistics.data_source_id', $ds->id)
+            ->whereIn('match_statistics.match_id', array_keys($extIdByMatchId))
+            ->where('match_statistics.stats_schema_version', '>=', self::CURRENT_STATS_SCHEMA_VERSION)
+            ->where(function ($q) {
+                // Any missing advanced stat makes this row a candidate.
+                $q->whereNull('match_statistics.home_expected_goals')
+                  ->orWhereNull('match_statistics.away_expected_goals')
+                  ->orWhereNull('match_statistics.home_goals_prevented')
+                  ->orWhereNull('match_statistics.away_goals_prevented');
+            })
+            ->where(function ($q) use ($initialDelayBefore, $retryBefore) {
+                $q->where(function ($inner) use ($initialDelayBefore) {
+                    // Never enrichment-checked arm: use COALESCE(fetched_at, kickoff_at) as reference.
+                    // Covers v2 rows where fetched_at was never set (normal sync skips v2 rows).
+                    // If both fetched_at and kickoff_at are null, COALESCE returns NULL → excluded.
+                    $inner->whereNull('match_statistics.advanced_stats_checked_at')
+                          ->whereRaw(
+                              'COALESCE(match_statistics.fetched_at, matches.kickoff_at) <= ?',
+                              [$initialDelayBefore],
+                          );
+                })->orWhere(function ($inner) use ($retryBefore) {
+                    // Already enrichment-checked arm: wait for retry interval.
+                    $inner->whereNotNull('match_statistics.advanced_stats_checked_at')
+                          ->where('match_statistics.advanced_stats_checked_at', '<=', $retryBefore);
+                });
+            })
+            ->pluck('match_statistics.match_id')
+            ->all();
+
+        if (empty($candidateMatchIds)) {
+            return ['status' => 'ok', 'candidates' => 0, 'api_calls' => 0, 'xg_recovered' => 0, 'goals_prevented_recovered' => 0, 'still_missing_advanced' => 0, 'updated' => 0, 'failed' => 0, 'skipped' => 0];
+        }
+
+        $candidateExtIds = array_intersect_key($extIdByMatchId, array_flip($candidateMatchIds));
+
+        $matchModels = FootballMatch::whereIn('id', array_keys($candidateExtIds))
+            ->get()
+            ->keyBy('id')
+            ->all();
+
+        $candidates   = count($candidateExtIds);
+        $apiCalls     = 0;
+        $xgRecovered  = 0;
+        $gpRecovered  = 0;
+        $stillMissing = 0;
+        $updated      = 0;
+        $failed       = 0;
+        $skipped      = 0;
+
+        foreach ($candidateExtIds as $matchId => $extId) {
+            $match = $matchModels[$matchId] ?? null;
+            if (!$match) {
+                $skipped++;
+                Log::warning("api-football-late-stats: match {$matchId} not found in pre-load");
+                continue;
+            }
+
+            try {
+                $result    = $this->fetchAndEnrichLateStats($match, $extId);
+                $apiCalls += $result['api_calls'];
+
+                if ($result['outcome'] === 'unparsable') {
+                    $skipped++;
+                } else {
+                    // 'synced' or 'empty' — advanced_stats_checked_at was updated
+                    $updated++;
+                    if ($result['xg_recovered'])              $xgRecovered++;
+                    if ($result['goals_prevented_recovered'])  $gpRecovered++;
+                    if ($result['still_missing_advanced'])     $stillMissing++;
+                }
+            } catch (ApiFootballException $e) {
+                $failed++;
+                Log::error("api-football-late-stats: fixture {$extId} — {$e->getMessage()}");
+            }
+        }
+
+        return [
+            'status'                    => 'ok',
+            'candidates'                => $candidates,
+            'api_calls'                 => $apiCalls,
+            'xg_recovered'              => $xgRecovered,
+            'goals_prevented_recovered' => $gpRecovered,
+            'still_missing_advanced'    => $stillMissing,
+            'updated'                   => $updated,
+            'failed'                    => $failed,
+            'skipped'                   => $skipped,
+        ];
+    }
+
+    /**
+     * Attempt to retrieve late-arriving advanced statistics for a single v2 match.
+     *
+     * Semantics:
+     *  - HTTP success + payload   → upserts full parsed stats; sets fetched_at and advanced_stats_checked_at
+     *  - HTTP success + empty []  → only sets advanced_stats_checked_at; preserves existing data
+     *  - Unparsable response      → no DB write (retryable when parser is fixed)
+     *  - HTTP failure             → throws ApiFootballException; caller handles (failed++)
+     *
+     * stats_schema_version is intentionally NOT modified — the schema version has not changed.
+     *
+     * @return array{outcome:'synced'|'empty'|'unparsable',xg_recovered:bool,goals_prevented_recovered:bool,still_missing_advanced:bool,api_calls:int}
+     */
+    private function fetchAndEnrichLateStats(FootballMatch $match, string $extId): array
+    {
+        $ds = $this->dataSource();
+
+        $homeExtId = TeamExternalId::where('data_source_id', $ds->id)
+            ->where('team_id', $match->home_team_id)
+            ->value('external_id');
+
+        // May throw ApiFootballException — caller catches and increments failed.
+        $response = $this->client->get('fixtures/statistics', ['fixture' => $extId]);
+
+        if (empty($response->response)) {
+            // Source returned [] for a v2 row: mark attempted so the retry interval is respected.
+            // Do NOT wipe existing shots/fouls/passes data from the original fetch.
+            MatchStatistic::where('match_id', $match->id)
+                ->where('data_source_id', $ds->id)
+                ->update(['advanced_stats_checked_at' => now()]);
+
+            return ['outcome' => 'empty', 'xg_recovered' => false, 'goals_prevented_recovered' => false, 'still_missing_advanced' => true, 'api_calls' => 1];
+        }
+
+        $parsed = $this->parseResponse($response->response, $homeExtId);
+
+        if ($parsed === null) {
+            Log::warning("api-football-late-stats: fixture {$extId} — response present but unparsable");
+            return ['outcome' => 'unparsable', 'xg_recovered' => false, 'goals_prevented_recovered' => false, 'still_missing_advanced' => false, 'api_calls' => 1];
+        }
+
+        // xG is recovered when BOTH home and away expected_goals are non-null.
+        // goals_prevented is recovered when BOTH home and away goals_prevented are non-null.
+        // still_missing_advanced = any of the four advanced fields is still null after this fetch.
+        $xgRecovered  = $parsed['home_expected_goals'] !== null && $parsed['away_expected_goals'] !== null;
+        $gpRecovered  = $parsed['home_goals_prevented'] !== null && $parsed['away_goals_prevented'] !== null;
+        $stillMissing = !$xgRecovered || !$gpRecovered;
+
+        MatchStatistic::updateOrCreate(
+            ['match_id' => $match->id, 'data_source_id' => $ds->id],
+            array_merge($parsed, [
+                'fetched_at'                => now(),
+                'advanced_stats_checked_at' => now(),
+                'stats_schema_version'      => self::CURRENT_STATS_SCHEMA_VERSION,
+            ]),
+        );
+
+        return ['outcome' => 'synced', 'xg_recovered' => $xgRecovered, 'goals_prevented_recovered' => $gpRecovered, 'still_missing_advanced' => $stillMissing, 'api_calls' => 1];
+    }
+
+    /**
      * Parse the two-team statistics response from API-Football.
      * Uses homeExtId to match the home team; falls back to positional (index 0 = home).
      * Returns null if fewer than 2 team entries are present.
