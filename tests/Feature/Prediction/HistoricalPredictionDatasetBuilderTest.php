@@ -9,6 +9,7 @@ use App\Models\Season;
 use App\Models\Team;
 use App\Services\Prediction\HistoricalPredictionDatasetBuilder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
@@ -30,6 +31,8 @@ use Tests\TestCase;
  *  [M]  warmup_previous_matches reflects min(home, away) matches_considered from snapshot
  *  [N]  identity_* keys are not present in the row feature columns
  *  [O]  same input → same output (idempotency)
+ *  [P]  build() uses 1 Elo replay per season for a multi-match batch (OPT-1C)
+ *  [Q]  batch build produces identical core features as per-match build
  */
 class HistoricalPredictionDatasetBuilderTest extends TestCase
 {
@@ -581,5 +584,61 @@ class HistoricalPredictionDatasetBuilderTest extends TestCase
         $this->assertSame(0, $dataset['metadata']['requested_matches']);
         $this->assertSame(0, $dataset['metadata']['built_rows']);
         $this->assertSame(0, $dataset['metadata']['feature_count']);
+    }
+
+    // ── [P] OPT-1C: one Elo replay per season for a multi-match batch ─────────
+
+    public function test_build_performs_one_elo_replay_per_season_for_batch(): void
+    {
+        $m1 = $this->makeFinished('2026-09-01 20:45:00');
+        $m2 = $this->makeFinished('2026-10-01 20:45:00');
+        $m3 = $this->makeFinished('2026-11-01 20:45:00');
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        $this->builder()->build(collect([$m1, $m2, $m3]));
+
+        $log = DB::getQueryLog();
+        DB::disableQueryLog();
+
+        // TeamEloCalculator queries use whereIn('status', ['finished','awarded','walkover'])
+        // so 'awarded' appears in bindings AND home_score_ft in the SQL.
+        $eloQueries = array_filter(
+            $log,
+            fn ($q) => in_array('awarded', $q['bindings'], true)
+                    && str_contains($q['query'], 'home_score_ft')
+        );
+
+        $this->assertCount(
+            1,
+            $eloQueries,
+            'OPT-1C: build() with 3 matches in one season must perform exactly 1 Elo replay (not 3).'
+        );
+    }
+
+    // ── [Q] Batch build produces same core features as per-match build ─────────
+
+    public function test_batch_build_produces_same_core_features_as_single_match_build(): void
+    {
+        $m1 = $this->makeFinished('2026-09-01 20:45:00');
+        $m2 = $this->makeFinished('2026-10-01 20:45:00');
+
+        $batch  = $this->builder()->build(collect([$m1, $m2]));
+        $single = $this->builder()->build(collect([$m1]));
+
+        // Find m1's row in the batch (may have extra schema columns from m2).
+        $batchRow  = collect($batch['rows'])->firstWhere('match_id', $m1->id);
+        $singleRow = $single['rows'][0];
+
+        // Compare core_ features only: schema union in batch adds null columns not in single.
+        $batchCore  = array_filter($batchRow,  fn ($k) => str_starts_with($k, 'core_'), ARRAY_FILTER_USE_KEY);
+        $singleCore = array_filter($singleRow, fn ($k) => str_starts_with($k, 'core_'), ARRAY_FILTER_USE_KEY);
+
+        $this->assertSame(
+            $singleCore,
+            $batchCore,
+            'OPT-1C: batch build must produce identical core features as single-match build.'
+        );
     }
 }

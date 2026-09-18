@@ -41,8 +41,8 @@ use InvalidArgumentException;
  *   1  × leagueContextStatistics                              →  1 query
  *   1  × h2hMatches                                           →  1 query
  *   1  × DataSource slug lookup (transfermarkt)               →  1 query
- *   1  × season->teams() for league_mean_elo                  →  1 query
- *   1  × shared Elo replay (OPT-1B: all windows + target)   →  1 query
+ *   1  × season->teams() for league_mean_elo  [skipped when precomputedEloContext given]
+ *   1  × shared Elo replay (OPT-1B/1C)       [skipped when precomputedEloContext given]
  *   ~1 × TeamStrengthComparisonCalculator (structural only)  →  1 query
  *   ~2 × TeamOpponentQualityCalculator × 2 (structural only) →  2 queries
  *   ~2 × TeamAbsenceImpactCalculator × 2 teams               →  4 queries
@@ -65,10 +65,15 @@ class PreMatchFeatureAggregator
     /**
      * Compute the full pre-match feature snapshot for $match.
      *
+     * @param  FootballMatch  $match
+     * @param  array|null     $precomputedEloContext  Bulk Elo context from HistoricalPredictionDatasetBuilder
+     *                                               (OPT-1C). Shape: [match_id => {home_elo, away_elo, league_mean_elo}].
+     *                                               When provided, skips internal Elo replay and leagueTeamIds query.
+     *                                               null = single-match OPT-1B path (default).
      * @throws InvalidArgumentException when kickoff_at is null.
      * @return array{identity: array, core: array, experimental: array, metadata: array}
      */
-    public static function aggregate(FootballMatch $match): array
+    public static function aggregate(FootballMatch $match, ?array $precomputedEloContext = null): array
     {
         if ($match->kickoff_at === null) {
             throw new InvalidArgumentException(
@@ -116,24 +121,27 @@ class PreMatchFeatureAggregator
         // Data source for structural / market-value lookups.
         $tmDsId = self::resolveTransfermarktDsId();
 
-        // League team IDs for E9 league_mean_elo computation (required by E10).
-        $leagueTeamIds = $match->season->teams()->pluck('teams.id');
-
-        // OPT-1B: single Elo replay shared across E6, E9-home, and E9-away.
-        // Union of all window matches + the target match, deduplicated by ID.
-        // calculateRatingsBeforeMatchesWithLeagueMean performs 1 query / 1 replay
-        // and captures pre-kickoff state for every entry via capture-before-apply.
-        $allRelevantMatches = $homeLast10
-            ->merge($homeLast5Home)
-            ->merge($awayLast10)
-            ->merge($awayLast5Away)
-            ->push($match)
-            ->unique('id');
-
-        $sharedEloContext = TeamEloCalculator::calculateRatingsBeforeMatchesWithLeagueMean(
-            $allRelevantMatches,
-            $leagueTeamIds
-        );
+        // OPT-1B/1C: Elo context shared across E6, E9-home, and E9-away.
+        // Bulk path (OPT-1C): caller pre-computed the context for the full batch —
+        //   skip leagueTeamIds query and internal Elo replay.
+        //   E9 still returns _elo_context for E10/E12 because param 8 != null.
+        // Single-match path (OPT-1B): compute context from this match's windows in 1 replay.
+        if ($precomputedEloContext !== null) {
+            $leagueTeamIds    = null;
+            $sharedEloContext = $precomputedEloContext;
+        } else {
+            $leagueTeamIds    = $match->season->teams()->pluck('teams.id');
+            $allRelevantMatches = $homeLast10
+                ->merge($homeLast5Home)
+                ->merge($awayLast10)
+                ->merge($awayLast5Away)
+                ->push($match)
+                ->unique('id');
+            $sharedEloContext = TeamEloCalculator::calculateRatingsBeforeMatchesWithLeagueMean(
+                $allRelevantMatches,
+                $leagueTeamIds
+            );
+        }
 
         // ── 2. Calculator calls ───────────────────────────────────────────────
 

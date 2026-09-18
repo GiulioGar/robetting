@@ -4,6 +4,7 @@ namespace App\Services\Prediction;
 
 use App\Models\FootballMatch;
 use App\Services\Analytics\PreMatchFeatureAggregator;
+use App\Services\Analytics\TeamEloCalculator;
 use Illuminate\Support\Collection;
 use InvalidArgumentException;
 
@@ -64,6 +65,11 @@ class HistoricalPredictionDatasetBuilder
 
         $sorted = $this->sortMatches($matches);
 
+        // OPT-1C: one Elo replay per (competition_id, season_id) group for the entire
+        // batch, instead of one replay per match. Passed to aggregate() as external
+        // context; the internal per-match replay is then skipped.
+        $bulkEloContext = $this->buildBulkEloContext($sorted);
+
         foreach ($sorted as $match) {
             // ── Step 1: labels — skip row if match is not a valid finished result ──
             try {
@@ -74,7 +80,7 @@ class HistoricalPredictionDatasetBuilder
             }
 
             // ── Step 2: feature snapshot — unexpected exceptions propagate ────────
-            $snapshot = PreMatchFeatureAggregator::aggregate($match);
+            $snapshot = PreMatchFeatureAggregator::aggregate($match, $bulkEloContext);
             $flat     = PreMatchFeatureAggregator::flatten($snapshot);
 
             // ── Step 3: warmup — read from snapshot, zero extra queries ──────────
@@ -144,6 +150,63 @@ class HistoricalPredictionDatasetBuilder
             return $cmp !== 0 ? $cmp : ($a->id ?? 0) <=> ($b->id ?? 0);
         });
         return collect($items);
+    }
+
+    /**
+     * Pre-compute Elo context for a batch of target matches.
+     *
+     * Groups by (competition_id, season_id) so league_mean_elo stays correct per season.
+     * Fetches all finished season matches once per group — covers every possible window
+     * match that aggregate() will look up in E6/E9/E10/E12 — then runs one Elo replay
+     * per group.
+     *
+     * For a single-season batch: 2 extra queries + 1 replay total (vs N replays before).
+     *
+     * Matches with null kickoff_at are excluded: they will either be skipped as invalid
+     * labels or trigger an exception inside aggregate() — no Elo snapshot needed.
+     */
+    private function buildBulkEloContext(Collection $targetMatches): array
+    {
+        $valid = $targetMatches->filter(fn (FootballMatch $m) => $m->kickoff_at !== null);
+
+        if ($valid->isEmpty()) {
+            return [];
+        }
+
+        $groups  = $valid->groupBy(fn (FootballMatch $m) => $m->competition_id . '|' . $m->season_id);
+        $context = [];
+
+        foreach ($groups as $groupTargets) {
+            /** @var FootballMatch $rep */
+            $rep = $groupTargets->first();
+            $rep->loadMissing(['season']);
+
+            // All teams registered for this season — required for correct league_mean_elo.
+            $leagueTeamIds = $rep->season->teams()->pluck('teams.id');
+
+            // All finished matches in this competition+season.
+            // The full season covers every possible window match across all targets in the group.
+            $seasonMatches = FootballMatch::where('competition_id', $rep->competition_id)
+                ->where('season_id', $rep->season_id)
+                ->where('status', 'finished')
+                ->whereNotNull('home_score_ft')
+                ->whereNotNull('away_score_ft')
+                ->get(['id', 'kickoff_at']);
+
+            // Include target matches (may be 'scheduled') so their timestamps are captured.
+            $all = $seasonMatches->merge($groupTargets)->unique('id');
+
+            // Single Elo replay for this season group.
+            $groupContext = TeamEloCalculator::calculateRatingsBeforeMatchesWithLeagueMean(
+                $all,
+                $leagueTeamIds
+            );
+
+            // + preserves integer keys (match IDs); array_merge would re-index them.
+            $context = $context + $groupContext;
+        }
+
+        return $context;
     }
 
     private function extractFeatures(array $flat, string $mode): array

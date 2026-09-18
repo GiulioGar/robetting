@@ -34,6 +34,8 @@ use Tests\TestCase;
  *  [J]  flatten() produces flat array: no nested associative arrays, correct key prefix
  *  [K]  Idempotency — two identical calls produce identical output
  *  [L]  metadata.leakage_audit contains an entry for every expected block
+ *  [O]  external Elo context (OPT-1C) produces numerically identical Elo values
+ *  [P]  external Elo context suppresses the internal Elo replay (0 Elo queries)
  */
 class PreMatchFeatureAggregatorTest extends TestCase
 {
@@ -379,6 +381,111 @@ class PreMatchFeatureAggregatorTest extends TestCase
             $eloQueries,
             'OPT-1B: PreMatchFeatureAggregator::aggregate() must execute exactly 1 Elo batch '
             . 'replay query (was 3 before OPT-1B). Actual count: ' . count($eloQueries)
+        );
+    }
+
+    // ── [O] External Elo context — OPT-1C numerical equivalence ─────────────
+
+    public function test_external_elo_context_produces_numerically_identical_elo_values(): void
+    {
+        FootballMatch::create([
+            'competition_id' => $this->comp->id,
+            'season_id'      => $this->season->id,
+            'home_team_id'   => $this->teamHome->id,
+            'away_team_id'   => $this->teamOpp->id,
+            'kickoff_at'     => '2026-09-01 20:45:00',
+            'status'         => 'finished',
+            'home_score_ft'  => 2,
+            'away_score_ft'  => 0,
+        ]);
+        FootballMatch::create([
+            'competition_id' => $this->comp->id,
+            'season_id'      => $this->season->id,
+            'home_team_id'   => $this->teamAway->id,
+            'away_team_id'   => $this->teamOpp->id,
+            'kickoff_at'     => '2026-09-08 20:45:00',
+            'status'         => 'finished',
+            'home_score_ft'  => 0,
+            'away_score_ft'  => 1,
+        ]);
+
+        // Build external context the same way buildBulkEloContext does.
+        $leagueTeamIds = $this->season->teams()->pluck('teams.id');
+        $seasonMatches = FootballMatch::where('competition_id', $this->comp->id)
+            ->where('season_id', $this->season->id)
+            ->where('status', 'finished')
+            ->whereNotNull('home_score_ft')
+            ->whereNotNull('away_score_ft')
+            ->get(['id', 'kickoff_at']);
+        $all     = $seasonMatches->push($this->targetMatch)->unique('id');
+        $context = TeamEloCalculator::calculateRatingsBeforeMatchesWithLeagueMean($all, $leagueTeamIds);
+
+        $snap      = PreMatchFeatureAggregator::aggregate($this->targetMatch, $context);
+        $legacyElo = TeamEloCalculator::calculateForMatch($this->targetMatch);
+
+        $this->assertEqualsWithDelta(
+            $legacyElo['home_elo'],
+            $snap['core']['elo']['home_pre_match_elo'],
+            1e-10,
+            'OPT-1C home_pre_match_elo must match standalone calculateForMatch'
+        );
+        $this->assertEqualsWithDelta(
+            $legacyElo['away_elo'],
+            $snap['core']['elo']['away_pre_match_elo'],
+            1e-10,
+            'OPT-1C away_pre_match_elo must match standalone calculateForMatch'
+        );
+        $this->assertEqualsWithDelta(
+            $legacyElo['elo_difference'],
+            $snap['core']['elo']['elo_diff'],
+            1e-10,
+            'OPT-1C elo_diff must match standalone calculateForMatch'
+        );
+    }
+
+    // ── [P] External Elo context suppresses internal replay ───────────────────
+
+    public function test_aggregate_with_external_context_performs_zero_elo_replays(): void
+    {
+        FootballMatch::create([
+            'competition_id' => $this->comp->id,
+            'season_id'      => $this->season->id,
+            'home_team_id'   => $this->teamHome->id,
+            'away_team_id'   => $this->teamAway->id,
+            'kickoff_at'     => '2026-09-14 20:45:00',
+            'status'         => 'finished',
+            'home_score_ft'  => 1,
+            'away_score_ft'  => 0,
+        ]);
+
+        $leagueTeamIds = $this->season->teams()->pluck('teams.id');
+        $seasonMatches = FootballMatch::where('competition_id', $this->comp->id)
+            ->where('season_id', $this->season->id)
+            ->where('status', 'finished')
+            ->whereNotNull('home_score_ft')
+            ->whereNotNull('away_score_ft')
+            ->get(['id', 'kickoff_at']);
+        $all     = $seasonMatches->push($this->targetMatch)->unique('id');
+        $context = TeamEloCalculator::calculateRatingsBeforeMatchesWithLeagueMean($all, $leagueTeamIds);
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        PreMatchFeatureAggregator::aggregate($this->targetMatch, $context);
+
+        $log = DB::getQueryLog();
+        DB::disableQueryLog();
+
+        $eloQueries = array_filter(
+            $log,
+            fn ($q) => in_array('awarded', $q['bindings'], true)
+                    && str_contains($q['query'], 'home_score_ft')
+        );
+
+        $this->assertCount(
+            0,
+            $eloQueries,
+            'OPT-1C: when external Elo context is provided, no internal Elo replay must occur.'
         );
     }
 
