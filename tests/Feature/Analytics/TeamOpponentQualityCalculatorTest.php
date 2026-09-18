@@ -896,6 +896,88 @@ class TeamOpponentQualityCalculatorTest extends TestCase
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // [T] precomputedEloContext → same averages as internal replay (OPT-1B)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function test_precomputed_elo_context_produces_same_averages_as_internal_replay(): void
+    {
+        [$opp1, $opp2, $opp3] = $this->makeOpponents(3);
+        $base = Carbon::parse(self::TARGET);
+
+        $m1 = $this->makeMatch($base->copy()->subDays(21), $this->team, $opp1, 2, 0);
+        $m2 = $this->makeMatch($base->copy()->subDays(14), $this->team, $opp2, 1, 1);
+        $m3 = $this->makeMatch($base->copy()->subDays(7),  $opp3, $this->team, 0, 2);
+
+        $window        = collect([$m1, $m2, $m3]);
+        $leagueTeamIds = collect([$this->team->id, $opp1->id, $opp2->id, $opp3->id]);
+
+        // Legacy path (internal Elo replay).
+        $legacy = TeamOpponentQualityCalculator::calculate(
+            $this->team->id, $window, $window, collect(),
+            $this->ds->id, $this->season, $leagueTeamIds
+        );
+
+        // Extract the context produced by the legacy path and feed it back in.
+        $precomputedCtx = $legacy['_elo_context'];
+
+        // Shared context path (no internal replay).
+        $shared = TeamOpponentQualityCalculator::calculate(
+            $this->team->id, $window, $window, collect(),
+            $this->ds->id, $this->season, $leagueTeamIds, $precomputedCtx
+        );
+
+        $this->assertEqualsWithDelta(
+            $legacy['last5']['average_opponent_elo'],
+            $shared['last5']['average_opponent_elo'],
+            self::DELTA
+        );
+        $this->assertEqualsWithDelta(
+            $legacy['last5']['median_opponent_elo'],
+            $shared['last5']['median_opponent_elo'],
+            self::DELTA
+        );
+        $this->assertEqualsWithDelta(
+            $legacy['last10']['average_opponent_elo'],
+            $shared['last10']['average_opponent_elo'],
+            self::DELTA
+        );
+        $this->assertSame(
+            $legacy['last5']['structural_matches_available'],
+            $shared['last5']['structural_matches_available']
+        );
+        // _elo_context must be returned on the shared path as well.
+        $this->assertArrayHasKey('_elo_context', $shared);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // [U] null precomputedEloContext → internal replay, unchanged behavior
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function test_precomputed_elo_context_null_uses_internal_replay(): void
+    {
+        [$opp] = $this->makeOpponents(1);
+        $m     = $this->makeMatch(Carbon::parse(self::TARGET)->subDays(7), $this->team, $opp);
+        $window = collect([$m]);
+
+        $result1 = TeamOpponentQualityCalculator::calculate(
+            $this->team->id, $window, $window, collect(), $this->ds->id, $this->season
+        );
+        // Explicitly passing null as 8th param must behave identically.
+        $result2 = TeamOpponentQualityCalculator::calculate(
+            $this->team->id, $window, $window, collect(), $this->ds->id, $this->season, null, null
+        );
+
+        $this->assertSame(
+            $result1['last5']['average_opponent_elo'],
+            $result2['last5']['average_opponent_elo']
+        );
+        $this->assertSame(
+            $result1['last5']['matches_considered'],
+            $result2['last5']['matches_considered']
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Helpers
     // ─────────────────────────────────────────────────────────────────────────
 

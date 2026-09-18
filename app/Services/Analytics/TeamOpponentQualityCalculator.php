@@ -87,22 +87,27 @@ class TeamOpponentQualityCalculator
      * }
      */
     public static function calculate(
-        int        $teamId,
-        Collection $last5,
-        Collection $last10,
-        Collection $venue,
-        ?int       $dataSourceId,
-        Season     $season,
-        ?Collection $leagueTeamIds = null
+        int         $teamId,
+        Collection  $last5,
+        Collection  $last10,
+        Collection  $venue,
+        ?int        $dataSourceId,
+        Season      $season,
+        ?Collection $leagueTeamIds = null,
+        ?array      $precomputedEloContext = null
     ): array {
         // Union of all matches to batch both Elo replay and structural lookup.
         // last5 ⊆ last10 for the overall windows; venue may differ.
         $allMatches = $last10->merge($venue)->unique('id');
 
         // ── Elo: one replay covers all windows ────────────────────────────────
+        // When precomputedEloContext is provided (OPT-1B shared context path),
+        // skip the internal replay entirely — the caller already holds all entries.
         // When leagueTeamIds is provided each entry gets an extra league_mean_elo
         // key, required by TeamOpponentAdjustedPerformanceCalculator (E10).
-        if ($allMatches->isNotEmpty()) {
+        if ($precomputedEloContext !== null) {
+            $eloMap = $precomputedEloContext;
+        } elseif ($allMatches->isNotEmpty()) {
             $eloMap = $leagueTeamIds !== null
                 ? TeamEloCalculator::calculateRatingsBeforeMatchesWithLeagueMean($allMatches, $leagueTeamIds)
                 : TeamEloCalculator::calculateRatingsBeforeMatches($allMatches);
@@ -119,9 +124,10 @@ class TeamOpponentQualityCalculator
             'venue'  => self::computeWindow($venue,  $teamId, $eloMap, $structuralMap),
         ];
 
-        // Expose the Elo map for E10 consumption only when the league context was
-        // requested.  Not rendered in any Blade template.
-        if ($leagueTeamIds !== null) {
+        // Expose the Elo map for E10 consumption when league context was requested
+        // or when a precomputed context was supplied (OPT-1B path).
+        // Not rendered in any Blade template.
+        if ($leagueTeamIds !== null || $precomputedEloContext !== null) {
             $result['_elo_context'] = $eloMap;
         }
 

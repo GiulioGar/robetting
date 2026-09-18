@@ -450,4 +450,56 @@ class TeamStrengthComparisonCalculatorTest extends TestCase
         $this->assertGreaterThan(0.0, $result['elo_diff']);    // home − away > 0
         $this->assertSame('HOME', $result['elo_favorite']);
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 17 — precomputedElo produces identical output to legacy path (OPT-1B)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function test_precomputed_elo_produces_identical_output_to_legacy(): void
+    {
+        $this->makeFinished($this->home, $this->away, '2026-09-01 20:45:00', 2, 0);
+        $this->makeSnapshot($this->home, 800_000_000, '2026-09-11');
+        $this->makeSnapshot($this->away, 400_000_000, '2026-09-11');
+
+        $match  = $this->targetMatch();
+        $legacy = TeamStrengthComparisonCalculator::calculateForMatch($match);
+
+        // Simulate what the aggregator passes: the sharedEloContext entry for the target match.
+        $precomputedElo = [
+            'home_elo' => $legacy['home_elo'],
+            'away_elo' => $legacy['away_elo'],
+        ];
+
+        $result = TeamStrengthComparisonCalculator::calculateForMatch($match, $precomputedElo);
+
+        $this->assertSame($legacy['home_elo'],               $result['home_elo']);
+        $this->assertSame($legacy['away_elo'],               $result['away_elo']);
+        $this->assertSame($legacy['elo_diff'],               $result['elo_diff']);
+        $this->assertSame($legacy['elo_diff_scaled'],        $result['elo_diff_scaled']);
+        $this->assertSame($legacy['elo_favorite'],           $result['elo_favorite']);
+        $this->assertSame($legacy['signals_agree'],          $result['signals_agree']);
+        $this->assertSame($legacy['structural_rating_diff'], $result['structural_rating_diff']);
+        // Carbon objects in structural arrays differ by instance; compare values only.
+        $this->assertSame($legacy['home_structural']['structural_rating'], $result['home_structural']['structural_rating']);
+        $this->assertSame($legacy['home_structural']['market_value'],      $result['home_structural']['market_value']);
+        $this->assertSame($legacy['away_structural']['structural_rating'], $result['away_structural']['structural_rating']);
+        $this->assertSame($legacy['away_structural']['market_value'],      $result['away_structural']['market_value']);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 18 — null precomputedElo falls back to legacy path
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function test_precomputed_elo_null_falls_back_to_legacy_path(): void
+    {
+        $this->makeFinished($this->home, $this->away, '2026-09-01 20:45:00', 3, 0);
+
+        $match    = $this->targetMatch();
+        $legacy   = TeamStrengthComparisonCalculator::calculateForMatch($match);
+        $withNull = TeamStrengthComparisonCalculator::calculateForMatch($match, null);
+
+        $this->assertSame($legacy['home_elo'], $withNull['home_elo']);
+        $this->assertSame($legacy['away_elo'], $withNull['away_elo']);
+        $this->assertSame($legacy['elo_diff'], $withNull['elo_diff']);
+    }
 }

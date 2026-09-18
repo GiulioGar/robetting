@@ -56,8 +56,10 @@ class TeamStrengthComparisonCalculator
      *   signals_agree: bool|null,
      * }
      */
-    public static function calculateForMatch(FootballMatch $match): array
-    {
+    public static function calculateForMatch(
+        FootballMatch $match,
+        ?array $precomputedElo = null
+    ): array {
         $referenceDate = $match->kickoff_at instanceof Carbon
             ? $match->kickoff_at
             : ($match->kickoff_at !== null ? Carbon::instance($match->kickoff_at) : Carbon::now('UTC'));
@@ -92,9 +94,14 @@ class TeamStrengthComparisonCalculator
 
         // ── Dynamic Elo ───────────────────────────────────────────────────────
 
-        $eloData = TeamEloCalculator::calculateForMatch($match);
-        $homeElo = $eloData['home_elo'];
-        $awayElo = $eloData['away_elo'];
+        if ($precomputedElo !== null) {
+            $homeElo = (float) $precomputedElo['home_elo'];
+            $awayElo = (float) $precomputedElo['away_elo'];
+        } else {
+            $eloData = TeamEloCalculator::calculateForMatch($match);
+            $homeElo = $eloData['home_elo'];
+            $awayElo = $eloData['away_elo'];
+        }
 
         // ── Diffs & ratios ────────────────────────────────────────────────────
 

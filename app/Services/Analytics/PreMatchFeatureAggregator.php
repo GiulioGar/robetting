@@ -42,20 +42,21 @@ use InvalidArgumentException;
  *   1  × h2hMatches                                           →  1 query
  *   1  × DataSource slug lookup (transfermarkt)               →  1 query
  *   1  × season->teams() for league_mean_elo                  →  1 query
- *   ~2 × TeamStrengthComparisonCalculator (Elo replay + str.) →  2 queries
- *   ~2 × TeamOpponentQualityCalculator × 2 teams             →  4 queries
+ *   1  × shared Elo replay (OPT-1B: all windows + target)   →  1 query
+ *   ~1 × TeamStrengthComparisonCalculator (structural only)  →  1 query
+ *   ~2 × TeamOpponentQualityCalculator × 2 (structural only) →  2 queries
  *   ~2 × TeamAbsenceImpactCalculator × 2 teams               →  4 queries
  *   ~1 × TeamStarterContinuityCalculator × 2 teams           →  2 queries
  *   ~1 × TeamAgeProfileCalculator × 2 teams                  →  2 queries
  *   Total: ~24 queries.
  *
  * Top 3 optimisation targets (V2):
- *   1. Share the Elo replay across E6 (TeamStrengthComparisonCalculator) and
- *      E9 (TeamOpponentQualityCalculator) — currently independent replays.
+ *   1. [DONE — OPT-1B] Share the Elo replay across E6 (TeamStrengthComparisonCalculator)
+ *      and E9 (TeamOpponentQualityCalculator): 3 replays → 1 shared context.
  *   2. Merge absence / continuity / age internal queries per team into a single
  *      shared lineup + player_absences load.
- *   3. Pass the already-computed eloContext from E9 back into E6 to avoid the
- *      second full Elo replay in TeamStrengthComparisonCalculator.
+ *   3. [DONE — OPT-1B] Pass the already-computed eloContext from E9 back into E6
+ *      via the shared pre-computed context in the aggregator.
  */
 class PreMatchFeatureAggregator
 {
@@ -118,10 +119,29 @@ class PreMatchFeatureAggregator
         // League team IDs for E9 league_mean_elo computation (required by E10).
         $leagueTeamIds = $match->season->teams()->pluck('teams.id');
 
+        // OPT-1B: single Elo replay shared across E6, E9-home, and E9-away.
+        // Union of all window matches + the target match, deduplicated by ID.
+        // calculateRatingsBeforeMatchesWithLeagueMean performs 1 query / 1 replay
+        // and captures pre-kickoff state for every entry via capture-before-apply.
+        $allRelevantMatches = $homeLast10
+            ->merge($homeLast5Home)
+            ->merge($awayLast10)
+            ->merge($awayLast5Away)
+            ->push($match)
+            ->unique('id');
+
+        $sharedEloContext = TeamEloCalculator::calculateRatingsBeforeMatchesWithLeagueMean(
+            $allRelevantMatches,
+            $leagueTeamIds
+        );
+
         // ── 2. Calculator calls ───────────────────────────────────────────────
 
         // E6 + E7: Pre-match Elo and structural rating via the combined calculator.
-        $strength = TeamStrengthComparisonCalculator::calculateForMatch($match);
+        $strength = TeamStrengthComparisonCalculator::calculateForMatch(
+            $match,
+            $sharedEloContext[$match->id] ?? null
+        );
 
         // E8: Recent performance — TAC over the last-10 window.
         $homeTacL10 = TeamAnalyticsCalculator::calculate(
@@ -147,7 +167,7 @@ class PreMatchFeatureAggregator
         // E11: League context (home_win_rate, draw_rate, avg_goals, etc.).
         $leagueContext = CompetitionStatisticsCalculator::calculateLeagueContext($leagueMatches, $leagueStats);
 
-        // E9: Opponent quality — leagueTeamIds enables league_mean_elo for E10.
+        // E9: Opponent quality — passes sharedEloContext to skip internal replays.
         $homeOppQuality = TeamOpponentQualityCalculator::calculate(
             (int) $match->home_team_id,
             $homeLast5,
@@ -155,7 +175,8 @@ class PreMatchFeatureAggregator
             $homeLast5Home,
             $tmDsId,
             $match->season,
-            $leagueTeamIds
+            $leagueTeamIds,
+            $sharedEloContext
         );
         $awayOppQuality = TeamOpponentQualityCalculator::calculate(
             (int) $match->away_team_id,
@@ -164,7 +185,8 @@ class PreMatchFeatureAggregator
             $awayLast5Away,
             $tmDsId,
             $match->season,
-            $leagueTeamIds
+            $leagueTeamIds,
+            $sharedEloContext
         );
 
         // E10: Adjusted performance — consumes the eloContext produced by E9.

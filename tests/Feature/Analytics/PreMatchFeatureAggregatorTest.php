@@ -11,6 +11,7 @@ use App\Services\Analytics\PreMatchFeatureAggregator;
 use App\Services\Analytics\TeamEloCalculator;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
@@ -288,6 +289,97 @@ class PreMatchFeatureAggregatorTest extends TestCase
         unset($snap1['metadata']['generated_at'], $snap2['metadata']['generated_at']);
 
         $this->assertSame($snap1, $snap2);
+    }
+
+    // ── [M] Shared Elo context — numerical equivalence with legacy path (OPT-1B) ──
+
+    public function test_shared_elo_context_produces_numerically_identical_snapshot(): void
+    {
+        // Create prior matches so teams have non-trivial Elo ratings.
+        FootballMatch::create([
+            'competition_id' => $this->comp->id,
+            'season_id'      => $this->season->id,
+            'home_team_id'   => $this->teamHome->id,
+            'away_team_id'   => $this->teamOpp->id,
+            'kickoff_at'     => '2026-09-01 20:45:00',
+            'status'         => 'finished',
+            'home_score_ft'  => 2,
+            'away_score_ft'  => 0,
+        ]);
+        FootballMatch::create([
+            'competition_id' => $this->comp->id,
+            'season_id'      => $this->season->id,
+            'home_team_id'   => $this->teamAway->id,
+            'away_team_id'   => $this->teamOpp->id,
+            'kickoff_at'     => '2026-09-08 20:45:00',
+            'status'         => 'finished',
+            'home_score_ft'  => 0,
+            'away_score_ft'  => 1,
+        ]);
+
+        $snap      = PreMatchFeatureAggregator::aggregate($this->targetMatch);
+        $legacyElo = TeamEloCalculator::calculateForMatch($this->targetMatch);
+
+        $this->assertEqualsWithDelta(
+            $legacyElo['home_elo'],
+            $snap['core']['elo']['home_pre_match_elo'],
+            1e-10,
+            'home_pre_match_elo must match TeamEloCalculator::calculateForMatch standalone'
+        );
+        $this->assertEqualsWithDelta(
+            $legacyElo['away_elo'],
+            $snap['core']['elo']['away_pre_match_elo'],
+            1e-10,
+            'away_pre_match_elo must match TeamEloCalculator::calculateForMatch standalone'
+        );
+        $this->assertEqualsWithDelta(
+            $legacyElo['elo_difference'],
+            $snap['core']['elo']['elo_diff'],
+            1e-10,
+            'elo_diff must match TeamEloCalculator::calculateForMatch standalone'
+        );
+    }
+
+    // ── [N] Replay count: aggregate() performs exactly 1 Elo batch query (OPT-1B) ──
+
+    public function test_aggregate_performs_one_elo_replay_not_three(): void
+    {
+        // Create a prior match so the Elo replay has at least one row to process.
+        FootballMatch::create([
+            'competition_id' => $this->comp->id,
+            'season_id'      => $this->season->id,
+            'home_team_id'   => $this->teamHome->id,
+            'away_team_id'   => $this->teamAway->id,
+            'kickoff_at'     => '2026-09-14 20:45:00',
+            'status'         => 'finished',
+            'home_score_ft'  => 1,
+            'away_score_ft'  => 0,
+        ]);
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        PreMatchFeatureAggregator::aggregate($this->targetMatch);
+
+        $log = DB::getQueryLog();
+        DB::disableQueryLog();
+
+        // TeamEloCalculator queries use whereIn('status', ['finished', 'awarded', 'walkover'])
+        // and also add whereNotNull('home_score_ft'). The 'home_score_ft' column appears only
+        // in Elo batch queries — not in loadScheduleHistory (selects id, kickoff_at only)
+        // and not in loadPreviousMatches (uses WHERE status = 'finished', not whereIn).
+        $eloQueries = array_filter(
+            $log,
+            fn ($q) => in_array('awarded', $q['bindings'], true)
+                    && str_contains($q['query'], 'home_score_ft')
+        );
+
+        $this->assertCount(
+            1,
+            $eloQueries,
+            'OPT-1B: PreMatchFeatureAggregator::aggregate() must execute exactly 1 Elo batch '
+            . 'replay query (was 3 before OPT-1B). Actual count: ' . count($eloQueries)
+        );
     }
 
     // ── [L] leakage_audit keys ────────────────────────────────────────────────
