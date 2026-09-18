@@ -175,4 +175,83 @@ class BuildPredictionDatasetTest extends TestCase
             '--seasons' => '9999',
         ])->assertExitCode(1);
     }
+
+    // ── [F] finished → included ────────────────────────────────────────────────
+
+    public function test_finished_match_is_included_in_dataset(): void
+    {
+        FootballMatch::create([
+            'competition_id' => $this->comp->id,
+            'season_id'      => $this->season->id,
+            'home_team_id'   => $this->teamHome->id,
+            'away_team_id'   => $this->teamAway->id,
+            'kickoff_at'     => '9999-10-01 20:45:00',
+            'status'         => 'finished',
+            'home_score_ft'  => 1,
+            'away_score_ft'  => 0,
+        ]);
+        $path = base_path('tools/datasets/dataset_core_v1_9999.csv');
+
+        $this->artisan('robetting:build-prediction-dataset', [
+            '--mode'    => 'core_only',
+            '--seasons' => '9999',
+        ])->assertExitCode(0);
+
+        $handle = fopen($path, 'r');
+        fgetcsv($handle);
+        $rows = 0;
+        while (fgetcsv($handle) !== false) { $rows++; }
+        fclose($handle);
+
+        $this->assertSame(1, $rows, 'finished match must be included.');
+    }
+
+    // ── [G] awarded → excluded ────────────────────────────────────────────────
+
+    public function test_awarded_match_is_excluded_from_dataset(): void
+    {
+        FootballMatch::create([
+            'competition_id' => $this->comp->id,
+            'season_id'      => $this->season->id,
+            'home_team_id'   => $this->teamHome->id,
+            'away_team_id'   => $this->teamAway->id,
+            'kickoff_at'     => '9999-10-01 20:45:00',
+            'status'         => 'awarded',
+            'home_score_ft'  => 0,
+            'away_score_ft'  => 0,
+        ]);
+        $path = base_path('tools/datasets/dataset_core_v1_9999.csv');
+
+        $this->artisan('robetting:build-prediction-dataset', [
+            '--mode'    => 'core_only',
+            '--seasons' => '9999',
+        ])->assertExitCode(0);
+
+        // File should not be created (0 matches found → early return without writing)
+        $this->assertFileDoesNotExist($path, 'awarded match must be excluded; no CSV created.');
+    }
+
+    // ── [H] walkover → excluded ───────────────────────────────────────────────
+
+    public function test_walkover_match_is_excluded_from_dataset(): void
+    {
+        FootballMatch::create([
+            'competition_id' => $this->comp->id,
+            'season_id'      => $this->season->id,
+            'home_team_id'   => $this->teamHome->id,
+            'away_team_id'   => $this->teamAway->id,
+            'kickoff_at'     => '9999-10-01 20:45:00',
+            'status'         => 'walkover',
+            'home_score_ft'  => 3,
+            'away_score_ft'  => 0,
+        ]);
+        $path = base_path('tools/datasets/dataset_core_v1_9999.csv');
+
+        $this->artisan('robetting:build-prediction-dataset', [
+            '--mode'    => 'core_only',
+            '--seasons' => '9999',
+        ])->assertExitCode(0);
+
+        $this->assertFileDoesNotExist($path, 'walkover match must be excluded; no CSV created.');
+    }
 }

@@ -17,8 +17,9 @@ class BuildPredictionDataset extends Command
 
     protected $description = 'Build a historical prediction dataset CSV from definitively-scored matches.';
 
-    // Mirrors MatchOutcomeLabelBuilder::DEFINITIVE_STATUSES — keep in sync.
-    private const DEFINITIVE_STATUSES = ['finished', 'awarded', 'walkover'];
+    // V1 training policy: only matches fully completed on the pitch.
+    // awarded/walkover are valid DB statuses but excluded from ML labels V1.
+    private const TRAINING_STATUS = 'finished';
 
     private const VALID_MODES = ['core_only', 'core_plus_experimental'];
 
@@ -102,7 +103,7 @@ class BuildPredictionDataset extends Command
             }
         }
 
-        $query = FootballMatch::whereIn('status', self::DEFINITIVE_STATUSES)
+        $query = FootballMatch::where('status', self::TRAINING_STATUS)
             ->whereNotNull('home_score_ft')
             ->whereNotNull('away_score_ft');
 
