@@ -75,6 +75,50 @@ class MatchPredictionService
     }
 
     /**
+     * Run the full V1 prediction pipeline and return extra debug information.
+     * The aggregation is performed ONCE — no duplicate pipeline execution.
+     *
+     * @return array Prediction result plus:
+     *   - 'features'          array<string, float|null>  The 59 extracted features
+     *   - 'timing_agg_ms'     float  Aggregation + flatten time in ms
+     *   - 'timing_inf_ms'     float  Engine inference time in ms
+     *   - 'timing_total_ms'   float  Total wall time in ms
+     */
+    public function predictWithDebug(FootballMatch $match): array
+    {
+        $t0  = microtime(true);
+        $flat = $this->buildFlatSnapshot($match);
+        $tAgg = (microtime(true) - $t0) * 1000;
+
+        $featureNames = PredictionEngineV1::featureNames();
+        $engineInput  = $this->extractFeatures($featureNames, $flat);
+        $nullCount    = count(array_filter($engineInput, fn ($v) => $v === null));
+
+        $t1         = microtime(true);
+        $prediction = PredictionEngineV1::predict($engineInput);
+        $tInf       = (microtime(true) - $t1) * 1000;
+
+        $meta = PredictionEngineV1::metadata();
+
+        return [
+            'match_id'            => $match->id,
+            'model_version'       => $meta['model_version'],
+            'feature_set_version' => $meta['feature_set_version'],
+            'feature_count'       => count($engineInput),
+            'null_count'          => $nullCount,
+            'lambda_home'         => $prediction['lambda_home'],
+            'lambda_away'         => $prediction['lambda_away'],
+            'probability_home'    => $prediction['probability_home'],
+            'probability_draw'    => $prediction['probability_draw'],
+            'probability_away'    => $prediction['probability_away'],
+            'features'            => $engineInput,
+            'timing_agg_ms'       => round($tAgg, 1),
+            'timing_inf_ms'       => round($tInf, 3),
+            'timing_total_ms'     => round($tAgg + $tInf, 1),
+        ];
+    }
+
+    /**
      * Build the flat feature snapshot for a match.
      * Separated as a protected method so tests can override without needing the full DB pipeline.
      *

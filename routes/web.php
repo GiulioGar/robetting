@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\ApiFootballAdminController;
+use App\Http\Controllers\Admin\PredictionEngineAdminController;
 use App\Http\Controllers\CompetitionOverviewController;
 use App\Http\Controllers\CompetitionSeasonZoneController;
 use App\Http\Controllers\HomeController;
@@ -36,6 +37,9 @@ Route::delete('/competitions/{competition:slug}/seasons/{season}/zones/{zone}', 
     ->name('competitions.seasons.zones.destroy');
 
 // Admin — local only (gated in controller constructor)
+Route::get('admin/prediction-engine', [PredictionEngineAdminController::class, 'index'])
+    ->name('admin.prediction-engine.index');
+
 Route::prefix('admin/api-football')->name('admin.api-football.')->group(function () {
     Route::get('/', [ApiFootballAdminController::class, 'dashboard'])->name('dashboard');
     Route::get('teams', [ApiFootballAdminController::class, 'teams'])->name('teams');
