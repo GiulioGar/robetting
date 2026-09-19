@@ -22,6 +22,7 @@
                 <a href="{{ route('admin.api-football.player-stats') }}" class="btn btn-sm btn-outline-secondary">Stat. Giocatori</a>
                 <a href="{{ route('admin.api-football.injuries') }}" class="btn btn-sm btn-outline-secondary">Infortuni</a>
                 <a href="{{ route('admin.api-football.structural') }}" class="btn btn-sm btn-outline-primary">Forza Strutturale</a>
+                <a href="{{ route('admin.prediction-engine.index') }}" class="btn btn-sm btn-outline-dark">Prediction Engine</a>
             </div>
         </div>
 
