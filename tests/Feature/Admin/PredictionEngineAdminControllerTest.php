@@ -7,6 +7,7 @@ use App\Models\Country;
 use App\Models\FootballMatch;
 use App\Models\Season;
 use App\Models\Team;
+use App\Services\Prediction\CandidateModelService;
 use App\Services\Prediction\MatchPredictionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -188,6 +189,49 @@ class PredictionEngineAdminControllerTest extends TestCase
         // Also verify the page renders without error
         $response = $this->get(route('admin.prediction-engine.index', ['match_id' => $match->id]));
         $response->assertStatus(200);
+    }
+
+    // ── J. Fair odds display ──────────────────────────────────────────────────
+
+    /**
+     * @test
+     * Fair odds (1/p) rendered next to each probability in the comparison table.
+     * With mock data P(H)=0.4312 → 1/0.4312 ≈ 2.32
+     *                P(D)=0.2691 → 1/0.2691 ≈ 3.72
+     *                P(A)=0.2997 → 1/0.2997 ≈ 3.34
+     */
+    public function test_J_fair_odds_shown_in_comparison_table(): void
+    {
+        $match = $this->createMinimalMatch();
+        $this->mockPredictionService($match->id);
+
+        // Also mock CandidateModelService so the comparison table uses deterministic values.
+        $slot = [
+            'lambda_home'      => 1.4532,
+            'lambda_away'      => 1.1087,
+            'probability_home' => 0.4312,
+            'probability_draw' => 0.2691,
+            'probability_away' => 0.2997,
+        ];
+        $candidateMock = $this->createMock(CandidateModelService::class);
+        $candidateMock->method('compare')->willReturn([
+            'full59'              => $slot,
+            'no_e9'               => $slot,
+            'no_e9_no_e10'        => $slot,
+            'candidate40'         => $slot,
+            'no_e9_available'     => true,
+            'no_e10_available'    => true,
+            'candidate40_available' => true,
+        ]);
+        $this->app->instance(CandidateModelService::class, $candidateMock);
+
+        $response = $this->get(route('admin.prediction-engine.index', ['match_id' => $match->id]));
+        $response->assertStatus(200);
+
+        // Fair odds for the mocked probabilities (2 decimal places)
+        $response->assertSee('2.32'); // 1 / 0.4312
+        $response->assertSee('3.72'); // 1 / 0.2691
+        $response->assertSee('3.34'); // 1 / 0.2997
     }
 
     // ── I. Diagnostic context block ───────────────────────────────────────────

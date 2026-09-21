@@ -194,22 +194,23 @@
 @if($comparison)
 @php
     $models = [
-        ['label' => 'FULL 59',          'feat' => 59, 'data' => $comparison['full59'],       'avail' => true],
-        ['label' => 'NO_E9 51',         'feat' => 51, 'data' => $comparison['no_e9'],         'avail' => $comparison['no_e9_available']],
-        ['label' => 'NO_E9+NO_E10 39',  'feat' => 39, 'data' => $comparison['no_e9_no_e10'], 'avail' => $comparison['no_e10_available']],
+        ['label' => 'FULL 59',      'feat' => 59, 'data' => $comparison['full59'],       'avail' => true],
+        ['label' => 'NO_E9 51',     'feat' => 51, 'data' => $comparison['no_e9'],         'avail' => $comparison['no_e9_available']],
+        ['label' => 'CANDIDATE 39', 'feat' => 39, 'data' => $comparison['no_e9_no_e10'], 'avail' => $comparison['no_e10_available']],
+        ['label' => 'CANDIDATE 40', 'feat' => 40, 'data' => $comparison['candidate40'],   'avail' => $comparison['candidate40_available'] ?? false],
     ];
     $rows = [
         ['key' => 'lambda_home',      'label' => 'λ home',   'fmt' => fn($v) => number_format($v, 4), 'highlight' => false],
         ['key' => 'lambda_away',      'label' => 'λ away',   'fmt' => fn($v) => number_format($v, 4), 'highlight' => false],
-        ['key' => 'probability_home', 'label' => 'P(1) HOME','fmt' => fn($v) => number_format($v * 100, 1).'%', 'highlight' => true],
-        ['key' => 'probability_draw', 'label' => 'P(X) DRAW','fmt' => fn($v) => number_format($v * 100, 1).'%', 'highlight' => true],
-        ['key' => 'probability_away', 'label' => 'P(2) AWAY','fmt' => fn($v) => number_format($v * 100, 1).'%', 'highlight' => true],
+        ['key' => 'probability_home', 'label' => 'P(1) HOME','fmt' => fn($v) => number_format($v * 100, 1).'%', 'highlight' => true,  'show_odds' => true],
+        ['key' => 'probability_draw', 'label' => 'P(X) DRAW','fmt' => fn($v) => number_format($v * 100, 1).'%', 'highlight' => true,  'show_odds' => true],
+        ['key' => 'probability_away', 'label' => 'P(2) AWAY','fmt' => fn($v) => number_format($v * 100, 1).'%', 'highlight' => true,  'show_odds' => true],
     ];
 @endphp
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-header bg-secondary bg-opacity-10 py-2 px-3">
         <span class="fw-semibold small">Model Comparison</span>
-        <span class="text-muted small ms-2">FULL 59 vs NO_E9 51 vs NO_E9+NO_E10 39</span>
+        <span class="text-muted small ms-2">FULL 59 / NO_E9 51 / CANDIDATE 39 / CANDIDATE 40</span>
     </div>
     <div class="card-body p-0">
         <table class="table table-sm table-bordered mb-0 small font-monospace">
@@ -246,7 +247,8 @@
                         @if($val === null)
                             —
                         @else
-                            {{ $row['fmt']($val) }}
+                            {{ $row['fmt']($val) }}@if(!empty($row['show_odds']) && $val > 0)
+                            <span class="text-muted fw-normal ms-1">({{ number_format(1 / $val, 2) }})</span>@endif
                         @endif
                     </td>
                     @endforeach

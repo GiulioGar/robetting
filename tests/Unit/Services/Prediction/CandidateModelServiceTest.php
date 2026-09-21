@@ -152,11 +152,13 @@ class CandidateModelServiceTest extends TestCase
         $features = self::$golden['cases'][0]['features'];
         $result   = $this->service->compare($features);
 
-        $this->assertArrayHasKey('full59',           $result);
-        $this->assertArrayHasKey('no_e9',            $result);
-        $this->assertArrayHasKey('no_e9_no_e10',     $result);
-        $this->assertArrayHasKey('no_e9_available',  $result);
-        $this->assertArrayHasKey('no_e10_available', $result);
+        $this->assertArrayHasKey('full59',                $result);
+        $this->assertArrayHasKey('no_e9',                 $result);
+        $this->assertArrayHasKey('no_e9_no_e10',          $result);
+        $this->assertArrayHasKey('candidate40',           $result);
+        $this->assertArrayHasKey('no_e9_available',       $result);
+        $this->assertArrayHasKey('no_e10_available',      $result);
+        $this->assertArrayHasKey('candidate40_available', $result);
 
         foreach (['lambda_home', 'lambda_away', 'probability_home', 'probability_draw', 'probability_away'] as $key) {
             $this->assertArrayHasKey($key, $result['full59'], "full59 missing key: {$key}");
@@ -164,5 +166,65 @@ class CandidateModelServiceTest extends TestCase
 
         $this->assertIsBool($result['no_e9_available']);
         $this->assertIsBool($result['no_e10_available']);
+        $this->assertIsBool($result['candidate40_available']);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // D. Candidate 40 artifact loads and produces valid output
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /** @test */
+    public function test_D_candidate40_artifact_loads_correctly(): void
+    {
+        $features = self::$golden['cases'][0]['features'];
+        $result   = $this->service->compare($features);
+
+        $this->assertTrue(
+            $result['candidate40_available'],
+            'Candidate 40 artifact not found — run tools/scripts/generate_candidate40_artifact.py'
+        );
+
+        $c40 = $result['candidate40'];
+        $this->assertNotNull($c40);
+
+        foreach (['lambda_home', 'lambda_away', 'probability_home', 'probability_draw', 'probability_away'] as $key) {
+            $this->assertArrayHasKey($key, $c40, "candidate40 missing key: {$key}");
+            $this->assertIsFloat($c40[$key]);
+            $this->assertGreaterThan(0.0, $c40[$key], "candidate40 {$key} must be positive");
+        }
+
+        fwrite(STDERR, sprintf(
+            "\n  [D] Candidate 40: lH=%.4f  lA=%.4f  P(H)=%.4f  P(D)=%.4f  P(A)=%.4f\n",
+            $c40['lambda_home'], $c40['lambda_away'],
+            $c40['probability_home'], $c40['probability_draw'], $c40['probability_away']
+        ));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // E. Candidate 40 probabilities sum to 1 for all golden cases
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /** @test */
+    public function test_E_candidate40_probabilities_sum_to_one(): void
+    {
+        foreach (self::$golden['cases'] as $case) {
+            $result = $this->service->compare($case['features']);
+
+            if (! $result['candidate40_available'] || $result['candidate40'] === null) {
+                $this->markTestSkipped('Candidate 40 artifact not available.');
+            }
+
+            $c40 = $result['candidate40'];
+            $sum = $c40['probability_home'] + $c40['probability_draw'] + $c40['probability_away'];
+
+            $this->assertEqualsWithDelta(
+                1.0,
+                $sum,
+                self::TOLERANCE_SUM,
+                "match {$case['match_id']}: candidate40 P sum={$sum}"
+            );
+        }
+
+        fwrite(STDERR, "\n  [E] Candidate 40 P sum=1 verified on all golden cases\n");
     }
 }

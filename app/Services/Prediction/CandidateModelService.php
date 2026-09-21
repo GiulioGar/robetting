@@ -16,6 +16,7 @@ class CandidateModelService
     private const MAX_GOALS    = 10;
     private const NO_E9_FILE   = 'prediction_engine_no_e9.json';
     private const NO_E10_FILE  = 'prediction_engine_no_e9_no_e10.json';
+    private const CAND40_FILE  = 'prediction_engine_candidate40.json';
 
     private static ?string $artifactDir = null;
     private static array   $factorials  = [];
@@ -43,26 +44,31 @@ class CandidateModelService
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * Run all three models on the given 59-feature snapshot.
+     * Run all four models on the given 59-feature snapshot.
      *
      * @param  array<string, float|null>  $features59  Output of PredictionEngineV1 extraction
      * @return array{
      *     full59: array,
      *     no_e9: array|null,
      *     no_e9_no_e10: array|null,
+     *     candidate40: array|null,
      *     no_e9_available: bool,
      *     no_e10_available: bool,
+     *     candidate40_available: bool,
      * }
      */
     public function compare(array $features59): array
     {
+        // Extended feature vector: features59 + derived features
+        $extFeatures = $this->addDerivedFeatures($features59);
+
         $full59 = PredictionEngineV1::predict($features59);
 
         $noE9 = null;
         $noE9Available = false;
         try {
             $artNoE9 = $this->loadArtifact(self::NO_E9_FILE);
-            $noE9 = $this->infer($artNoE9, $features59);
+            $noE9 = $this->infer($artNoE9, $extFeatures);
             $noE9Available = true;
         } catch (RuntimeException) {
         }
@@ -71,18 +77,56 @@ class CandidateModelService
         $noE10Available = false;
         try {
             $artNoE10 = $this->loadArtifact(self::NO_E10_FILE);
-            $noE10 = $this->infer($artNoE10, $features59);
+            $noE10 = $this->infer($artNoE10, $extFeatures);
             $noE10Available = true;
         } catch (RuntimeException) {
         }
 
+        $cand40 = null;
+        $cand40Available = false;
+        try {
+            $artCand40 = $this->loadArtifact(self::CAND40_FILE);
+            $cand40 = $this->infer($artCand40, $extFeatures);
+            $cand40Available = true;
+        } catch (RuntimeException) {
+        }
+
         return [
-            'full59'           => $full59,
-            'no_e9'            => $noE9,
-            'no_e9_no_e10'     => $noE10,
-            'no_e9_available'  => $noE9Available,
-            'no_e10_available' => $noE10Available,
+            'full59'               => $full59,
+            'no_e9'                => $noE9,
+            'no_e9_no_e10'         => $noE10,
+            'candidate40'          => $cand40,
+            'no_e9_available'      => $noE9Available,
+            'no_e10_available'     => $noE10Available,
+            'candidate40_available'=> $cand40Available,
         ];
+    }
+
+    /**
+     * Append derived features to the base feature vector.
+     * Currently adds: elo_gap_signed_square = copysign((elo_h - elo_a)^2, elo_h - elo_a)
+     *
+     * @param  array<string, float|null>  $features59
+     * @return array<string, float|null>
+     */
+    private function addDerivedFeatures(array $features59): array
+    {
+        $ext  = $features59;
+        $eloH = isset($features59['core_elo_home_pre_match_elo'])
+            ? (float) $features59['core_elo_home_pre_match_elo']
+            : null;
+        $eloA = isset($features59['core_elo_away_pre_match_elo'])
+            ? (float) $features59['core_elo_away_pre_match_elo']
+            : null;
+
+        if ($eloH !== null && $eloA !== null) {
+            $gap = $eloH - $eloA;
+            $ext['elo_gap_signed_square'] = ($gap >= 0.0 ? 1.0 : -1.0) * $gap * $gap;
+        } else {
+            $ext['elo_gap_signed_square'] = null; // median imputed during infer()
+        }
+
+        return $ext;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
