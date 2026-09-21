@@ -140,6 +140,122 @@
 
     </div>{{-- card-body --}}
 </div>{{-- card --}}
+
+{{-- Diagnostic context --}}
+@if($matchContext)
+@php
+    $ctx = $matchContext;
+    $fmtMv = fn(?int $v) => $v ? '€'.number_format($v / 1_000_000, 1).'M' : '—';
+    $fmtF  = fn(?float $v, int $d = 1) => $v !== null ? number_format($v, $d) : '—';
+@endphp
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-info bg-opacity-10 py-2 px-3">
+        <span class="fw-semibold small">Contesto Match</span>
+        <span class="text-muted small ms-2">diagnostico — non usato dal modello</span>
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-sm table-bordered mb-0 small font-monospace">
+            <thead class="table-light">
+                <tr>
+                    <th style="width:35%"></th>
+                    <th class="text-center">{{ $m->homeTeam->name }}</th>
+                    <th class="text-center">{{ $m->awayTeam->name }}</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td class="text-muted">Elo pre-match</td>
+                    <td class="text-center">{{ $fmtF($ctx['home_elo']) }}</td>
+                    <td class="text-center">{{ $fmtF($ctx['away_elo']) }}</td>
+                </tr>
+                <tr>
+                    <td class="text-muted">Structural Strength</td>
+                    <td class="text-center">{{ $fmtF($ctx['home_structural']) }}</td>
+                    <td class="text-center">{{ $fmtF($ctx['away_structural']) }}</td>
+                </tr>
+                <tr>
+                    <td class="text-muted">Market Value</td>
+                    <td class="text-center">{{ $fmtMv($ctx['home_market_value']) }}</td>
+                    <td class="text-center">{{ $fmtMv($ctx['away_market_value']) }}</td>
+                </tr>
+                <tr>
+                    <td class="text-muted">RECENT considerati</td>
+                    <td class="text-center">{{ $ctx['home_recent_n'] }} / 10</td>
+                    <td class="text-center">{{ $ctx['away_recent_n'] }} / 10</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+@endif
+@endif
+
+{{-- Model comparison --}}
+@if($comparison)
+@php
+    $models = [
+        ['label' => 'FULL 59',          'feat' => 59, 'data' => $comparison['full59'],       'avail' => true],
+        ['label' => 'NO_E9 51',         'feat' => 51, 'data' => $comparison['no_e9'],         'avail' => $comparison['no_e9_available']],
+        ['label' => 'NO_E9+NO_E10 39',  'feat' => 39, 'data' => $comparison['no_e9_no_e10'], 'avail' => $comparison['no_e10_available']],
+    ];
+    $rows = [
+        ['key' => 'lambda_home',      'label' => 'λ home',   'fmt' => fn($v) => number_format($v, 4), 'highlight' => false],
+        ['key' => 'lambda_away',      'label' => 'λ away',   'fmt' => fn($v) => number_format($v, 4), 'highlight' => false],
+        ['key' => 'probability_home', 'label' => 'P(1) HOME','fmt' => fn($v) => number_format($v * 100, 1).'%', 'highlight' => true],
+        ['key' => 'probability_draw', 'label' => 'P(X) DRAW','fmt' => fn($v) => number_format($v * 100, 1).'%', 'highlight' => true],
+        ['key' => 'probability_away', 'label' => 'P(2) AWAY','fmt' => fn($v) => number_format($v * 100, 1).'%', 'highlight' => true],
+    ];
+@endphp
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-secondary bg-opacity-10 py-2 px-3">
+        <span class="fw-semibold small">Model Comparison</span>
+        <span class="text-muted small ms-2">FULL 59 vs NO_E9 51 vs NO_E9+NO_E10 39</span>
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-sm table-bordered mb-0 small font-monospace">
+            <thead class="table-light">
+                <tr>
+                    <th style="width:20%"></th>
+                    @foreach($models as $m)
+                    <th class="text-center">
+                        {{ $m['label'] }}
+                        @if(!$m['avail'])
+                        <span class="text-muted fw-normal">(n/a)</span>
+                        @endif
+                    </th>
+                    @endforeach
+                </tr>
+            </thead>
+            <tbody>
+                @foreach($rows as $row)
+                @php
+                    $vals = [];
+                    foreach ($models as $m) {
+                        $vals[] = ($m['avail'] && $m['data']) ? $m['data'][$row['key']] : null;
+                    }
+                    $maxVal = $row['highlight'] ? max(array_filter($vals, fn($v) => $v !== null)) : null;
+                @endphp
+                <tr>
+                    <td class="text-muted">{{ $row['label'] }}</td>
+                    @foreach($models as $idx => $m)
+                    @php
+                        $val = $vals[$idx];
+                        $isMax = $row['highlight'] && $val !== null && abs($val - $maxVal) < 1e-9;
+                    @endphp
+                    <td class="text-center {{ $isMax ? 'fw-bold text-success' : '' }} {{ $val === null ? 'text-muted' : '' }}">
+                        @if($val === null)
+                            —
+                        @else
+                            {{ $row['fmt']($val) }}
+                        @endif
+                    </td>
+                    @endforeach
+                </tr>
+                @endforeach
+            </tbody>
+        </table>
+    </div>
+</div>
 @endif
 
 {{-- Match selection --}}

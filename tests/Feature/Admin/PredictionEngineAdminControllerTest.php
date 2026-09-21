@@ -189,4 +189,32 @@ class PredictionEngineAdminControllerTest extends TestCase
         $response = $this->get(route('admin.prediction-engine.index', ['match_id' => $match->id]));
         $response->assertStatus(200);
     }
+
+    // ── I. Diagnostic context block ───────────────────────────────────────────
+
+    /**
+     * @test
+     * The context block renders when a prediction is present.
+     * With no Transfermarkt data source seeded, structural/market show '—'.
+     * Recent count shows 0/10 (no previous matches in test DB).
+     * Elo shows '—' because the mock returns generic feature keys without Elo names.
+     */
+    public function test_I_context_block_renders_without_errors(): void
+    {
+        $match = $this->createMinimalMatch();
+        $this->mockPredictionService($match->id);
+
+        $response = $this->get(route('admin.prediction-engine.index', ['match_id' => $match->id]));
+
+        $response->assertStatus(200);
+        $response->assertSee('Contesto Match');
+        $response->assertSee('Elo pre-match');
+        $response->assertSee('Structural Strength');
+        $response->assertSee('Market Value');
+        $response->assertSee('RECENT considerati');
+        // No Transfermarkt DS seeded → structural/market = '—'
+        $response->assertSee('—');
+        // No previous matches in test DB → recent count = 0
+        $response->assertSee('0 / 10');
+    }
 }
