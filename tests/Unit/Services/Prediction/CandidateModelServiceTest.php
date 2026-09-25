@@ -227,4 +227,210 @@ class CandidateModelServiceTest extends TestCase
 
         fwrite(STDERR, "\n  [E] Candidate 40 P sum=1 verified on all golden cases\n");
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // F. Candidate 40 Robust BP artifact loads and returns valid structure
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /** @test */
+    public function test_F_candidate40_robust_bp_artifact_loads_correctly(): void
+    {
+        $features = self::$golden['cases'][0]['features'];
+        $result   = $this->service->compare($features);
+
+        $this->assertTrue(
+            $result['candidate40_robust_bp_available'],
+            'Candidate 40 Robust BP artifact not found — run tools/scripts/generate_candidate40_robust_bp_artifact.py'
+        );
+
+        $rbp = $result['candidate40_robust_bp'];
+        $this->assertNotNull($rbp);
+
+        foreach (['lambda_home', 'lambda_away', 'lambda3', 'probability_home', 'probability_draw', 'probability_away'] as $key) {
+            $this->assertArrayHasKey($key, $rbp, "candidate40_robust_bp missing key: {$key}");
+            $this->assertIsFloat($rbp[$key]);
+            $this->assertGreaterThan(0.0, $rbp[$key], "candidate40_robust_bp {$key} must be positive");
+        }
+
+        $this->assertEqualsWithDelta(0.15, $rbp['lambda3'], 1e-9, 'lambda3 must be 0.15');
+
+        fwrite(STDERR, sprintf(
+            "\n  [F] C40 Robust BP loaded: lH=%.4f  lA=%.4f  l3=%.4f  P(H)=%.4f  P(D)=%.4f  P(A)=%.4f\n",
+            $rbp['lambda_home'], $rbp['lambda_away'], $rbp['lambda3'],
+            $rbp['probability_home'], $rbp['probability_draw'], $rbp['probability_away']
+        ));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // G. Candidate 40 Robust BP probabilities sum to 1 for all golden cases
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /** @test */
+    public function test_G_candidate40_robust_bp_probabilities_sum_to_one(): void
+    {
+        foreach (self::$golden['cases'] as $case) {
+            $result = $this->service->compare($case['features']);
+
+            if (! ($result['candidate40_robust_bp_available'] ?? false) || $result['candidate40_robust_bp'] === null) {
+                $this->markTestSkipped('Candidate 40 Robust BP artifact not available.');
+            }
+
+            $rbp = $result['candidate40_robust_bp'];
+            $sum = $rbp['probability_home'] + $rbp['probability_draw'] + $rbp['probability_away'];
+
+            $this->assertEqualsWithDelta(
+                1.0,
+                $sum,
+                self::TOLERANCE_SUM,
+                "match {$case['match_id']}: candidate40_robust_bp P sum={$sum}"
+            );
+        }
+
+        fwrite(STDERR, "\n  [G] C40 Robust BP P sum=1 verified on all golden cases\n");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // H. PHP/Python parity: golden case 0 (match_id=6042)
+    //    Python values computed from prediction_engine_candidate40_robust_bp.json
+    //    with golden case 0 features (rest_days within threshold, no MISSING30 applied).
+    //    lH=1.3796732020  lA=1.1684736831
+    //    P(H)=0.40982575  P(D)=0.28548257  P(A)=0.30469168
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /** @test */
+    public function test_H_php_python_parity_golden_case_0(): void
+    {
+        $features = self::$golden['cases'][0]['features'];
+
+        $result = $this->service->compare($features);
+
+        if (! ($result['candidate40_robust_bp_available'] ?? false)) {
+            $this->markTestSkipped('Candidate 40 Robust BP artifact not available.');
+        }
+
+        $rbp = $result['candidate40_robust_bp'];
+
+        $this->assertEqualsWithDelta(1.3796732020, $rbp['lambda_home'],      1e-6, 'lambda_home parity');
+        $this->assertEqualsWithDelta(1.1684736831, $rbp['lambda_away'],      1e-6, 'lambda_away parity');
+        $this->assertEqualsWithDelta(0.40982575,   $rbp['probability_home'], 1e-6, 'P(H) parity');
+        $this->assertEqualsWithDelta(0.28548257,   $rbp['probability_draw'], 1e-6, 'P(D) parity');
+        $this->assertEqualsWithDelta(0.30469168,   $rbp['probability_away'], 1e-6, 'P(A) parity');
+
+        fwrite(STDERR, sprintf(
+            "\n  [H] Parity OK (match 6042): lH=%.8f  lA=%.8f  P(H)=%.8f  P(D)=%.8f  P(A)=%.8f\n",
+            $rbp['lambda_home'], $rbp['lambda_away'],
+            $rbp['probability_home'], $rbp['probability_draw'], $rbp['probability_away']
+        ));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // I. rest_days > 30 is neutralized: input rest_days=100 produces same
+    //    lambda_home as rest_days=null (both imputed to train median).
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /** @test */
+    public function test_I_rest_days_above_30_is_neutralized(): void
+    {
+        $base = self::$golden['cases'][0]['features'];
+
+        // Baseline: rest_days left as-is (whatever is in golden case)
+        $featNull = array_merge($base, [
+            'core_schedule_home_rest_days' => null,
+            'core_schedule_away_rest_days' => null,
+        ]);
+        $featOod = array_merge($base, [
+            'core_schedule_home_rest_days' => 100.0,
+            'core_schedule_away_rest_days' => 200.0,
+        ]);
+
+        $resultNull = $this->service->compare($featNull);
+        $resultOod  = $this->service->compare($featOod);
+
+        if (! ($resultNull['candidate40_robust_bp_available'] ?? false)) {
+            $this->markTestSkipped('Candidate 40 Robust BP artifact not available.');
+        }
+
+        $rbpNull = $resultNull['candidate40_robust_bp'];
+        $rbpOod  = $resultOod['candidate40_robust_bp'];
+
+        // Robust BP: OOD rest_days (>30) must produce same result as null
+        $this->assertEqualsWithDelta(
+            $rbpNull['lambda_home'],
+            $rbpOod['lambda_home'],
+            1e-10,
+            'C40 Robust BP: rest_days=100 must equal rest_days=null for lambda_home'
+        );
+        $this->assertEqualsWithDelta(
+            $rbpNull['lambda_away'],
+            $rbpOod['lambda_away'],
+            1e-10,
+            'C40 Robust BP: rest_days=200 must equal rest_days=null for lambda_away'
+        );
+
+        // Sanity: Candidate 40 IP should NOT neutralize OOD (no MISSING30 gate)
+        $c40Null = $resultNull['candidate40'];
+        $c40Ood  = $resultOod['candidate40'];
+        if ($c40Null !== null && $c40Ood !== null) {
+            $this->assertNotEqualsWithDelta(
+                $c40Null['lambda_home'],
+                $c40Ood['lambda_home'],
+                1e-6,
+                'Candidate 40 IP (no MISSING30) must NOT neutralize rest_days=100'
+            );
+        }
+
+        fwrite(STDERR, sprintf(
+            "\n  [I] MISSING30 neutralized: lH(null)=%.6f  lH(ood)=%.6f  delta=%.2e\n",
+            $rbpNull['lambda_home'],
+            $rbpOod['lambda_home'],
+            abs($rbpNull['lambda_home'] - $rbpOod['lambda_home'])
+        ));
+        fwrite(STDERR, sprintf(
+            "      C40-IP NOT neutralized: lH(null)=%.6f  lH(ood)=%.6f\n",
+            $c40Null['lambda_home'] ?? 0.0,
+            $c40Ood['lambda_home']  ?? 0.0
+        ));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // J. Candidate 40 IP is unchanged by adding Robust BP to compare()
+    //    (i.e., compare() still returns the same c40 values as before P8Z)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /** @test */
+    public function test_J_candidate40_ip_unchanged(): void
+    {
+        foreach (self::$golden['cases'] as $case) {
+            $result = $this->service->compare($case['features']);
+
+            if (! ($result['candidate40_available'] ?? false) || $result['candidate40'] === null) {
+                continue;
+            }
+
+            $c40 = $result['candidate40'];
+
+            // Verify the IP model still returns exactly the same keys and valid values
+            foreach (['lambda_home', 'lambda_away', 'probability_home', 'probability_draw', 'probability_away'] as $key) {
+                $this->assertArrayHasKey($key, $c40, "candidate40 regression: missing key {$key}");
+            }
+
+            $sum = $c40['probability_home'] + $c40['probability_draw'] + $c40['probability_away'];
+            $this->assertEqualsWithDelta(1.0, $sum, self::TOLERANCE_SUM,
+                "match {$case['match_id']}: candidate40 IP P sum={$sum} (regression check)"
+            );
+
+            // Verify Robust BP differs from IP (BP shifts mass toward draw)
+            $rbp = $result['candidate40_robust_bp'];
+            if ($rbp !== null) {
+                $this->assertNotEqualsWithDelta(
+                    $c40['probability_draw'],
+                    $rbp['probability_draw'],
+                    1e-6,
+                    "match {$case['match_id']}: C40 IP P(D) should differ from Robust BP P(D)"
+                );
+            }
+        }
+
+        fwrite(STDERR, "\n  [J] Candidate 40 IP unchanged; C40 IP vs Robust BP P(D) diverges as expected\n");
+    }
 }

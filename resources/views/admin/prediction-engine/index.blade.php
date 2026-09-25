@@ -194,14 +194,16 @@
 @if($comparison)
 @php
     $models = [
-        ['label' => 'FULL 59',      'feat' => 59, 'data' => $comparison['full59'],       'avail' => true],
-        ['label' => 'NO_E9 51',     'feat' => 51, 'data' => $comparison['no_e9'],         'avail' => $comparison['no_e9_available']],
-        ['label' => 'CANDIDATE 39', 'feat' => 39, 'data' => $comparison['no_e9_no_e10'], 'avail' => $comparison['no_e10_available']],
-        ['label' => 'CANDIDATE 40', 'feat' => 40, 'data' => $comparison['candidate40'],   'avail' => $comparison['candidate40_available'] ?? false],
+        ['label' => 'FULL 59',       'feat' => 59, 'data' => $comparison['full59'],                'avail' => true],
+        ['label' => 'NO_E9 51',      'feat' => 51, 'data' => $comparison['no_e9'],                  'avail' => $comparison['no_e9_available']],
+        ['label' => 'CANDIDATE 39',  'feat' => 39, 'data' => $comparison['no_e9_no_e10'],           'avail' => $comparison['no_e10_available']],
+        ['label' => 'CANDIDATE 40',  'feat' => 40, 'data' => $comparison['candidate40'],            'avail' => $comparison['candidate40_available'] ?? false],
+        ['label' => 'C40 ROBUST BP', 'feat' => 40, 'data' => $comparison['candidate40_robust_bp'], 'avail' => $comparison['candidate40_robust_bp_available'] ?? false],
     ];
     $rows = [
         ['key' => 'lambda_home',      'label' => 'λ home',   'fmt' => fn($v) => number_format($v, 4), 'highlight' => false],
         ['key' => 'lambda_away',      'label' => 'λ away',   'fmt' => fn($v) => number_format($v, 4), 'highlight' => false],
+        ['key' => 'lambda3',          'label' => 'λ3 (BP)',  'fmt' => fn($v) => number_format($v, 4), 'highlight' => false],
         ['key' => 'probability_home', 'label' => 'P(1) HOME','fmt' => fn($v) => number_format($v * 100, 1).'%', 'highlight' => true,  'show_odds' => true],
         ['key' => 'probability_draw', 'label' => 'P(X) DRAW','fmt' => fn($v) => number_format($v * 100, 1).'%', 'highlight' => true,  'show_odds' => true],
         ['key' => 'probability_away', 'label' => 'P(2) AWAY','fmt' => fn($v) => number_format($v * 100, 1).'%', 'highlight' => true,  'show_odds' => true],
@@ -210,7 +212,7 @@
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-header bg-secondary bg-opacity-10 py-2 px-3">
         <span class="fw-semibold small">Model Comparison</span>
-        <span class="text-muted small ms-2">FULL 59 / NO_E9 51 / CANDIDATE 39 / CANDIDATE 40</span>
+        <span class="text-muted small ms-2">FULL 59 / NO_E9 51 / CANDIDATE 39 / CANDIDATE 40 / C40 ROBUST BP</span>
     </div>
     <div class="card-body p-0">
         <table class="table table-sm table-bordered mb-0 small font-monospace">
@@ -232,7 +234,7 @@
                 @php
                     $vals = [];
                     foreach ($models as $m) {
-                        $vals[] = ($m['avail'] && $m['data']) ? $m['data'][$row['key']] : null;
+                        $vals[] = ($m['avail'] && $m['data']) ? ($m['data'][$row['key']] ?? null) : null;
                     }
                     $maxVal = $row['highlight'] ? max(array_filter($vals, fn($v) => $v !== null)) : null;
                 @endphp

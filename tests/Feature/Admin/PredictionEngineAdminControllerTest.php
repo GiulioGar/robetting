@@ -215,13 +215,15 @@ class PredictionEngineAdminControllerTest extends TestCase
         ];
         $candidateMock = $this->createMock(CandidateModelService::class);
         $candidateMock->method('compare')->willReturn([
-            'full59'              => $slot,
-            'no_e9'               => $slot,
-            'no_e9_no_e10'        => $slot,
-            'candidate40'         => $slot,
-            'no_e9_available'     => true,
-            'no_e10_available'    => true,
-            'candidate40_available' => true,
+            'full59'                          => $slot,
+            'no_e9'                           => $slot,
+            'no_e9_no_e10'                    => $slot,
+            'candidate40'                     => $slot,
+            'candidate40_robust_bp'           => array_merge($slot, ['lambda3' => 0.15]),
+            'no_e9_available'                 => true,
+            'no_e10_available'                => true,
+            'candidate40_available'           => true,
+            'candidate40_robust_bp_available' => true,
         ]);
         $this->app->instance(CandidateModelService::class, $candidateMock);
 

@@ -13,10 +13,11 @@ use RuntimeException;
  */
 class CandidateModelService
 {
-    private const MAX_GOALS    = 10;
-    private const NO_E9_FILE   = 'prediction_engine_no_e9.json';
-    private const NO_E10_FILE  = 'prediction_engine_no_e9_no_e10.json';
-    private const CAND40_FILE  = 'prediction_engine_candidate40.json';
+    private const MAX_GOALS           = 10;
+    private const NO_E9_FILE          = 'prediction_engine_no_e9.json';
+    private const NO_E10_FILE         = 'prediction_engine_no_e9_no_e10.json';
+    private const CAND40_FILE         = 'prediction_engine_candidate40.json';
+    private const CAND40_ROBUST_BP_FILE = 'prediction_engine_candidate40_robust_bp.json';
 
     private static ?string $artifactDir = null;
     private static array   $factorials  = [];
@@ -44,7 +45,7 @@ class CandidateModelService
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * Run all four models on the given 59-feature snapshot.
+     * Run all candidate models on the given 59-feature snapshot.
      *
      * @param  array<string, float|null>  $features59  Output of PredictionEngineV1 extraction
      * @return array{
@@ -52,9 +53,11 @@ class CandidateModelService
      *     no_e9: array|null,
      *     no_e9_no_e10: array|null,
      *     candidate40: array|null,
+     *     candidate40_robust_bp: array|null,
      *     no_e9_available: bool,
      *     no_e10_available: bool,
      *     candidate40_available: bool,
+     *     candidate40_robust_bp_available: bool,
      * }
      */
     public function compare(array $features59): array
@@ -91,14 +94,25 @@ class CandidateModelService
         } catch (RuntimeException) {
         }
 
+        $cand40RobustBp = null;
+        $cand40RobustBpAvailable = false;
+        try {
+            $artRobustBp = $this->loadArtifact(self::CAND40_ROBUST_BP_FILE);
+            $cand40RobustBp = $this->inferRobustBP($artRobustBp, $extFeatures);
+            $cand40RobustBpAvailable = true;
+        } catch (RuntimeException) {
+        }
+
         return [
-            'full59'               => $full59,
-            'no_e9'                => $noE9,
-            'no_e9_no_e10'         => $noE10,
-            'candidate40'          => $cand40,
-            'no_e9_available'      => $noE9Available,
-            'no_e10_available'     => $noE10Available,
-            'candidate40_available'=> $cand40Available,
+            'full59'                          => $full59,
+            'no_e9'                           => $noE9,
+            'no_e9_no_e10'                    => $noE10,
+            'candidate40'                     => $cand40,
+            'candidate40_robust_bp'           => $cand40RobustBp,
+            'no_e9_available'                 => $noE9Available,
+            'no_e10_available'                => $noE10Available,
+            'candidate40_available'           => $cand40Available,
+            'candidate40_robust_bp_available' => $cand40RobustBpAvailable,
         ];
     }
 
@@ -172,6 +186,126 @@ class CandidateModelService
             'probability_draw' => $pD,
             'probability_away' => $pA,
         ];
+    }
+
+    /**
+     * Inference with MISSING30 gate + Bivariate Poisson score matrix.
+     * rest_days > missing30_threshold is treated as null (median-imputed).
+     *
+     * @param array<string, float|null> $features59
+     */
+    private function inferRobustBP(array $artifact, array $features59): array
+    {
+        $names     = $artifact['features'];
+        $medians   = $artifact['imputer']['values'];
+        $means     = $artifact['scaler']['mean'];
+        $scales    = $artifact['scaler']['scale'];
+        $n         = count($names);
+        $lambda3   = (float) $artifact['lambda3'];
+        $threshold = (float) ($artifact['missing30_threshold'] ?? 30.0);
+        $missing30 = $artifact['missing30_features'] ?? [];
+
+        $z = [];
+        foreach ($names as $i => $name) {
+            $raw = $features59[$name] ?? null;
+            // MISSING30 gate: OOD rest_days treated as missing before imputation
+            if ($raw !== null && in_array($name, $missing30, true) && (float) $raw > $threshold) {
+                $raw = null;
+            }
+            $x     = ($raw === null) ? (float) $medians[$i] : (float) $raw;
+            $z[$i] = ($x - (float) $means[$i]) / (float) $scales[$i];
+        }
+
+        $etaH  = $artifact['home_model']['intercept'];
+        $coefH = $artifact['home_model']['coefficients'];
+        for ($i = 0; $i < $n; $i++) {
+            $etaH += $coefH[$i] * $z[$i];
+        }
+        $lambdaH = exp($etaH);
+
+        $etaA  = $artifact['away_model']['intercept'];
+        $coefA = $artifact['away_model']['coefficients'];
+        for ($i = 0; $i < $n; $i++) {
+            $etaA += $coefA[$i] * $z[$i];
+        }
+        $lambdaA = exp($etaA);
+
+        [$pH, $pD, $pA] = $this->lambdaToBivariate1x2($lambdaH, $lambdaA, $lambda3);
+
+        return [
+            'lambda_home'      => $lambdaH,
+            'lambda_away'      => $lambdaA,
+            'lambda3'          => $lambda3,
+            'probability_home' => $pH,
+            'probability_draw' => $pD,
+            'probability_away' => $pA,
+        ];
+    }
+
+    /**
+     * Bivariate Poisson score matrix (Karlis & Ntzoufras 2003).
+     *
+     * lambda1 = lambdaHome - lambda3
+     * lambda2 = lambdaAway - lambda3
+     * P(x,y) = exp(-(l1+l2+l3)) * (l1^x/x!) * (l2^y/y!)
+     *          * sum_{k=0..min(x,y)} C(x,k)*C(y,k)*k! * (l3/(l1*l2))^k
+     *
+     * Computed in log-space for numerical stability.
+     */
+    private function lambdaToBivariate1x2(float $lambdaHome, float $lambdaAway, float $lambda3): array
+    {
+        $lambdaHome = max($lambdaHome, 1e-6);
+        $lambdaAway = max($lambdaAway, 1e-6);
+        // Safety cap: lambda3 must be strictly < min(lambda1, lambda2)
+        $lambda3 = min($lambda3, min($lambdaHome, $lambdaAway) * 0.9999);
+
+        $lambda1 = $lambdaHome - $lambda3;
+        $lambda2 = $lambdaAway - $lambda3;
+
+        // Log-factorials 0..MAX_GOALS
+        $logFact = [0.0];
+        for ($k = 1; $k <= self::MAX_GOALS; $k++) {
+            $logFact[$k] = $logFact[$k - 1] + log($k);
+        }
+
+        $logRatio = log($lambda3) - log($lambda1) - log($lambda2);
+        $constTerm = -($lambda1 + $lambda2 + $lambda3);
+
+        $pH = $pD = $pA = 0.0;
+
+        for ($x = 0; $x <= self::MAX_GOALS; $x++) {
+            $logPX = $x > 0 ? $x * log($lambda1) - $logFact[$x] : -$logFact[0];
+            for ($y = 0; $y <= self::MAX_GOALS; $y++) {
+                $logPY = $y > 0 ? $y * log($lambda2) - $logFact[$y] : -$logFact[0];
+
+                // Inner sum: k=0 term = 1, k>0 terms in log-space
+                $innerSum = 1.0;
+                $minXY = min($x, $y);
+                for ($k = 1; $k <= $minXY; $k++) {
+                    $logTerm = ($logFact[$x] - $logFact[$k] - $logFact[$x - $k])
+                             + ($logFact[$y] - $logFact[$k] - $logFact[$y - $k])
+                             + $logFact[$k]
+                             + $k * $logRatio;
+                    $innerSum += exp($logTerm);
+                }
+
+                $p = exp($constTerm + $logPX + $logPY) * $innerSum;
+
+                if ($x > $y) {
+                    $pH += $p;
+                } elseif ($x === $y) {
+                    $pD += $p;
+                } else {
+                    $pA += $p;
+                }
+            }
+        }
+
+        $total = $pH + $pD + $pA;
+        if ($total < 1e-12) {
+            return [1 / 3, 1 / 3, 1 / 3];
+        }
+        return [$pH / $total, $pD / $total, $pA / $total];
     }
 
     /** Identical math to PredictionEngineV1::lambdaTo1x2. */
