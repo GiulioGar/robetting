@@ -19,6 +19,7 @@ use App\Services\Analytics\TeamOpponentQualityCalculator;
 use App\Services\Analytics\TeamStrengthComparisonCalculator;
 use App\Services\Analytics\TeamTimeDecayedPerformanceCalculator;
 use App\Services\Matches\PreferredMatchStatisticResolver;
+use App\Services\Prediction\PublicMatchPredictionService;
 use Illuminate\Support\Collection;
 use Illuminate\View\View;
 
@@ -34,7 +35,7 @@ class MatchController extends Controller
 {
     private const H2H_LIMIT = 5;
 
-    public function show(FootballMatch $match): View
+    public function show(FootballMatch $match, PublicMatchPredictionService $publicPredictionService): View
     {
         $match->load(['competition.country', 'season', 'homeTeam', 'awayTeam']);
 
@@ -207,6 +208,9 @@ class MatchController extends Controller
             $matchStatistics
         );
 
+        // P17B — public pre-match 1X2 (Candidate V2, FULL59 technical fallback).
+        $publicPrediction = $publicPredictionService->predict($match);
+
         return view('matches.show', [
             'match'               => $match,
             'matchStatistic'      => $matchStatistic,
@@ -243,6 +247,7 @@ class MatchController extends Controller
             'leagueContext'               => $leagueContext,
             'homeTimeDecay'               => $homeTimeDecay,
             'awayTimeDecay'               => $awayTimeDecay,
+            'publicPrediction'            => $publicPrediction,
         ]);
     }
 

@@ -20,6 +20,7 @@ class CandidateModelService
     private const CAND40_FILE         = 'prediction_engine_candidate40.json';
     private const CAND40_ROBUST_BP_FILE = 'prediction_engine_candidate40_robust_bp.json';
     private const CAND48_STRUCTURAL_FILE = 'prediction_engine_candidate48_structural.json';
+    private const CAND47_STRUCTURAL_LOG_FILE = 'prediction_engine_candidate47_structural_log.json';
     private const LATENT_SNAPSHOT_FILE = 'latent_strength_current.json';
     private const STRUCTURAL_SNAPSHOT_FILE = 'structural_strength_current.json';
 
@@ -63,11 +64,14 @@ class CandidateModelService
      *     candidate40_robust_bp: array|null,
      *     candidate48_structural: array|null,
      *     candidate48_structural_inputs: array{structural_home: float, structural_away: float, structural_gap: float}|null,
+     *     candidate47_structural_log: array|null,
+     *     candidate47_structural_log_inputs: array{structural_home: float, structural_away: float, structural_gap: float}|null,
      *     no_e9_available: bool,
      *     no_e10_available: bool,
      *     candidate40_available: bool,
      *     candidate40_robust_bp_available: bool,
      *     candidate48_structural_available: bool,
+     *     candidate47_structural_log_available: bool,
      * }
      */
     public function compare(
@@ -117,27 +121,52 @@ class CandidateModelService
         } catch (RuntimeException) {
         }
 
+        // Latent + Structural snapshots are resolved once and shared by
+        // Candidate48 (RAW, kept for rollback/debug) and Candidate47 (LOG).
+        $latent = null;
+        $structural = null;
+        if ($homeTeamId !== null && $awayTeamId !== null && $kickoffAt !== null) {
+            try {
+                $latent     = $this->resolveLatentFeatures($this->loadLatentSnapshot(), $homeTeamId, $awayTeamId, $kickoffAt);
+                $structural = $this->resolveStructuralFeatures($this->loadStructuralSnapshot(), $homeTeamId, $awayTeamId, $kickoffAt);
+            } catch (RuntimeException) {
+                $latent = $structural = null;
+            }
+        }
+        $structuralInputs = ($latent !== null && $structural !== null) ? [
+            'structural_home' => $structural['structural_home'],
+            'structural_away' => $structural['structural_away'],
+            'structural_gap'  => $structural['structural_gap'],
+        ] : null;
+
         $cand48Structural = null;
         $cand48StructuralAvailable = false;
         $cand48StructuralInputs = null;
-        if ($homeTeamId !== null && $awayTeamId !== null && $kickoffAt !== null) {
+        if ($structuralInputs !== null) {
             try {
-                $latentSnapshot = $this->loadLatentSnapshot();
-                $latent         = $this->resolveLatentFeatures($latentSnapshot, $homeTeamId, $awayTeamId, $kickoffAt);
-                $structSnapshot = $this->loadStructuralSnapshot();
-                $structural     = $this->resolveStructuralFeatures($structSnapshot, $homeTeamId, $awayTeamId, $kickoffAt);
-                if ($latent !== null && $structural !== null) {
-                    $ext48 = array_merge($extFeatures, $latent, $structural);
-                    $artCand48 = $this->loadArtifact(self::CAND48_STRUCTURAL_FILE);
-                    $cand48Structural = $this->inferRobustBP($artCand48, $ext48);
-                    $cand48StructuralAvailable = true;
-                    $cand48StructuralInputs = [
-                        'structural_home' => $structural['structural_home'],
-                        'structural_away' => $structural['structural_away'],
-                        'structural_gap'  => $structural['structural_gap'],
-                    ];
-                }
+                $ext48 = array_merge($extFeatures, $latent, $structural);
+                $artCand48 = $this->loadArtifact(self::CAND48_STRUCTURAL_FILE);
+                $cand48Structural = $this->inferRobustBP($artCand48, $ext48);
+                $cand48StructuralAvailable = true;
+                $cand48StructuralInputs = $structuralInputs;
             } catch (RuntimeException) {
+            }
+        }
+
+        $cand47Log = null;
+        $cand47LogAvailable = false;
+        $cand47LogInputs = null;
+        if ($structuralInputs !== null) {
+            $logFeatures = self::structuralLogFeatures($structural['structural_home'], $structural['structural_away']);
+            if ($logFeatures !== null) {
+                try {
+                    $ext47 = array_merge($extFeatures, $latent, $logFeatures);
+                    $artCand47 = $this->loadArtifact(self::CAND47_STRUCTURAL_LOG_FILE);
+                    $cand47Log = $this->inferRobustBP($artCand47, $ext47);
+                    $cand47LogAvailable = true;
+                    $cand47LogInputs = $structuralInputs;
+                } catch (RuntimeException) {
+                }
             }
         }
 
@@ -149,11 +178,14 @@ class CandidateModelService
             'candidate40_robust_bp'           => $cand40RobustBp,
             'candidate48_structural'          => $cand48Structural,
             'candidate48_structural_inputs'   => $cand48StructuralInputs,
+            'candidate47_structural_log'        => $cand47Log,
+            'candidate47_structural_log_inputs' => $cand47LogInputs,
             'no_e9_available'                 => $noE9Available,
             'no_e10_available'                => $noE10Available,
             'candidate40_available'           => $cand40Available,
             'candidate40_robust_bp_available' => $cand40RobustBpAvailable,
             'candidate48_structural_available' => $cand48StructuralAvailable,
+            'candidate47_structural_log_available' => $cand47LogAvailable,
         ];
     }
 
@@ -490,6 +522,26 @@ class CandidateModelService
             'structural_away'              => $structAway,
             'structural_gap'               => $gap,
             'structural_gap_signed_square' => ($gap >= 0.0 ? 1.0 : -1.0) * $gap * $gap,
+        ];
+    }
+
+    /**
+     * Candidate47 LOG structural features — the exact transformation used in
+     * training (generate_candidate47_structural_log_artifact.py).
+     * Returns null when either TOP25 value is <= 0 (log undefined → LOG unavailable).
+     *
+     * @return array{structural_log_home: float, structural_log_away: float, structural_log_ratio: float}|null
+     */
+    public static function structuralLogFeatures(float $top25Home, float $top25Away): ?array
+    {
+        if ($top25Home <= 0.0 || $top25Away <= 0.0) {
+            return null;
+        }
+
+        return [
+            'structural_log_home'  => log($top25Home),
+            'structural_log_away'  => log($top25Away),
+            'structural_log_ratio' => log($top25Home / $top25Away),
         ];
     }
 

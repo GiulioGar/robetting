@@ -1,0 +1,9 @@
+{
+  "source": "dcaribou/transfermarkt-datasets player_valuations.csv",
+  "source_sha256": "608e32e5ad2231074f3505c469ad727be66d7e6efda6af918afd85379439631d",
+  "source_rows": 656301,
+  "extract_rows": 199155,
+  "players": 9779,
+  "max_date": "2026-06-11",
+  "extract_sha256": "1f6e51acc11a91ab12a3439042eaeb55591db88392966cb0b18b80c41b3e4d76"
+}

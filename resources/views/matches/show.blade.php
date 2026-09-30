@@ -78,6 +78,40 @@
     </div>
 </div>
 
+{{-- A2. Pronostico Robetting (pre-match only) --}}
+@if($publicPrediction !== null)
+@php
+    $pp = $publicPrediction;
+    $ppOutcomes = [
+        ['label' => '1', 'prob' => $pp['probability_home'], 'odds' => $pp['fair_odds_home']],
+        ['label' => 'X', 'prob' => $pp['probability_draw'], 'odds' => $pp['fair_odds_draw']],
+        ['label' => '2', 'prob' => $pp['probability_away'], 'odds' => $pp['fair_odds_away']],
+    ];
+    $ppMax = max($pp['probability_home'], $pp['probability_draw'], $pp['probability_away']);
+@endphp
+<div class="mt-4" data-testid="public-prediction">
+    <h2 class="fs-5 fw-semibold mb-3">Pronostico Robetting</h2>
+    <div class="card">
+        <div class="card-body p-3">
+            <div class="row text-center g-2">
+                @foreach($ppOutcomes as $o)
+                @php $isTop = $o['prob'] === $ppMax; @endphp
+                <div class="col-4">
+                    <div class="rounded py-2 {{ $isTop ? 'bg-primary-subtle border border-primary-subtle' : '' }}">
+                        <div class="text-muted small">{{ $o['label'] }}</div>
+                        <div class="fs-4 {{ $isTop ? 'fw-bold text-primary-emphasis' : 'fw-semibold' }}">{{ $pct($o['prob'] * 100) }}</div>
+                        <div class="text-muted small">
+                            Quota equa {{ $o['odds'] !== null ? number_format($o['odds'], 2) : '–' }}
+                        </div>
+                    </div>
+                </div>
+                @endforeach
+            </div>
+        </div>
+    </div>
+</div>
+@endif
+
 {{-- B. Match statistics --}}
 <div class="mt-4">
     <h2 class="fs-5 fw-semibold mb-3">Statistiche match</h2>

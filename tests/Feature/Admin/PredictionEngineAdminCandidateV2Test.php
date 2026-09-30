@@ -13,10 +13,10 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * P16B — Admin "Model Comparison" simplification tests.
+ * P16B/P18D — Admin "Model Comparison" simplification tests.
  *
- * Only FULL59 and ROBETTING CANDIDATE V2 must be visible; the older
- * NO_E9/CANDIDATE39/40/C40 ROBUST BP/C44 BP slots keep working under the
+ * Only FULL59 and ROBETTING CANDIDATE V2 LOG must be visible; the older
+ * NO_E9/CANDIDATE39/40/C40 ROBUST BP/C44 BP/C48 V2 RAW slots keep working under the
  * hood (CandidateModelService still computes them, still tested elsewhere)
  * but must not render on this page.
  */
@@ -82,10 +82,25 @@ class PredictionEngineAdminCandidateV2Test extends TestCase
             'probability_away' => 0.23,
         ] : null;
 
+        // Candidate V2 LOG (shown) vs Candidate V2 RAW (hidden, rollback only) — distinct values.
+        $c47Slot = $c48Available ? [
+            'lambda_home'      => 1.6123,
+            'lambda_away'      => 0.9876,
+            'lambda3'          => 0.15,
+            'probability_home' => 0.5321,
+            'probability_draw' => 0.2544,
+            'probability_away' => 0.2135,
+        ] : null;
+
         $oldSlot = [
             'lambda_home' => 1.30, 'lambda_away' => 1.10,
             'probability_home' => 0.40, 'probability_draw' => 0.30, 'probability_away' => 0.30,
         ];
+        $inputs = $c48Available ? [
+            'structural_home' => 450_000_000.0,
+            'structural_away' => 120_000_000.0,
+            'structural_gap'  => 330_000_000.0,
+        ] : null;
 
         $candMock = $this->createMock(CandidateModelService::class);
         $candMock->method('compare')->willReturn([
@@ -97,17 +112,16 @@ class PredictionEngineAdminCandidateV2Test extends TestCase
             'candidate40_robust_bp'           => array_merge($oldSlot, ['lambda3' => 0.15]),
             'candidate44_bp'                  => array_merge($oldSlot, ['lambda3' => 0.15]),
             'candidate48_structural'          => $c48Slot,
-            'candidate48_structural_inputs'   => $c48Available ? [
-                'structural_home' => 450_000_000.0,
-                'structural_away' => 120_000_000.0,
-                'structural_gap'  => 330_000_000.0,
-            ] : null,
+            'candidate48_structural_inputs'   => $inputs,
+            'candidate47_structural_log'        => $c47Slot,
+            'candidate47_structural_log_inputs' => $inputs,
             'no_e9_available'                 => true,
             'no_e10_available'                => true,
             'candidate40_available'           => true,
             'candidate40_robust_bp_available' => true,
             'candidate44_bp_available'        => true,
             'candidate48_structural_available' => $c48Available,
+            'candidate47_structural_log_available' => $c48Available,
         ]);
         $this->app->instance(CandidateModelService::class, $candMock);
     }
@@ -122,12 +136,30 @@ class PredictionEngineAdminCandidateV2Test extends TestCase
 
         $response->assertStatus(200);
         $response->assertSee('FULL 59 — PRODUCTION');
-        $response->assertSee('ROBETTING CANDIDATE V2 — STRUCTURAL');
+        $response->assertSee('ROBETTING CANDIDATE V2 LOG');
+        $response->assertDontSee('CANDIDATE V2 — STRUCTURAL');
         $response->assertDontSee('NO_E9 51');
         $response->assertDontSee('CANDIDATE 39');
         $response->assertDontSee('CANDIDATE 40');
         $response->assertDontSee('C40 ROBUST BP');
         $response->assertDontSee('C44 BP');
+    }
+
+    /** @test */
+    public function test_candidate_v2_column_shows_log_values_not_raw(): void
+    {
+        $match = $this->createMinimalMatch();
+        $this->mockServices($match->id, true);
+
+        $html = $this->get(route('admin.prediction-engine.index', ['match_id' => $match->id]))->getContent();
+
+        $this->assertStringContainsString('1.6123', $html);            // λ home LOG
+        $this->assertStringContainsString('0.9876', $html);            // λ away LOG
+        $this->assertStringContainsString('0.1500', $html);            // λ3
+        $this->assertStringContainsString('53.2%', $html);
+        $this->assertStringContainsString('(' . number_format(1 / 0.5321, 2) . ')', $html);
+        $this->assertStringNotContainsString('1.5000', $html);         // λ home RAW hidden
+        $this->assertStringNotContainsString('50.0%', $html);          // P1 RAW hidden
     }
 
     /** @test */
@@ -154,7 +186,7 @@ class PredictionEngineAdminCandidateV2Test extends TestCase
         $response = $this->get(route('admin.prediction-engine.index', ['match_id' => $match->id]));
 
         $response->assertStatus(200);
-        $response->assertSee('ROBETTING CANDIDATE V2 — STRUCTURAL');
+        $response->assertSee('ROBETTING CANDIDATE V2 LOG');
         $response->assertSee('(n/a)');
         $response->assertSee('Structural TOP25 non disponibile');
     }

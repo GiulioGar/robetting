@@ -193,12 +193,12 @@
 {{-- Model comparison --}}
 @if($comparison)
 @php
-    // Only FULL59 (production) and Candidate V2 (P16B) are shown here.
-    // NO_E9/CANDIDATE 39/40/C40 ROBUST BP/C44 BP stay computed by CandidateModelService
-    // and covered by tests — just hidden from this view.
+    // Only FULL59 (production) and Candidate V2 LOG (P18D) are shown here.
+    // NO_E9/CANDIDATE 39/40/C40 ROBUST BP/C44 BP/C48 V2 RAW stay computed by
+    // CandidateModelService (rollback/debug) and covered by tests — just hidden from this view.
     $models = [
-        ['label' => 'FULL 59 — PRODUCTION',            'feat' => 59, 'data' => $comparison['full59'],                     'avail' => true],
-        ['label' => 'ROBETTING CANDIDATE V2 — STRUCTURAL', 'feat' => 48, 'data' => $comparison['candidate48_structural'] ?? null, 'avail' => $comparison['candidate48_structural_available'] ?? false],
+        ['label' => 'FULL 59 — PRODUCTION',       'feat' => 59, 'data' => $comparison['full59'],                         'avail' => true],
+        ['label' => 'ROBETTING CANDIDATE V2 LOG', 'feat' => 47, 'data' => $comparison['candidate47_structural_log'] ?? null, 'avail' => $comparison['candidate47_structural_log_available'] ?? false],
     ];
     $rows = [
         ['key' => 'lambda_home',      'label' => 'λ home',   'fmt' => fn($v) => number_format($v, 4), 'highlight' => false],
@@ -212,7 +212,7 @@
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-header bg-secondary bg-opacity-10 py-2 px-3">
         <span class="fw-semibold small">Model Comparison</span>
-        <span class="text-muted small ms-2">FULL 59 — production / ROBETTING CANDIDATE V2 — structural</span>
+        <span class="text-muted small ms-2">FULL 59 — production / ROBETTING CANDIDATE V2 LOG</span>
     </div>
     <div class="card-body p-0">
         <table class="table table-sm table-bordered mb-0 small font-monospace">
@@ -261,22 +261,22 @@
     </div>
 </div>
 
-{{-- Structural TOP25 inputs — Candidate V2 only, so its incidence on the model is legible --}}
+{{-- Structural TOP25 inputs (real euros) — Candidate V2 LOG only, so its incidence on the model is legible --}}
 <div class="card border-0 shadow-sm mb-4">
     <div class="card-header bg-white py-2 px-3">
         <span class="fw-semibold small">Structural TOP25</span>
-        <span class="text-muted small ms-2">input di ROBETTING CANDIDATE V2 — somma TOP25 market value point-in-time</span>
+        <span class="text-muted small ms-2">input di ROBETTING CANDIDATE V2 LOG — somma TOP25 market value point-in-time</span>
     </div>
     <div class="card-body py-3 px-3">
-        @if($comparison['candidate48_structural_inputs'] ?? null)
-        @php $si = $comparison['candidate48_structural_inputs']; @endphp
+        @if($comparison['candidate47_structural_log_inputs'] ?? null)
+        @php $si = $comparison['candidate47_structural_log_inputs']; @endphp
         <table class="table table-sm table-borderless mb-0 small font-monospace">
             <tr><td class="text-muted" style="width:120px">Home</td><td>&euro;{{ number_format($si['structural_home'], 0, ',', '.') }}</td></tr>
             <tr><td class="text-muted">Away</td><td>&euro;{{ number_format($si['structural_away'], 0, ',', '.') }}</td></tr>
             <tr><td class="text-muted">Gap</td><td class="{{ $si['structural_gap'] >= 0 ? 'text-success' : 'text-danger' }}">{{ $si['structural_gap'] >= 0 ? '+' : '' }}&euro;{{ number_format($si['structural_gap'], 0, ',', '.') }}</td></tr>
         </table>
         @else
-        <p class="text-muted small mb-0">Structural TOP25 non disponibile (snapshot corrente mancante o non valido per questo match) — Candidate V2 mostra (n/a).</p>
+        <p class="text-muted small mb-0">Structural TOP25 non disponibile (snapshot corrente mancante o non valido per questo match) — Candidate V2 LOG mostra (n/a).</p>
         @endif
     </div>
 </div>
