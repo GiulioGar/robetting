@@ -1,0 +1,19 @@
+# P16E — manually verified team_id (Robetting) -> Transfermarkt club_id mapping.
+# These 10 teams are newly promoted / absent from the 2024/25+2025/26 dataset
+# used for the automated P16A mapping (tools/scripts/p16a_step2_club_mapping.py),
+# so they could not be resolved there. Each row below was verified manually by
+# fetching https://www.transfermarkt.com/x/startseite/verein/{club_id} and
+# confirming the page <title> matches the expected club name exactly — no
+# fuzzy matching, no guessing. See tools/scripts/p16e_verify_manual_mapping.py.
+#
+# team_id	team_name	competition_id	transfermarkt_club_id	verified_title
+288	Frosinone	15	8970	Frosinone Calcio
+313	Coventry	16	990	Coventry City
+309	Hull City	16	3008	Hull City
+327	Deportivo La Coruna	17	897	Deportivo A Coruña
+319	Malaga	17	1084	Málaga CF
+333	Racing Santander	17	630	Racing Santander
+346	FC Schalke 04	18	33	FC Schalke 04
+351	SV Elversberg	18	64	SV 07 Elversberg
+365	Estac Troyes	19	1095	ESTAC Troyes
+369	Le Mans	19	1164	Le Mans FC

@@ -73,7 +73,12 @@ class PredictionEngineAdminController extends Controller
                     $prediction['match'] = $match;
 
                     try {
-                        $comparison = $this->candidateService->compare($prediction['features']);
+                        $comparison = $this->candidateService->compare(
+                            $prediction['features'],
+                            (int) $match->home_team_id,
+                            (int) $match->away_team_id,
+                            (string) $match->kickoff_at,
+                        );
                     } catch (Throwable) {
                         // Candidate artifacts not available — comparison stays null.
                     }

@@ -1,0 +1,105 @@
+# team_id (Robetting) -> team_name -> Transfermarkt club_id.
+# The 96 current-season (2026/27) teams across the 5 core leagues.
+# 86 rows: automated name-matching against dcaribou/transfermarkt-datasets
+#   clubs.csv (tools/scripts/p16a_step2_club_mapping.py, P16A).
+# 10 rows: manually verified (P16E) — see tools/scripts/p16e_manual_club_mapping.tsv
+#   for the verification method (each club_id's live page <title> checked by hand):
+#   Frosinone, Coventry, Hull City, Deportivo La Coruna, Malaga, Racing Santander,
+#   FC Schalke 04, SV Elversberg, Estac Troyes, Le Mans.
+# No fuzzy matching, no guessed rows.
+274	Lazio	398
+275	Sassuolo	6574
+276	AC Milan	5
+277	Cagliari	1390
+278	Napoli	6195
+279	Udinese	410
+280	Genoa	252
+281	Juventus	506
+282	AS Roma	12
+283	Atalanta	800
+284	Bologna	1025
+285	Fiorentina	430
+286	Torino	416
+287	Inter	46
+288	Frosinone	8970
+289	Venezia	607
+290	Parma	130
+291	Lecce	1005
+292	Como	1047
+293	Monza	2919
+294	Manchester United	985
+295	Newcastle	762
+296	Bournemouth	989
+297	Fulham	931
+298	Liverpool	31
+299	Arsenal	11
+300	Everton	29
+301	Tottenham	148
+302	Chelsea	631
+303	Manchester City	281
+304	Brighton	1237
+305	Crystal Palace	873
+306	Brentford	1148
+307	Ipswich	677
+308	Leeds	399
+309	Hull City	3008
+310	Nottingham Forest	703
+311	Aston Villa	405
+312	Sunderland	289
+313	Coventry	990
+314	Barcelona	131
+315	Atletico Madrid	13
+316	Athletic Club	621
+317	Valencia	1049
+318	Villarreal	1050
+319	Malaga	1084
+320	Sevilla	368
+321	Celta Vigo	940
+322	Levante	3368
+323	Espanyol	714
+324	Real Madrid	418
+325	Alaves	1108
+326	Real Betis	150
+327	Deportivo La Coruna	897
+328	Getafe	3709
+329	Real Sociedad	681
+330	Osasuna	331
+331	Rayo Vallecano	367
+332	Elche	1531
+333	Racing Santander	630
+334	Bayern München	27
+335	SC Freiburg	60
+336	Werder Bremen	86
+337	Borussia Mönchengladbach	18
+338	FSV Mainz 05	39
+339	Borussia Dortmund	16
+340	1899 Hoffenheim	533
+341	Bayer Leverkusen	15
+342	Eintracht Frankfurt	24
+343	FC Augsburg	167
+344	VfB Stuttgart	79
+345	RB Leipzig	23826
+346	FC Schalke 04	33
+347	Hamburger SV	41
+348	Union Berlin	89
+349	SC Paderborn 07	127
+350	1. FC Köln	3
+351	SV Elversberg	64
+352	Angers	1420
+353	Lille	1082
+354	Lyon	1041
+355	Marseille	244
+356	Nice	417
+357	Paris Saint Germain	583
+358	Monaco	162
+359	Rennes	273
+360	Strasbourg	667
+361	Toulouse	415
+362	Lorient	1158
+363	Stade Brestois 29	3911
+364	Auxerre	290
+365	Estac Troyes	1095
+366	Le Havre	738
+367	Paris FC	10004
+368	Lens	826
+369	Le Mans	1164

@@ -2,6 +2,7 @@
 
 namespace App\Services\Prediction;
 
+use Carbon\Carbon;
 use RuntimeException;
 
 /**
@@ -18,6 +19,9 @@ class CandidateModelService
     private const NO_E10_FILE         = 'prediction_engine_no_e9_no_e10.json';
     private const CAND40_FILE         = 'prediction_engine_candidate40.json';
     private const CAND40_ROBUST_BP_FILE = 'prediction_engine_candidate40_robust_bp.json';
+    private const CAND48_STRUCTURAL_FILE = 'prediction_engine_candidate48_structural.json';
+    private const LATENT_SNAPSHOT_FILE = 'latent_strength_current.json';
+    private const STRUCTURAL_SNAPSHOT_FILE = 'structural_strength_current.json';
 
     private static ?string $artifactDir = null;
     private static array   $factorials  = [];
@@ -48,20 +52,30 @@ class CandidateModelService
      * Run all candidate models on the given 59-feature snapshot.
      *
      * @param  array<string, float|null>  $features59  Output of PredictionEngineV1 extraction
+     * @param  int|null     $homeTeamId  Required (with $awayTeamId/$kickoffAt) to attempt Candidate48 Structural.
+     * @param  int|null     $awayTeamId
+     * @param  string|null  $kickoffAt   ISO8601/parseable match kickoff, for the anti-leakage check.
      * @return array{
      *     full59: array,
      *     no_e9: array|null,
      *     no_e9_no_e10: array|null,
      *     candidate40: array|null,
      *     candidate40_robust_bp: array|null,
+     *     candidate48_structural: array|null,
+     *     candidate48_structural_inputs: array{structural_home: float, structural_away: float, structural_gap: float}|null,
      *     no_e9_available: bool,
      *     no_e10_available: bool,
      *     candidate40_available: bool,
      *     candidate40_robust_bp_available: bool,
+     *     candidate48_structural_available: bool,
      * }
      */
-    public function compare(array $features59): array
-    {
+    public function compare(
+        array $features59,
+        ?int $homeTeamId = null,
+        ?int $awayTeamId = null,
+        ?string $kickoffAt = null,
+    ): array {
         // Extended feature vector: features59 + derived features
         $extFeatures = $this->addDerivedFeatures($features59);
 
@@ -103,16 +117,43 @@ class CandidateModelService
         } catch (RuntimeException) {
         }
 
+        $cand48Structural = null;
+        $cand48StructuralAvailable = false;
+        $cand48StructuralInputs = null;
+        if ($homeTeamId !== null && $awayTeamId !== null && $kickoffAt !== null) {
+            try {
+                $latentSnapshot = $this->loadLatentSnapshot();
+                $latent         = $this->resolveLatentFeatures($latentSnapshot, $homeTeamId, $awayTeamId, $kickoffAt);
+                $structSnapshot = $this->loadStructuralSnapshot();
+                $structural     = $this->resolveStructuralFeatures($structSnapshot, $homeTeamId, $awayTeamId, $kickoffAt);
+                if ($latent !== null && $structural !== null) {
+                    $ext48 = array_merge($extFeatures, $latent, $structural);
+                    $artCand48 = $this->loadArtifact(self::CAND48_STRUCTURAL_FILE);
+                    $cand48Structural = $this->inferRobustBP($artCand48, $ext48);
+                    $cand48StructuralAvailable = true;
+                    $cand48StructuralInputs = [
+                        'structural_home' => $structural['structural_home'],
+                        'structural_away' => $structural['structural_away'],
+                        'structural_gap'  => $structural['structural_gap'],
+                    ];
+                }
+            } catch (RuntimeException) {
+            }
+        }
+
         return [
             'full59'                          => $full59,
             'no_e9'                           => $noE9,
             'no_e9_no_e10'                    => $noE10,
             'candidate40'                     => $cand40,
             'candidate40_robust_bp'           => $cand40RobustBp,
+            'candidate48_structural'          => $cand48Structural,
+            'candidate48_structural_inputs'   => $cand48StructuralInputs,
             'no_e9_available'                 => $noE9Available,
             'no_e10_available'                => $noE10Available,
             'candidate40_available'           => $cand40Available,
             'candidate40_robust_bp_available' => $cand40RobustBpAvailable,
+            'candidate48_structural_available' => $cand48StructuralAvailable,
         ];
     }
 
@@ -350,6 +391,106 @@ class CandidateModelService
             }
         }
         return self::$factorials;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Latent strength snapshot (input of Candidate48 Structural)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /** @return array{generated_at: string, last_match_included_at: string, teams: array} */
+    private function loadLatentSnapshot(): array
+    {
+        return $this->loadArtifact(self::LATENT_SNAPSHOT_FILE);
+    }
+
+    /**
+     * Resolve the 4 latent attack/defence features for a match, enforcing
+     * anti-leakage: the snapshot must have been generated strictly BEFORE
+     * the match kickoff, and both teams must be present in it. Returns null
+     * (Candidate48 unavailable) otherwise — never a stale/wrong value.
+     *
+     * @return array{latent_attack_home: float, latent_defence_home: float, latent_attack_away: float, latent_defence_away: float}|null
+     */
+    private function resolveLatentFeatures(array $snapshot, int $homeTeamId, int $awayTeamId, string $kickoffAt): ?array
+    {
+        $generatedAt = Carbon::parse($snapshot['generated_at']);
+        $kickoff     = Carbon::parse($kickoffAt);
+
+        if (! $generatedAt->lt($kickoff)) {
+            return null; // snapshot not strictly before kickoff -> unusable, never leak
+        }
+
+        $byTeam = [];
+        foreach ($snapshot['teams'] as $team) {
+            $byTeam[(int) $team['team_id']] = $team;
+        }
+
+        if (! isset($byTeam[$homeTeamId], $byTeam[$awayTeamId])) {
+            return null; // one or both teams missing from the snapshot
+        }
+
+        return [
+            'latent_attack_home'  => (float) $byTeam[$homeTeamId]['attack'],
+            'latent_defence_home' => (float) $byTeam[$homeTeamId]['defence'],
+            'latent_attack_away'  => (float) $byTeam[$awayTeamId]['attack'],
+            'latent_defence_away' => (float) $byTeam[$awayTeamId]['defence'],
+        ];
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Structural strength snapshot (Candidate48 — "ROBETTING CANDIDATE V2")
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * @return array{generated_at: string, definition: string, teams: array<string, array{transfermarkt_club_id: int, team_name: string, players_count: int, top25_market_value: int}>}
+     *
+     * Produced by tools/scripts/p16d_generate_structural_snapshot.py (P16D),
+     * which extends the P16C pilot to every current-season team with a safe
+     * P16A team_id -> Transfermarkt club_id mapping. `teams` is keyed by
+     * Robetting team_id (string, per the JSON object schema). Teams without
+     * a safe mapping are simply absent — never guessed, never backfilled —
+     * so a match involving one of them resolves to Candidate48 unavailable
+     * below, exactly like a missing snapshot file.
+     */
+    private function loadStructuralSnapshot(): array
+    {
+        return $this->loadArtifact(self::STRUCTURAL_SNAPSHOT_FILE);
+    }
+
+    /**
+     * Resolve the 4 Structural (TOP25 market value) features for a match,
+     * enforcing the same anti-leakage rule as resolveLatentFeatures(): the
+     * snapshot must have been generated strictly BEFORE kickoff, and both
+     * teams must be present in it. Returns null (Candidate48 unavailable)
+     * otherwise — never a stale/wrong value.
+     *
+     * @return array{structural_home: float, structural_away: float, structural_gap: float, structural_gap_signed_square: float}|null
+     */
+    private function resolveStructuralFeatures(array $snapshot, int $homeTeamId, int $awayTeamId, string $kickoffAt): ?array
+    {
+        $generatedAt = Carbon::parse($snapshot['generated_at']);
+        $kickoff     = Carbon::parse($kickoffAt);
+
+        if (! $generatedAt->lt($kickoff)) {
+            return null; // snapshot not strictly before kickoff -> unusable, never leak
+        }
+
+        $teams = $snapshot['teams'] ?? [];
+
+        if (! isset($teams[(string) $homeTeamId], $teams[(string) $awayTeamId])) {
+            return null; // one or both teams missing from the snapshot
+        }
+
+        $structHome = (float) $teams[(string) $homeTeamId]['top25_market_value'];
+        $structAway = (float) $teams[(string) $awayTeamId]['top25_market_value'];
+        $gap        = $structHome - $structAway;
+
+        return [
+            'structural_home'              => $structHome,
+            'structural_away'              => $structAway,
+            'structural_gap'               => $gap,
+            'structural_gap_signed_square' => ($gap >= 0.0 ? 1.0 : -1.0) * $gap * $gap,
+        ];
     }
 
     // ─────────────────────────────────────────────────────────────────────────

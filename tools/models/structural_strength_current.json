@@ -1,0 +1,582 @@
+{
+  "generated_at": "2026-09-29T23:37:03.759892+00:00",
+  "definition": "top25_market_value",
+  "teams": {
+    "276": {
+      "transfermarkt_club_id": 5,
+      "team_name": "AC Milan",
+      "players_count": 28,
+      "top25_market_value": 499500000
+    },
+    "282": {
+      "transfermarkt_club_id": 12,
+      "team_name": "AS Roma",
+      "players_count": 25,
+      "top25_market_value": 498400000
+    },
+    "283": {
+      "transfermarkt_club_id": 800,
+      "team_name": "Atalanta",
+      "players_count": 25,
+      "top25_market_value": 449050000
+    },
+    "284": {
+      "transfermarkt_club_id": 1025,
+      "team_name": "Bologna",
+      "players_count": 27,
+      "top25_market_value": 227100000
+    },
+    "277": {
+      "transfermarkt_club_id": 1390,
+      "team_name": "Cagliari",
+      "players_count": 30,
+      "top25_market_value": 139600000
+    },
+    "292": {
+      "transfermarkt_club_id": 1047,
+      "team_name": "Como",
+      "players_count": 27,
+      "top25_market_value": 566000000
+    },
+    "285": {
+      "transfermarkt_club_id": 430,
+      "team_name": "Fiorentina",
+      "players_count": 25,
+      "top25_market_value": 353250000
+    },
+    "288": {
+      "transfermarkt_club_id": 8970,
+      "team_name": "Frosinone",
+      "players_count": 30,
+      "top25_market_value": 111800000
+    },
+    "280": {
+      "transfermarkt_club_id": 252,
+      "team_name": "Genoa",
+      "players_count": 33,
+      "top25_market_value": 162000000
+    },
+    "287": {
+      "transfermarkt_club_id": 46,
+      "team_name": "Inter",
+      "players_count": 24,
+      "top25_market_value": 738300000
+    },
+    "281": {
+      "transfermarkt_club_id": 506,
+      "team_name": "Juventus",
+      "players_count": 29,
+      "top25_market_value": 609000000
+    },
+    "274": {
+      "transfermarkt_club_id": 398,
+      "team_name": "Lazio",
+      "players_count": 33,
+      "top25_market_value": 259500000
+    },
+    "291": {
+      "transfermarkt_club_id": 1005,
+      "team_name": "Lecce",
+      "players_count": 33,
+      "top25_market_value": 80400000
+    },
+    "293": {
+      "transfermarkt_club_id": 2919,
+      "team_name": "Monza",
+      "players_count": 31,
+      "top25_market_value": 107100000
+    },
+    "278": {
+      "transfermarkt_club_id": 6195,
+      "team_name": "Napoli",
+      "players_count": 27,
+      "top25_market_value": 424000000
+    },
+    "290": {
+      "transfermarkt_club_id": 130,
+      "team_name": "Parma",
+      "players_count": 28,
+      "top25_market_value": 154100000
+    },
+    "275": {
+      "transfermarkt_club_id": 6574,
+      "team_name": "Sassuolo",
+      "players_count": 34,
+      "top25_market_value": 211800000
+    },
+    "286": {
+      "transfermarkt_club_id": 416,
+      "team_name": "Torino",
+      "players_count": 29,
+      "top25_market_value": 168200000
+    },
+    "279": {
+      "transfermarkt_club_id": 410,
+      "team_name": "Udinese",
+      "players_count": 28,
+      "top25_market_value": 160800000
+    },
+    "289": {
+      "transfermarkt_club_id": 607,
+      "team_name": "Venezia",
+      "players_count": 35,
+      "top25_market_value": 113200000
+    },
+    "299": {
+      "transfermarkt_club_id": 11,
+      "team_name": "Arsenal",
+      "players_count": 24,
+      "top25_market_value": 1328000000
+    },
+    "311": {
+      "transfermarkt_club_id": 405,
+      "team_name": "Aston Villa",
+      "players_count": 27,
+      "top25_market_value": 570000000
+    },
+    "296": {
+      "transfermarkt_club_id": 989,
+      "team_name": "Bournemouth",
+      "players_count": 29,
+      "top25_market_value": 571000000
+    },
+    "306": {
+      "transfermarkt_club_id": 1148,
+      "team_name": "Brentford",
+      "players_count": 29,
+      "top25_market_value": 580500000
+    },
+    "304": {
+      "transfermarkt_club_id": 1237,
+      "team_name": "Brighton",
+      "players_count": 30,
+      "top25_market_value": 593000000
+    },
+    "302": {
+      "transfermarkt_club_id": 631,
+      "team_name": "Chelsea",
+      "players_count": 27,
+      "top25_market_value": 1075000000
+    },
+    "313": {
+      "transfermarkt_club_id": 990,
+      "team_name": "Coventry",
+      "players_count": 29,
+      "top25_market_value": 293500000
+    },
+    "305": {
+      "transfermarkt_club_id": 873,
+      "team_name": "Crystal Palace",
+      "players_count": 28,
+      "top25_market_value": 570000000
+    },
+    "300": {
+      "transfermarkt_club_id": 29,
+      "team_name": "Everton",
+      "players_count": 21,
+      "top25_market_value": 394100000
+    },
+    "297": {
+      "transfermarkt_club_id": 931,
+      "team_name": "Fulham",
+      "players_count": 25,
+      "top25_market_value": 396800000
+    },
+    "309": {
+      "transfermarkt_club_id": 3008,
+      "team_name": "Hull City",
+      "players_count": 33,
+      "top25_market_value": 244500000
+    },
+    "307": {
+      "transfermarkt_club_id": 677,
+      "team_name": "Ipswich",
+      "players_count": 28,
+      "top25_market_value": 327500000
+    },
+    "308": {
+      "transfermarkt_club_id": 399,
+      "team_name": "Leeds",
+      "players_count": 24,
+      "top25_market_value": 407550000
+    },
+    "298": {
+      "transfermarkt_club_id": 31,
+      "team_name": "Liverpool",
+      "players_count": 29,
+      "top25_market_value": 1025500000
+    },
+    "303": {
+      "transfermarkt_club_id": 281,
+      "team_name": "Manchester City",
+      "players_count": 24,
+      "top25_market_value": 1432300000
+    },
+    "294": {
+      "transfermarkt_club_id": 985,
+      "team_name": "Manchester United",
+      "players_count": 28,
+      "top25_market_value": 921000000
+    },
+    "295": {
+      "transfermarkt_club_id": 762,
+      "team_name": "Newcastle",
+      "players_count": 25,
+      "top25_market_value": 606100000
+    },
+    "310": {
+      "transfermarkt_club_id": 703,
+      "team_name": "Nottingham Forest",
+      "players_count": 24,
+      "top25_market_value": 520500000
+    },
+    "312": {
+      "transfermarkt_club_id": 289,
+      "team_name": "Sunderland",
+      "players_count": 28,
+      "top25_market_value": 420200000
+    },
+    "301": {
+      "transfermarkt_club_id": 148,
+      "team_name": "Tottenham",
+      "players_count": 28,
+      "top25_market_value": 820000000
+    },
+    "325": {
+      "transfermarkt_club_id": 1108,
+      "team_name": "Alaves",
+      "players_count": 23,
+      "top25_market_value": 66700000
+    },
+    "316": {
+      "transfermarkt_club_id": 621,
+      "team_name": "Athletic Club",
+      "players_count": 26,
+      "top25_market_value": 232400000
+    },
+    "315": {
+      "transfermarkt_club_id": 13,
+      "team_name": "Atletico Madrid",
+      "players_count": 25,
+      "top25_market_value": 679700000
+    },
+    "314": {
+      "transfermarkt_club_id": 131,
+      "team_name": "Barcelona",
+      "players_count": 27,
+      "top25_market_value": 1261000000
+    },
+    "321": {
+      "transfermarkt_club_id": 940,
+      "team_name": "Celta Vigo",
+      "players_count": 25,
+      "top25_market_value": 173000000
+    },
+    "327": {
+      "transfermarkt_club_id": 897,
+      "team_name": "Deportivo La Coruna",
+      "players_count": 27,
+      "top25_market_value": 114800000
+    },
+    "332": {
+      "transfermarkt_club_id": 1531,
+      "team_name": "Elche",
+      "players_count": 28,
+      "top25_market_value": 73500000
+    },
+    "323": {
+      "transfermarkt_club_id": 714,
+      "team_name": "Espanyol",
+      "players_count": 25,
+      "top25_market_value": 127800000
+    },
+    "328": {
+      "transfermarkt_club_id": 3709,
+      "team_name": "Getafe",
+      "players_count": 23,
+      "top25_market_value": 92300000
+    },
+    "322": {
+      "transfermarkt_club_id": 3368,
+      "team_name": "Levante",
+      "players_count": 23,
+      "top25_market_value": 86900000
+    },
+    "319": {
+      "transfermarkt_club_id": 1084,
+      "team_name": "Malaga",
+      "players_count": 28,
+      "top25_market_value": 54850000
+    },
+    "330": {
+      "transfermarkt_club_id": 331,
+      "team_name": "Osasuna",
+      "players_count": 24,
+      "top25_market_value": 78100000
+    },
+    "333": {
+      "transfermarkt_club_id": 630,
+      "team_name": "Racing Santander",
+      "players_count": 24,
+      "top25_market_value": 107500000
+    },
+    "331": {
+      "transfermarkt_club_id": 367,
+      "team_name": "Rayo Vallecano",
+      "players_count": 27,
+      "top25_market_value": 86400000
+    },
+    "326": {
+      "transfermarkt_club_id": 150,
+      "team_name": "Real Betis",
+      "players_count": 25,
+      "top25_market_value": 254600000
+    },
+    "324": {
+      "transfermarkt_club_id": 418,
+      "team_name": "Real Madrid",
+      "players_count": 27,
+      "top25_market_value": 1446500000
+    },
+    "329": {
+      "transfermarkt_club_id": 681,
+      "team_name": "Real Sociedad",
+      "players_count": 24,
+      "top25_market_value": 278300000
+    },
+    "320": {
+      "transfermarkt_club_id": 368,
+      "team_name": "Sevilla",
+      "players_count": 26,
+      "top25_market_value": 168800000
+    },
+    "317": {
+      "transfermarkt_club_id": 1049,
+      "team_name": "Valencia",
+      "players_count": 29,
+      "top25_market_value": 148000000
+    },
+    "318": {
+      "transfermarkt_club_id": 1050,
+      "team_name": "Villarreal",
+      "players_count": 24,
+      "top25_market_value": 331600000
+    },
+    "350": {
+      "transfermarkt_club_id": 3,
+      "team_name": "1. FC Köln",
+      "players_count": 27,
+      "top25_market_value": 155750000
+    },
+    "340": {
+      "transfermarkt_club_id": 533,
+      "team_name": "1899 Hoffenheim",
+      "players_count": 27,
+      "top25_market_value": 279950000
+    },
+    "341": {
+      "transfermarkt_club_id": 15,
+      "team_name": "Bayer Leverkusen",
+      "players_count": 27,
+      "top25_market_value": 480000000
+    },
+    "334": {
+      "transfermarkt_club_id": 27,
+      "team_name": "Bayern München",
+      "players_count": 23,
+      "top25_market_value": 1037500000
+    },
+    "339": {
+      "transfermarkt_club_id": 16,
+      "team_name": "Borussia Dortmund",
+      "players_count": 30,
+      "top25_market_value": 563200000
+    },
+    "337": {
+      "transfermarkt_club_id": 18,
+      "team_name": "Borussia Mönchengladbach",
+      "players_count": 30,
+      "top25_market_value": 136900000
+    },
+    "342": {
+      "transfermarkt_club_id": 24,
+      "team_name": "Eintracht Frankfurt",
+      "players_count": 26,
+      "top25_market_value": 288450000
+    },
+    "343": {
+      "transfermarkt_club_id": 167,
+      "team_name": "FC Augsburg",
+      "players_count": 27,
+      "top25_market_value": 171600000
+    },
+    "346": {
+      "transfermarkt_club_id": 33,
+      "team_name": "FC Schalke 04",
+      "players_count": 27,
+      "top25_market_value": 70500000
+    },
+    "338": {
+      "transfermarkt_club_id": 39,
+      "team_name": "FSV Mainz 05",
+      "players_count": 27,
+      "top25_market_value": 164600000
+    },
+    "347": {
+      "transfermarkt_club_id": 41,
+      "team_name": "Hamburger SV",
+      "players_count": 26,
+      "top25_market_value": 152500000
+    },
+    "345": {
+      "transfermarkt_club_id": 23826,
+      "team_name": "RB Leipzig",
+      "players_count": 28,
+      "top25_market_value": 486500000
+    },
+    "335": {
+      "transfermarkt_club_id": 60,
+      "team_name": "SC Freiburg",
+      "players_count": 27,
+      "top25_market_value": 210600000
+    },
+    "349": {
+      "transfermarkt_club_id": 127,
+      "team_name": "SC Paderborn 07",
+      "players_count": 32,
+      "top25_market_value": 46600000
+    },
+    "351": {
+      "transfermarkt_club_id": 64,
+      "team_name": "SV Elversberg",
+      "players_count": 26,
+      "top25_market_value": 57950000
+    },
+    "348": {
+      "transfermarkt_club_id": 89,
+      "team_name": "Union Berlin",
+      "players_count": 29,
+      "top25_market_value": 114400000
+    },
+    "344": {
+      "transfermarkt_club_id": 79,
+      "team_name": "VfB Stuttgart",
+      "players_count": 30,
+      "top25_market_value": 376900000
+    },
+    "336": {
+      "transfermarkt_club_id": 86,
+      "team_name": "Werder Bremen",
+      "players_count": 31,
+      "top25_market_value": 117800000
+    },
+    "352": {
+      "transfermarkt_club_id": 1420,
+      "team_name": "Angers",
+      "players_count": 22,
+      "top25_market_value": 65500000
+    },
+    "364": {
+      "transfermarkt_club_id": 290,
+      "team_name": "Auxerre",
+      "players_count": 28,
+      "top25_market_value": 95100000
+    },
+    "365": {
+      "transfermarkt_club_id": 1095,
+      "team_name": "Estac Troyes",
+      "players_count": 26,
+      "top25_market_value": 43200000
+    },
+    "366": {
+      "transfermarkt_club_id": 738,
+      "team_name": "Le Havre",
+      "players_count": 25,
+      "top25_market_value": 62250000
+    },
+    "369": {
+      "transfermarkt_club_id": 1164,
+      "team_name": "Le Mans",
+      "players_count": 27,
+      "top25_market_value": 33000000
+    },
+    "368": {
+      "transfermarkt_club_id": 826,
+      "team_name": "Lens",
+      "players_count": 28,
+      "top25_market_value": 241500000
+    },
+    "353": {
+      "transfermarkt_club_id": 1082,
+      "team_name": "Lille",
+      "players_count": 26,
+      "top25_market_value": 252400000
+    },
+    "362": {
+      "transfermarkt_club_id": 1158,
+      "team_name": "Lorient",
+      "players_count": 26,
+      "top25_market_value": 98950000
+    },
+    "354": {
+      "transfermarkt_club_id": 1041,
+      "team_name": "Lyon",
+      "players_count": 28,
+      "top25_market_value": 263000000
+    },
+    "355": {
+      "transfermarkt_club_id": 244,
+      "team_name": "Marseille",
+      "players_count": 21,
+      "top25_market_value": 188800000
+    },
+    "358": {
+      "transfermarkt_club_id": 162,
+      "team_name": "Monaco",
+      "players_count": 26,
+      "top25_market_value": 377500000
+    },
+    "356": {
+      "transfermarkt_club_id": 417,
+      "team_name": "Nice",
+      "players_count": 27,
+      "top25_market_value": 149700000
+    },
+    "367": {
+      "transfermarkt_club_id": 10004,
+      "team_name": "Paris FC",
+      "players_count": 24,
+      "top25_market_value": 191600000
+    },
+    "357": {
+      "transfermarkt_club_id": 583,
+      "team_name": "Paris Saint Germain",
+      "players_count": 24,
+      "top25_market_value": 1362300000
+    },
+    "359": {
+      "transfermarkt_club_id": 273,
+      "team_name": "Rennes",
+      "players_count": 25,
+      "top25_market_value": 253400000
+    },
+    "363": {
+      "transfermarkt_club_id": 3911,
+      "team_name": "Stade Brestois 29",
+      "players_count": 21,
+      "top25_market_value": 87800000
+    },
+    "360": {
+      "transfermarkt_club_id": 667,
+      "team_name": "Strasbourg",
+      "players_count": 28,
+      "top25_market_value": 317000000
+    },
+    "361": {
+      "transfermarkt_club_id": 415,
+      "team_name": "Toulouse",
+      "players_count": 23,
+      "top25_market_value": 123900000
+    }
+  }
+}
