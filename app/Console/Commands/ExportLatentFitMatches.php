@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Models\FootballMatch;
+use App\Services\Prediction\LatentFitMatchEligibility;
 use App\Services\Prediction\MatchOutcomeLabelBuilder;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
@@ -28,8 +28,6 @@ class ExportLatentFitMatches extends Command
 
     protected $description = 'Export finished core-league results (before a cutoff) for the Latent Attack/Defence snapshot fit.';
 
-    private const TRAINING_STATUS = 'finished';
-
     public function handle(): int
     {
         $before = (string) $this->option('before');
@@ -42,16 +40,9 @@ class ExportLatentFitMatches extends Command
 
         $cutoff     = CarbonImmutable::parse($before)->utc();
         $fromSeason = (int) $this->option('from-season');
-        $coreSlugs  = array_values(config('api-football.core_leagues', []));
 
-        $matches = FootballMatch::query()
+        $matches = LatentFitMatchEligibility::query($cutoff, $fromSeason)
             ->with(['homeTeam:id,name', 'awayTeam:id,name'])
-            ->where('status', self::TRAINING_STATUS)
-            ->whereNotNull('home_score_ft')
-            ->whereNotNull('away_score_ft')
-            ->where('kickoff_at', '<', $cutoff)
-            ->whereHas('competition', fn ($q) => $q->whereIn('slug', $coreSlugs))
-            ->whereHas('season', fn ($q) => $q->where('year_start', '>=', $fromSeason))
             ->orderBy('kickoff_at')
             ->orderBy('id')
             ->get();
