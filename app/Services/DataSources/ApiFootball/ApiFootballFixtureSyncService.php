@@ -24,28 +24,6 @@ class ApiFootballFixtureSyncService
     // matches can be rescheduled or replayed and need continued tracking.
     public const DEFINITIVE_STATUSES = ['finished', 'awarded', 'walkover'];
 
-    private const STATUS_MAP = [
-        'TBD'  => 'tbd',
-        'NS'   => 'scheduled',
-        '1H'   => 'live',
-        'HT'   => 'live',
-        '2H'   => 'live',
-        'ET'   => 'live',
-        'BT'   => 'live',
-        'P'    => 'live',
-        'LIVE' => 'live',
-        'FT'   => 'finished',
-        'AET'  => 'finished',
-        'PEN'  => 'finished',
-        'SUSP' => 'suspended',
-        'INT'  => 'interrupted',
-        'PST'  => 'postponed',
-        'CANC' => 'cancelled',
-        'ABD'  => 'abandoned',
-        'AWD'  => 'awarded',
-        'WO'   => 'walkover',
-    ];
-
     private ?DataSource $ds = null;
 
     public function __construct(private readonly ApiFootballClient $client) {}
@@ -262,7 +240,7 @@ class ApiFootballFixtureSyncService
 
         // Status
         $apiShortStatus  = $fixtureData['status']['short'] ?? 'NS';
-        $canonicalStatus = $this->mapStatus($apiShortStatus);
+        $canonicalStatus = ApiFootballStatusMapper::map($apiShortStatus);
 
         // Venue
         $venueName = $fixtureData['venue']['name'] ?? null;
@@ -402,11 +380,6 @@ class ApiFootballFixtureSyncService
         }
 
         return $dirty;
-    }
-
-    private function mapStatus(string $apiShort): string
-    {
-        return self::STATUS_MAP[$apiShort] ?? 'unknown';
     }
 
     /**

@@ -13,29 +13,6 @@ class ApiFootballResultRefreshService
 {
     private const BATCH_SIZE = 20;
 
-    // Mirrors ApiFootballFixtureSyncService::STATUS_MAP — keep in sync.
-    private const STATUS_MAP = [
-        'TBD'  => 'tbd',
-        'NS'   => 'scheduled',
-        '1H'   => 'live',
-        'HT'   => 'live',
-        '2H'   => 'live',
-        'ET'   => 'live',
-        'BT'   => 'live',
-        'P'    => 'live',
-        'LIVE' => 'live',
-        'FT'   => 'finished',
-        'AET'  => 'finished',
-        'PEN'  => 'finished',
-        'SUSP' => 'suspended',
-        'INT'  => 'interrupted',
-        'PST'  => 'postponed',
-        'CANC' => 'cancelled',
-        'ABD'  => 'abandoned',
-        'AWD'  => 'awarded',
-        'WO'   => 'walkover',
-    ];
-
     private ?DataSource $ds = null;
 
     public function __construct(private readonly ApiFootballClient $client) {}
@@ -200,7 +177,7 @@ class ApiFootballResultRefreshService
         }
 
         $apiShortStatus  = $fixtureData['status']['short'] ?? 'NS';
-        $canonicalStatus = self::STATUS_MAP[$apiShortStatus] ?? 'unknown';
+        $canonicalStatus = ApiFootballStatusMapper::map($apiShortStatus);
 
         $leagueData = $item['league'] ?? [];
         $rawRound   = $leagueData['round'] ?? null;
