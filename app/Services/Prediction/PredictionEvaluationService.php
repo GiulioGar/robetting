@@ -43,6 +43,14 @@ use Illuminate\Support\Collection;
  * extracted out of computeMetrics() so both paths share one formula) but
  * needs its own aggregation because "favorite"/"underdog" are relative to
  * who is favored (P1 vs P2), not fixed H/D/A buckets.
+ *
+ * P27D3 — adds CALIBRATION bins and MONTHLY performance, again on the SAME
+ * deduped `$evaluated` set. Calibration reuses predictedOutcome() (the
+ * confidence assigned IS max(P1,PX,P2) by construction, since that's exactly
+ * which outcome predictedOutcome() picks). Monthly reuses computeMetrics()
+ * verbatim per calendar month, grouped by `kickoff_at` in UTC (never
+ * generated_at/result_recorded_at, which are operational timestamps, not the
+ * match's own calendar date).
  */
 class PredictionEvaluationService
 {
@@ -116,6 +124,8 @@ class PredictionEvaluationService
             'metrics' => $this->computeMetrics($evaluated),
             'by_league' => $evaluated->isEmpty() ? [] : $this->computeByLeague($evaluated),
             'favorite_analysis' => $evaluated->isEmpty() ? null : $this->computeFavoriteAnalysis($evaluated),
+            'calibration' => $evaluated->isEmpty() ? null : $this->computeCalibration($evaluated),
+            'monthly' => $evaluated->isEmpty() ? [] : $this->computeMonthly($evaluated),
         ];
     }
 
@@ -282,6 +292,127 @@ class PredictionEvaluationService
             'actual_underdog_win_rate' => $sumUnderdogWin / $n,
             'log_loss' => $sumLogLoss / $n,
         ];
+    }
+
+    /**
+     * Confidence = max(P1, PX, P2) — the probability mass the model actually
+     * put behind its own predicted outcome (predictedOutcome() picks exactly
+     * that outcome, so no separate "which is max" logic is introduced here).
+     * Diagnostic only — no isotonic regression, no Platt scaling, no
+     * correction is applied anywhere in this method.
+     *
+     * @param Collection<int, Prediction> $evaluated
+     * @return array<string, array{n: int, mean_confidence: float, actual_accuracy: float, calibration_gap: float}|null>
+     */
+    private function computeCalibration(Collection $evaluated): array
+    {
+        $buckets = [
+            '[0.30,0.40)' => [],
+            '[0.40,0.50)' => [],
+            '[0.50,0.60)' => [],
+            '[0.60,0.70)' => [],
+            '>=0.70' => [],
+        ];
+
+        foreach ($evaluated as $row) {
+            $pHome = (float) $row->probability_home;
+            $pDraw = (float) $row->probability_draw;
+            $pAway = (float) $row->probability_away;
+            $actual = $row->outcome;
+
+            $predicted = $this->predictedOutcome($pHome, $pDraw, $pAway);
+            $confidence = max($pHome, $pDraw, $pAway);
+
+            $buckets[$this->calibrationBucket($confidence)][] = [
+                'confidence' => $confidence,
+                'correct' => $predicted === $actual,
+            ];
+        }
+
+        $result = [];
+        foreach ($buckets as $label => $rows) {
+            $result[$label] = $this->aggregateCalibrationBucket($rows);
+        }
+
+        return $result;
+    }
+
+    /**
+     * Boundaries fixed by P27D3 spec: [0.30,0.40), [0.40,0.50), [0.50,0.60),
+     * [0.60,0.70), >=0.70. No extra bucket below 0.30 is added — confidence
+     * (max of the three 1X2 probabilities) cannot normally fall below 1/3.
+     */
+    private function calibrationBucket(float $confidence): string
+    {
+        if ($confidence < 0.40) {
+            return '[0.30,0.40)';
+        }
+        if ($confidence < 0.50) {
+            return '[0.40,0.50)';
+        }
+        if ($confidence < 0.60) {
+            return '[0.50,0.60)';
+        }
+        if ($confidence < 0.70) {
+            return '[0.60,0.70)';
+        }
+
+        return '>=0.70';
+    }
+
+    /**
+     * @param array<int, array{confidence: float, correct: bool}> $rows
+     * @return array{n: int, mean_confidence: float, actual_accuracy: float, calibration_gap: float}|null
+     */
+    private function aggregateCalibrationBucket(array $rows): ?array
+    {
+        $n = count($rows);
+        if ($n === 0) {
+            return null;
+        }
+
+        $sumConfidence = 0.0;
+        $sumCorrect = 0;
+        foreach ($rows as $r) {
+            $sumConfidence += $r['confidence'];
+            $sumCorrect += $r['correct'] ? 1 : 0;
+        }
+
+        $meanConfidence = $sumConfidence / $n;
+        $actualAccuracy = $sumCorrect / $n;
+
+        return [
+            'n' => $n,
+            'mean_confidence' => $meanConfidence,
+            'actual_accuracy' => $actualAccuracy,
+            'calibration_gap' => $meanConfidence - $actualAccuracy,
+        ];
+    }
+
+    /**
+     * Grouped by the match's own kickoff_at (UTC), never generated_at/
+     * result_recorded_at — those are operational timestamps, not the
+     * match's calendar date. Reuses computeMetrics() verbatim per month; no
+     * moving average, no trend fitting, no automatic drift interpretation.
+     *
+     * @param Collection<int, Prediction> $evaluated
+     * @return array<int, array{month: string, metrics: array}> ascending chronological order
+     */
+    private function computeMonthly(Collection $evaluated): array
+    {
+        $groups = $evaluated->groupBy(fn (Prediction $r) => $r->kickoff_at->copy()->utc()->format('Y-m'));
+
+        $result = [];
+        foreach ($groups as $month => $group) {
+            $result[] = [
+                'month' => $month,
+                'metrics' => $this->computeMetrics($group),
+            ];
+        }
+
+        usort($result, fn (array $a, array $b) => strcmp($a['month'], $b['month']));
+
+        return $result;
     }
 
     /**

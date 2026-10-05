@@ -96,6 +96,8 @@ class EvaluateOfficialPredictions extends Command
 
         $this->renderByLeague($report['by_league']);
         $this->renderFavoriteAnalysis($report['favorite_analysis']);
+        $this->renderCalibration($report['calibration']);
+        $this->renderMonthly($report['monthly']);
     }
 
     private function renderByLeague(array $byLeague): void
@@ -165,5 +167,48 @@ class EvaluateOfficialPredictions extends Command
         $this->line('    mean predicted underdog prob.:  ' . number_format($group['mean_predicted_underdog_probability'], 4));
         $this->line('    actual underdog win rate:       ' . number_format($group['actual_underdog_win_rate'], 4));
         $this->line('    LogLoss:                        ' . number_format($group['log_loss'], 5));
+    }
+
+    private function renderCalibration(?array $calibration): void
+    {
+        if ($calibration === null) {
+            return;
+        }
+
+        $this->newLine();
+        $this->info('=== CALIBRATION ===');
+
+        foreach ($calibration as $label => $bucket) {
+            if ($bucket === null) {
+                $this->line($label . ': N=0');
+                continue;
+            }
+
+            $this->line($label . ':');
+            $this->line('  N:                 ' . $bucket['n']);
+            $this->line('  mean confidence:   ' . number_format($bucket['mean_confidence'], 4));
+            $this->line('  actual accuracy:   ' . number_format($bucket['actual_accuracy'], 4));
+            $this->line('  calibration gap:   ' . number_format($bucket['calibration_gap'], 4));
+        }
+    }
+
+    private function renderMonthly(array $monthly): void
+    {
+        if ($monthly === []) {
+            return;
+        }
+
+        $this->newLine();
+        $this->info('=== MONTHLY PERFORMANCE ===');
+
+        foreach ($monthly as $entry) {
+            $m = $entry['metrics'];
+            $this->line($entry['month'] . ':');
+            $this->line('  N:        ' . $m['n']);
+            $this->line('  LogLoss:  ' . number_format($m['log_loss'], 5));
+            $this->line('  Brier:    ' . number_format($m['brier'], 5));
+            $this->line('  RPS:      ' . number_format($m['rps'], 5));
+            $this->line('  Accuracy: ' . number_format($m['accuracy'] * 100, 2) . '%');
+        }
     }
 }

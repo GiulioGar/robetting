@@ -516,4 +516,207 @@ class PredictionEvaluationServiceTest extends TestCase
         $this->assertNotNull($v2Favorite['by_classification']['AWAY_FAVORITE']);
         $this->assertNull($v2Favorite['by_classification']['HOME_FAVORITE']);
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // P27D3 — CALIBRATION
+    // ─────────────────────────────────────────────────────────────────────
+
+    // 24. boundary 0.40: confidence=0.40 goes to [0.40,0.50), not [0.30,0.40)
+    public function test_calibration_boundary_0_40(): void
+    {
+        $match = $this->createMatch('finished', 1, 0);
+        $pred = $this->createPrediction($match, [
+            'probability_home' => 0.40, 'probability_draw' => 0.35, 'probability_away' => 0.25,
+        ]);
+        $this->resolve($pred, 1, 0);
+
+        $calibration = $this->service->evaluate('candidate47_structural_log', '1.0.0')[0]['calibration'];
+
+        $this->assertSame(1, $calibration['[0.40,0.50)']['n']);
+        $this->assertNull($calibration['[0.30,0.40)']);
+    }
+
+    // 25. boundary 0.50: confidence=0.50 goes to [0.50,0.60), not [0.40,0.50)
+    public function test_calibration_boundary_0_50(): void
+    {
+        $match = $this->createMatch('finished', 1, 0);
+        $pred = $this->createPrediction($match, [
+            'probability_home' => 0.50, 'probability_draw' => 0.30, 'probability_away' => 0.20,
+        ]);
+        $this->resolve($pred, 1, 0);
+
+        $calibration = $this->service->evaluate('candidate47_structural_log', '1.0.0')[0]['calibration'];
+
+        $this->assertSame(1, $calibration['[0.50,0.60)']['n']);
+        $this->assertNull($calibration['[0.40,0.50)']);
+    }
+
+    // 26. boundary 0.60: confidence=0.60 goes to [0.60,0.70), not [0.50,0.60)
+    public function test_calibration_boundary_0_60(): void
+    {
+        $match = $this->createMatch('finished', 1, 0);
+        $pred = $this->createPrediction($match, [
+            'probability_home' => 0.60, 'probability_draw' => 0.25, 'probability_away' => 0.15,
+        ]);
+        $this->resolve($pred, 1, 0);
+
+        $calibration = $this->service->evaluate('candidate47_structural_log', '1.0.0')[0]['calibration'];
+
+        $this->assertSame(1, $calibration['[0.60,0.70)']['n']);
+        $this->assertNull($calibration['[0.50,0.60)']);
+    }
+
+    // 27. boundary 0.70: confidence=0.70 goes to >=0.70, not [0.60,0.70)
+    public function test_calibration_boundary_0_70(): void
+    {
+        $match = $this->createMatch('finished', 1, 0);
+        $pred = $this->createPrediction($match, [
+            'probability_home' => 0.70, 'probability_draw' => 0.20, 'probability_away' => 0.10,
+        ]);
+        $this->resolve($pred, 1, 0);
+
+        $calibration = $this->service->evaluate('candidate47_structural_log', '1.0.0')[0]['calibration'];
+
+        $this->assertSame(1, $calibration['>=0.70']['n']);
+        $this->assertNull($calibration['[0.60,0.70)']);
+    }
+
+    // 28. mean confidence / actual accuracy / calibration gap computed correctly across 2 rows
+    public function test_calibration_mean_confidence_accuracy_and_gap(): void
+    {
+        $m1 = $this->createMatch('finished', 1, 0, '2026-01-01 18:00:00');
+        $p1 = $this->createPrediction($m1, [
+            'probability_home' => 0.60, 'probability_draw' => 0.25, 'probability_away' => 0.15,
+        ]);
+        $this->resolve($p1, 1, 0); // predicted='1', actual='1' -> correct, confidence=0.60
+
+        $m2 = $this->createMatch('finished', 1, 0, '2026-01-02 18:00:00');
+        $p2 = $this->createPrediction($m2, [
+            'probability_home' => 0.15, 'probability_draw' => 0.25, 'probability_away' => 0.60,
+        ]);
+        $this->resolve($p2, 1, 0); // predicted='2', actual='1' -> incorrect, confidence=0.60
+
+        $bucket = $this->service->evaluate('candidate47_structural_log', '1.0.0')[0]['calibration']['[0.60,0.70)'];
+
+        $this->assertSame(2, $bucket['n']);
+        $this->assertEqualsWithDelta(0.60, $bucket['mean_confidence'], 1e-9);
+        $this->assertEqualsWithDelta(0.5, $bucket['actual_accuracy'], 1e-9);
+        $this->assertEqualsWithDelta(0.10, $bucket['calibration_gap'], 1e-9);
+    }
+
+    // 29. calibration is null when evaluated=0 (no misleading section)
+    public function test_calibration_null_when_nothing_evaluated(): void
+    {
+        $match = $this->createMatch('scheduled', null, null);
+        $this->createPrediction($match);
+
+        $report = $this->service->evaluate('candidate47_structural_log')[0];
+
+        $this->assertNull($report['calibration']);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // P27D3 — MONTHLY PERFORMANCE
+    // ─────────────────────────────────────────────────────────────────────
+
+    // 30. two predictions same month aggregated into one monthly entry
+    public function test_monthly_same_month_aggregated(): void
+    {
+        $m1 = $this->createMatch('finished', 1, 0, '2026-01-05 18:00:00');
+        $p1 = $this->createPrediction($m1);
+        $this->resolve($p1, 1, 0);
+
+        $m2 = $this->createMatch('finished', 0, 1, '2026-01-20 18:00:00');
+        $p2 = $this->createPrediction($m2);
+        $this->resolve($p2, 0, 1);
+
+        $monthly = $this->service->evaluate('candidate47_structural_log', '1.0.0')[0]['monthly'];
+
+        $this->assertCount(1, $monthly);
+        $this->assertSame('2026-01', $monthly[0]['month']);
+        $this->assertSame(2, $monthly[0]['metrics']['n']);
+    }
+
+    // 31. two different months kept separate, 32. chronological ascending order
+    public function test_monthly_different_months_separated_and_ordered_ascending(): void
+    {
+        // Created out of chronological order on purpose (Feb before Jan).
+        $mFeb = $this->createMatch('finished', 1, 0, '2026-02-10 18:00:00');
+        $pFeb = $this->createPrediction($mFeb, ['kickoff_at' => '2026-02-10 18:00:00']);
+        $this->resolve($pFeb, 1, 0);
+
+        $mJan = $this->createMatch('finished', 1, 0, '2026-01-10 18:00:00');
+        $pJan = $this->createPrediction($mJan, ['kickoff_at' => '2026-01-10 18:00:00']);
+        $this->resolve($pJan, 1, 0);
+
+        $monthly = $this->service->evaluate('candidate47_structural_log', '1.0.0')[0]['monthly'];
+
+        $this->assertCount(2, $monthly);
+        $this->assertSame('2026-01', $monthly[0]['month']);
+        $this->assertSame('2026-02', $monthly[1]['month']);
+        $this->assertSame(1, $monthly[0]['metrics']['n']);
+        $this->assertSame(1, $monthly[1]['metrics']['n']);
+    }
+
+    // 33. grouping uses kickoff_at, not generated_at
+    public function test_monthly_uses_kickoff_at_not_generated_at(): void
+    {
+        $match = $this->createMatch('finished', 1, 0, '2026-01-15 18:00:00');
+        $pred = $this->createPrediction($match, [
+            'kickoff_at'   => '2026-01-15 18:00:00',
+            'generated_at' => '2026-03-01 00:00:00', // deliberately a different month
+        ]);
+        $this->resolve($pred, 1, 0);
+
+        $monthly = $this->service->evaluate('candidate47_structural_log', '1.0.0')[0]['monthly'];
+
+        $this->assertCount(1, $monthly);
+        $this->assertSame('2026-01', $monthly[0]['month']);
+    }
+
+    // 34. monthly metrics reuse the core computeMetrics() formulas
+    public function test_monthly_metrics_reuse_core_formulas(): void
+    {
+        $match = $this->createMatch('finished', 1, 1, '2026-01-15 18:00:00');
+        $pred = $this->createPrediction($match, [
+            'probability_home' => 0.45, 'probability_draw' => 0.30, 'probability_away' => 0.25,
+        ]);
+        $this->resolve($pred, 1, 1);
+
+        $monthly = $this->service->evaluate('candidate47_structural_log', '1.0.0')[0]['monthly'];
+        $m = $monthly[0]['metrics'];
+
+        $this->assertEqualsWithDelta(-log(0.30), $m['log_loss'], 1e-9);
+        $this->assertArrayHasKey('brier', $m);
+        $this->assertArrayHasKey('rps', $m);
+        $this->assertArrayHasKey('accuracy', $m);
+    }
+
+    // 35. no double-counting vs P27D1 dedup: older duplicate never inflates monthly N
+    public function test_monthly_respects_p27d1_dedup(): void
+    {
+        $match = $this->createMatch('finished', 2, 0, '2026-01-15 18:00:00');
+
+        $older = $this->createPrediction($match, ['generated_at' => now()->subDays(5)]);
+        $this->resolve($older, 2, 0);
+
+        $newer = $this->createPrediction($match, ['generated_at' => now()->subDays(1)]);
+        $this->resolve($newer, 2, 0);
+
+        $monthly = $this->service->evaluate('candidate47_structural_log', '1.0.0')[0]['monthly'];
+
+        $this->assertCount(1, $monthly);
+        $this->assertSame(1, $monthly[0]['metrics']['n']);
+    }
+
+    // 36. monthly is empty when evaluated=0 (no misleading section)
+    public function test_monthly_empty_when_nothing_evaluated(): void
+    {
+        $match = $this->createMatch('scheduled', null, null);
+        $this->createPrediction($match);
+
+        $report = $this->service->evaluate('candidate47_structural_log')[0];
+
+        $this->assertSame([], $report['monthly']);
+    }
 }
