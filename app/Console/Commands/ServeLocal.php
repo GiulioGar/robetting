@@ -91,6 +91,43 @@ class ServeLocal extends Command
 
         $this->info('[startup] Syncing pending events...');
         $this->runPendingEvents($eventsService);
+
+        $this->info('[startup] Capturing learning data...');
+        $this->runOfficialResultsCapture();
+        $this->runOfficialPredictionsCapture();
+    }
+
+    /**
+     * P27G — local-dev convenience: keep the Learning Loop's official
+     * predictions/results (P27B/P27C) moving forward automatically whenever
+     * the dev portal is started, instead of requiring a manual artisan call.
+     * Runs once per startup only (never in the periodic refresh loop).
+     *
+     * Reuses the existing capture commands as-is via $this->callSilently()
+     * (no logic duplicated here) — their own idempotency is what makes
+     * running them on every `robetting:serve` startup safe. Output is
+     * suppressed (no payload/feature dump), only a one-line status is
+     * shown. A failure here is support tooling, not a hard dependency —
+     * it must never prevent the dev server from starting.
+     */
+    private function runOfficialResultsCapture(): void
+    {
+        try {
+            $this->callSilently('robetting:capture-official-results');
+            $this->line('[learning] official results capture completed');
+        } catch (\Throwable $e) {
+            $this->error('[learning] official results capture failed: ' . $e->getMessage());
+        }
+    }
+
+    private function runOfficialPredictionsCapture(): void
+    {
+        try {
+            $this->callSilently('robetting:capture-official-predictions', ['--within-hours' => 72]);
+            $this->line('[learning] official predictions capture completed');
+        } catch (\Throwable $e) {
+            $this->error('[learning] official predictions capture failed: ' . $e->getMessage());
+        }
     }
 
     private function maybeRefreshCalendar(ApiFootballFixtureSyncService $fixtureService): void
