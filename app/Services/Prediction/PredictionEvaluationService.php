@@ -34,6 +34,15 @@ use Illuminate\Support\Collection;
  * the resolved prediction with the latest generated_at enters the metrics;
  * older rows are counted but excluded. Tie-break on identical generated_at
  * falls back to the highest id (deterministic, never arbitrary).
+ *
+ * P27D2 — adds BY LEAGUE and FAVORITE ANALYSIS breakdowns on top of the SAME
+ * deduped `$evaluated` set the global metrics already use (no separate
+ * eligibility/dedup query, no new LogLoss/Brier/RPS formula). "By league"
+ * reuses computeMetrics() verbatim per competition group. "Favorite
+ * analysis" reuses the same per-row LogLoss convention (logLossForRow(),
+ * extracted out of computeMetrics() so both paths share one formula) but
+ * needs its own aggregation because "favorite"/"underdog" are relative to
+ * who is favored (P1 vs P2), not fixed H/D/A buckets.
  */
 class PredictionEvaluationService
 {
@@ -75,6 +84,7 @@ class PredictionEvaluationService
         $rows = Prediction::query()
             ->where('model_key', $modelKey)
             ->where('model_version', $modelVersion)
+            ->with('match.competition')
             ->get();
 
         $total = $rows->count();
@@ -104,6 +114,173 @@ class PredictionEvaluationService
                 'older_duplicates_excluded' => $olderDuplicatesExcluded,
             ],
             'metrics' => $this->computeMetrics($evaluated),
+            'by_league' => $evaluated->isEmpty() ? [] : $this->computeByLeague($evaluated),
+            'favorite_analysis' => $evaluated->isEmpty() ? null : $this->computeFavoriteAnalysis($evaluated),
+        ];
+    }
+
+    /**
+     * Same deduped $evaluated set as the GLOBAL metrics, grouped by
+     * competition. Reuses computeMetrics() verbatim per group — no separate
+     * formula.
+     *
+     * @param Collection<int, Prediction> $evaluated
+     * @return array<int, array{competition_id: int, competition_name: string, metrics: array}>
+     */
+    private function computeByLeague(Collection $evaluated): array
+    {
+        $groups = $evaluated->groupBy(fn (Prediction $r) => $r->match?->competition_id ?? 0);
+
+        $result = [];
+        foreach ($groups as $competitionId => $group) {
+            $competition = $group->first()->match?->competition;
+            $result[] = [
+                'competition_id' => (int) $competitionId,
+                'competition_name' => $competition?->name ?? 'Unknown',
+                'metrics' => $this->computeMetrics($group),
+            ];
+        }
+
+        usort($result, fn (array $a, array $b) => strcmp($a['competition_name'], $b['competition_name']));
+
+        return $result;
+    }
+
+    /**
+     * Favorite = max(P1, P2); draw can never be the favorite. P1 == P2 is
+     * classified NO_CLEAR_FAVORITE and excluded from both the HOME/AWAY
+     * classification breakdown and the strength buckets, but counted
+     * separately (never arbitrarily assigned to home or away).
+     *
+     * @param Collection<int, Prediction> $evaluated
+     * @return array{
+     *   no_clear_favorite_count: int,
+     *   by_classification: array<string, array|null>,
+     *   by_bucket: array<string, array|null>,
+     * }
+     */
+    private function computeFavoriteAnalysis(Collection $evaluated): array
+    {
+        $noClearFavoriteCount = 0;
+        $byClassification = ['HOME_FAVORITE' => [], 'AWAY_FAVORITE' => []];
+        $byBucket = ['<0.45' => [], '0.45-0.55' => [], '0.55-0.65' => [], '>=0.65' => []];
+
+        foreach ($evaluated as $row) {
+            $pHome = (float) $row->probability_home;
+            $pAway = (float) $row->probability_away;
+
+            if ($pHome === $pAway) {
+                $noClearFavoriteCount++;
+                continue;
+            }
+
+            $stats = $this->favoriteRowStats($row);
+            $byClassification[$stats['classification']][] = $stats;
+            $byBucket[$this->strengthBucket($stats['favorite_probability'])][] = $stats;
+        }
+
+        return [
+            'no_clear_favorite_count' => $noClearFavoriteCount,
+            'by_classification' => [
+                'HOME_FAVORITE' => $this->aggregateFavoriteGroup($byClassification['HOME_FAVORITE']),
+                'AWAY_FAVORITE' => $this->aggregateFavoriteGroup($byClassification['AWAY_FAVORITE']),
+            ],
+            'by_bucket' => [
+                '<0.45' => $this->aggregateFavoriteGroup($byBucket['<0.45']),
+                '0.45-0.55' => $this->aggregateFavoriteGroup($byBucket['0.45-0.55']),
+                '0.55-0.65' => $this->aggregateFavoriteGroup($byBucket['0.55-0.65']),
+                '>=0.65' => $this->aggregateFavoriteGroup($byBucket['>=0.65']),
+            ],
+        ];
+    }
+
+    /**
+     * Per-row relative stats for favorite analysis. classification/favorite/
+     * underdog are relative to which side (home or away) has the higher
+     * probability — never Draw.
+     *
+     * @return array{classification: string, favorite_probability: float, favorite_win: bool, draw_probability: float, draw_actual: bool, underdog_probability: float, underdog_win: bool, log_loss: float}
+     */
+    private function favoriteRowStats(Prediction $row): array
+    {
+        $pHome = (float) $row->probability_home;
+        $pDraw = (float) $row->probability_draw;
+        $pAway = (float) $row->probability_away;
+        $actual = $row->outcome;
+
+        $isHomeFavorite = $pHome > $pAway;
+        $classification = $isHomeFavorite ? 'HOME_FAVORITE' : 'AWAY_FAVORITE';
+
+        $favoriteProbability = $isHomeFavorite ? $pHome : $pAway;
+        $underdogProbability = $isHomeFavorite ? $pAway : $pHome;
+        $favoriteOutcome = $isHomeFavorite ? '1' : '2';
+        $underdogOutcome = $isHomeFavorite ? '2' : '1';
+
+        return [
+            'classification' => $classification,
+            'favorite_probability' => $favoriteProbability,
+            'favorite_win' => $actual === $favoriteOutcome,
+            'draw_probability' => $pDraw,
+            'draw_actual' => $actual === 'X',
+            'underdog_probability' => $underdogProbability,
+            'underdog_win' => $actual === $underdogOutcome,
+            'log_loss' => $this->logLossForRow($pHome, $pDraw, $pAway, $actual),
+        ];
+    }
+
+    private function strengthBucket(float $favoriteProbability): string
+    {
+        if ($favoriteProbability < 0.45) {
+            return '<0.45';
+        }
+        if ($favoriteProbability < 0.55) {
+            return '0.45-0.55';
+        }
+        if ($favoriteProbability < 0.65) {
+            return '0.55-0.65';
+        }
+
+        return '>=0.65';
+    }
+
+    /**
+     * @param array<int, array{favorite_probability: float, favorite_win: bool, draw_probability: float, draw_actual: bool, underdog_probability: float, underdog_win: bool, log_loss: float}> $rowsStats
+     * @return array{n: int, mean_favorite_probability: float, actual_favorite_win_rate: float, mean_predicted_draw_probability: float, actual_draw_rate: float, mean_predicted_underdog_probability: float, actual_underdog_win_rate: float, log_loss: float}|null
+     */
+    private function aggregateFavoriteGroup(array $rowsStats): ?array
+    {
+        $n = count($rowsStats);
+        if ($n === 0) {
+            return null;
+        }
+
+        $sumFavoriteProbability = 0.0;
+        $sumFavoriteWin = 0;
+        $sumDrawProbability = 0.0;
+        $sumDrawActual = 0;
+        $sumUnderdogProbability = 0.0;
+        $sumUnderdogWin = 0;
+        $sumLogLoss = 0.0;
+
+        foreach ($rowsStats as $s) {
+            $sumFavoriteProbability += $s['favorite_probability'];
+            $sumFavoriteWin += $s['favorite_win'] ? 1 : 0;
+            $sumDrawProbability += $s['draw_probability'];
+            $sumDrawActual += $s['draw_actual'] ? 1 : 0;
+            $sumUnderdogProbability += $s['underdog_probability'];
+            $sumUnderdogWin += $s['underdog_win'] ? 1 : 0;
+            $sumLogLoss += $s['log_loss'];
+        }
+
+        return [
+            'n' => $n,
+            'mean_favorite_probability' => $sumFavoriteProbability / $n,
+            'actual_favorite_win_rate' => $sumFavoriteWin / $n,
+            'mean_predicted_draw_probability' => $sumDrawProbability / $n,
+            'actual_draw_rate' => $sumDrawActual / $n,
+            'mean_predicted_underdog_probability' => $sumUnderdogProbability / $n,
+            'actual_underdog_win_rate' => $sumUnderdogWin / $n,
+            'log_loss' => $sumLogLoss / $n,
         ];
     }
 
@@ -166,9 +343,7 @@ class PredictionEvaluationService
 
             $predicted = $this->predictedOutcome($pHome, $pDraw, $pAway);
 
-            $probByOutcome = ['1' => $pHome, 'X' => $pDraw, '2' => $pAway];
-            $pActual = max($probByOutcome[$actual], self::LOG_LOSS_FLOOR);
-            $sumLogLoss += -log($pActual);
+            $sumLogLoss += $this->logLossForRow($pHome, $pDraw, $pAway, $actual);
 
             $oneHot = [
                 '1' => [1.0, 0.0, 0.0],
@@ -237,5 +412,18 @@ class PredictionEvaluationService
         }
 
         return $pAway >= $pDraw ? '2' : 'X';
+    }
+
+    /**
+     * Single source of the LogLoss-per-row formula (-log(max(p_actual,
+     * 1e-12))), shared by computeMetrics() (global/by-league) and
+     * favoriteRowStats() (favorite analysis) so there is exactly one place
+     * that implements it.
+     */
+    private function logLossForRow(float $pHome, float $pDraw, float $pAway, string $actualOutcome): float
+    {
+        $probByOutcome = ['1' => $pHome, 'X' => $pDraw, '2' => $pAway];
+
+        return -log(max($probByOutcome[$actualOutcome], self::LOG_LOSS_FLOOR));
     }
 }

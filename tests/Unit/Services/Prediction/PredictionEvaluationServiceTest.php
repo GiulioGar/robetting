@@ -56,6 +56,29 @@ class PredictionEvaluationServiceTest extends TestCase
         ]);
     }
 
+    /** Second league fixture, created lazily only by tests that need multi-league grouping. */
+    private function createMatchInSecondLeague(string $status, ?int $hg, ?int $ag, string $kickoffAt = '2026-01-03 18:00:00'): FootballMatch
+    {
+        $country = Country::create(['name' => 'England', 'code' => 'EN']);
+        $competition = Competition::create(['name' => 'Premier League', 'slug' => 'premier-league-test', 'country_id' => $country->id]);
+        $season = Season::create([
+            'competition_id' => $competition->id, 'name' => '2025/26', 'year_start' => 2025, 'year_end' => 2026,
+        ]);
+        $home = Team::create(['name' => 'Arsenal', 'country_id' => $country->id]);
+        $away = Team::create(['name' => 'Chelsea', 'country_id' => $country->id]);
+
+        return FootballMatch::create([
+            'competition_id' => $competition->id,
+            'season_id'      => $season->id,
+            'home_team_id'   => $home->id,
+            'away_team_id'   => $away->id,
+            'kickoff_at'     => $kickoffAt,
+            'status'         => $status,
+            'home_score_ft'  => $hg,
+            'away_score_ft'  => $ag,
+        ]);
+    }
+
     private function createPrediction(FootballMatch $match, array $overrides = []): Prediction
     {
         return Prediction::create(array_merge([
@@ -305,5 +328,192 @@ class PredictionEvaluationServiceTest extends TestCase
         $reports = $this->service->evaluate('nonexistent_model_key');
 
         $this->assertSame([], $reports);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // P27D2 — BY LEAGUE
+    // ─────────────────────────────────────────────────────────────────────
+
+    // 13. two different leagues aggregated separately, each with correct metrics
+    public function test_by_league_aggregates_two_leagues_separately(): void
+    {
+        $m1 = $this->createMatch('finished', 2, 0, '2026-01-01 18:00:00');
+        $p1 = $this->createPrediction($m1, ['probability_home' => 0.6, 'probability_draw' => 0.25, 'probability_away' => 0.15]);
+        $this->resolve($p1, 2, 0); // Home, correct
+
+        $m2 = $this->createMatchInSecondLeague('finished', 0, 1);
+        $p2 = $this->createPrediction($m2, ['probability_home' => 0.5, 'probability_draw' => 0.2, 'probability_away' => 0.3]);
+        $this->resolve($p2, 0, 1); // Away, Home predicted -> incorrect
+
+        $report = $this->service->evaluate('candidate47_structural_log', '1.0.0')[0];
+        $byLeague = $report['by_league'];
+
+        $this->assertCount(2, $byLeague);
+
+        $byName = collect($byLeague)->keyBy('competition_name');
+        $this->assertTrue($byName->has('Serie A'));
+        $this->assertTrue($byName->has('Premier League'));
+
+        $serieA = $byName->get('Serie A')['metrics'];
+        $this->assertSame(1, $serieA['n']);
+        $this->assertEqualsWithDelta(1.0, $serieA['accuracy'], 1e-9);
+
+        $pl = $byName->get('Premier League')['metrics'];
+        $this->assertSame(1, $pl['n']);
+        $this->assertEqualsWithDelta(0.0, $pl['accuracy'], 1e-9);
+    }
+
+    // 14. by_league never double-counts an older duplicate already excluded by P27D1 dedup
+    public function test_by_league_respects_p27d1_dedup(): void
+    {
+        $match = $this->createMatch('finished', 2, 0);
+
+        $older = $this->createPrediction($match, ['generated_at' => now()->subDays(5)]);
+        $this->resolve($older, 2, 0);
+
+        $newer = $this->createPrediction($match, ['generated_at' => now()->subDays(1)]);
+        $this->resolve($newer, 2, 0);
+
+        $report = $this->service->evaluate('candidate47_structural_log', '1.0.0')[0];
+
+        $this->assertCount(1, $report['by_league']);
+        $this->assertSame(1, $report['by_league'][0]['metrics']['n']);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // P27D2 — FAVORITE ANALYSIS
+    // ─────────────────────────────────────────────────────────────────────
+
+    // 15. home favorite classified correctly, favorite/underdog/draw stats correct
+    public function test_favorite_analysis_home_favorite(): void
+    {
+        $match = $this->createMatch('finished', 2, 0);
+        $pred = $this->createPrediction($match, [
+            'probability_home' => 0.60, 'probability_draw' => 0.25, 'probability_away' => 0.15,
+        ]);
+        $this->resolve($pred, 2, 0); // Home wins -> favorite wins
+
+        $favorite = $this->service->evaluate('candidate47_structural_log', '1.0.0')[0]['favorite_analysis'];
+        $group = $favorite['by_classification']['HOME_FAVORITE'];
+
+        $this->assertSame(1, $group['n']);
+        $this->assertEqualsWithDelta(0.60, $group['mean_favorite_probability'], 1e-9);
+        $this->assertEqualsWithDelta(1.0, $group['actual_favorite_win_rate'], 1e-9);
+        $this->assertEqualsWithDelta(0.25, $group['mean_predicted_draw_probability'], 1e-9);
+        $this->assertEqualsWithDelta(0.0, $group['actual_draw_rate'], 1e-9);
+        $this->assertEqualsWithDelta(0.15, $group['mean_predicted_underdog_probability'], 1e-9);
+        $this->assertEqualsWithDelta(0.0, $group['actual_underdog_win_rate'], 1e-9);
+        $this->assertNull($favorite['by_classification']['AWAY_FAVORITE']);
+    }
+
+    // 16. away favorite classified correctly
+    public function test_favorite_analysis_away_favorite(): void
+    {
+        $match = $this->createMatch('finished', 0, 2);
+        $pred = $this->createPrediction($match, [
+            'probability_home' => 0.20, 'probability_draw' => 0.20, 'probability_away' => 0.60,
+        ]);
+        $this->resolve($pred, 0, 2); // Away wins -> favorite wins
+
+        $favorite = $this->service->evaluate('candidate47_structural_log', '1.0.0')[0]['favorite_analysis'];
+        $group = $favorite['by_classification']['AWAY_FAVORITE'];
+
+        $this->assertSame(1, $group['n']);
+        $this->assertEqualsWithDelta(0.60, $group['mean_favorite_probability'], 1e-9);
+        $this->assertEqualsWithDelta(1.0, $group['actual_favorite_win_rate'], 1e-9);
+        $this->assertNull($favorite['by_classification']['HOME_FAVORITE']);
+    }
+
+    // 17-20. strength buckets: <0.45, 0.45-0.55, 0.55-0.65, >=0.65
+    public function test_favorite_strength_buckets(): void
+    {
+        // Favorite probability = max(pHome, pAway) = pHome here (home is always
+        // the favorite). Draw probability varied so the <0.45 bucket is
+        // actually reachable (max(pHome,pAway) >= 0.45 whenever pDraw <= 0.1).
+        $cases = [
+            ['kickoff' => '2026-01-01 18:00:00', 'pHome' => 0.40, 'pDraw' => 0.35, 'pAway' => 0.25, 'bucket' => '<0.45'],
+            ['kickoff' => '2026-01-02 18:00:00', 'pHome' => 0.50, 'pDraw' => 0.30, 'pAway' => 0.20, 'bucket' => '0.45-0.55'],
+            ['kickoff' => '2026-01-03 18:00:00', 'pHome' => 0.60, 'pDraw' => 0.25, 'pAway' => 0.15, 'bucket' => '0.55-0.65'],
+            ['kickoff' => '2026-01-04 18:00:00', 'pHome' => 0.70, 'pDraw' => 0.20, 'pAway' => 0.10, 'bucket' => '>=0.65'],
+        ];
+
+        foreach ($cases as $case) {
+            $match = $this->createMatch('finished', 1, 0, $case['kickoff']);
+            $pred = $this->createPrediction($match, [
+                'probability_home' => $case['pHome'],
+                'probability_draw' => $case['pDraw'],
+                'probability_away' => $case['pAway'],
+                'kickoff_at' => $case['kickoff'],
+            ]);
+            $this->resolve($pred, 1, 0);
+        }
+
+        $favorite = $this->service->evaluate('candidate47_structural_log', '1.0.0')[0]['favorite_analysis'];
+
+        foreach ($cases as $case) {
+            $group = $favorite['by_bucket'][$case['bucket']];
+            $this->assertNotNull($group, "bucket {$case['bucket']} should have 1 row");
+            $this->assertSame(1, $group['n'], "bucket {$case['bucket']} count");
+        }
+    }
+
+    // 21. tie P1 == P2 -> NO_CLEAR_FAVORITE, excluded from classification/buckets, counted separately
+    public function test_tie_p1_equals_p2_is_no_clear_favorite(): void
+    {
+        $match = $this->createMatch('finished', 1, 1);
+        $pred = $this->createPrediction($match, [
+            'probability_home' => 0.40, 'probability_draw' => 0.20, 'probability_away' => 0.40,
+        ]);
+        $this->resolve($pred, 1, 1);
+
+        $favorite = $this->service->evaluate('candidate47_structural_log', '1.0.0')[0]['favorite_analysis'];
+
+        $this->assertSame(1, $favorite['no_clear_favorite_count']);
+        $this->assertNull($favorite['by_classification']['HOME_FAVORITE']);
+        $this->assertNull($favorite['by_classification']['AWAY_FAVORITE']);
+        foreach ($favorite['by_bucket'] as $bucket) {
+            $this->assertNull($bucket);
+        }
+    }
+
+    // 22. favorite_analysis is null and by_league is empty when evaluated=0 (no misleading sections)
+    public function test_favorite_analysis_and_by_league_are_empty_when_nothing_evaluated(): void
+    {
+        $match = $this->createMatch('scheduled', null, null);
+        $this->createPrediction($match);
+
+        $report = $this->service->evaluate('candidate47_structural_log')[0];
+
+        $this->assertNull($report['favorite_analysis']);
+        $this->assertSame([], $report['by_league']);
+    }
+
+    // 23. different model_versions still kept separate for by_league/favorite_analysis too
+    public function test_favorite_and_league_not_mixed_across_model_versions(): void
+    {
+        $match1 = $this->createMatch('finished', 2, 0, '2026-01-01 18:00:00');
+        $pred1 = $this->createPrediction($match1, [
+            'model_version' => '1.0.0',
+            'probability_home' => 0.60, 'probability_draw' => 0.25, 'probability_away' => 0.15,
+        ]);
+        $this->resolve($pred1, 2, 0);
+
+        $match2 = $this->createMatch('finished', 0, 2, '2026-01-02 18:00:00');
+        $pred2 = $this->createPrediction($match2, [
+            'model_version' => '2.0.0',
+            'probability_home' => 0.15, 'probability_draw' => 0.25, 'probability_away' => 0.60,
+        ]);
+        $this->resolve($pred2, 0, 2);
+
+        $reports = $this->service->evaluate('candidate47_structural_log');
+        $byVersion = collect($reports)->keyBy('model_version');
+
+        $v1Favorite = $byVersion->get('1.0.0')['favorite_analysis'];
+        $this->assertNotNull($v1Favorite['by_classification']['HOME_FAVORITE']);
+        $this->assertNull($v1Favorite['by_classification']['AWAY_FAVORITE']);
+
+        $v2Favorite = $byVersion->get('2.0.0')['favorite_analysis'];
+        $this->assertNotNull($v2Favorite['by_classification']['AWAY_FAVORITE']);
+        $this->assertNull($v2Favorite['by_classification']['HOME_FAVORITE']);
     }
 }
