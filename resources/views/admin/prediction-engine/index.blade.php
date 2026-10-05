@@ -141,6 +141,46 @@
     </div>{{-- card-body --}}
 </div>{{-- card --}}
 
+{{-- Save official prediction (Candidate V2 LOG — current champion) --}}
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-white py-2 px-3">
+        <span class="fw-semibold small">PREDICTION UFFICIALE</span>
+        <span class="text-muted small ms-2">ROBETTING CANDIDATE V2 LOG — salvataggio esplicito, non automatico</span>
+    </div>
+    <div class="card-body py-3 px-3">
+
+        @if(session('official_prediction_saved'))
+        <div class="alert alert-success py-2 mb-3">Prediction ufficiale Candidate V2 LOG salvata.</div>
+        @endif
+
+        @if(session('official_prediction_error'))
+        <div class="alert alert-danger py-2 mb-3">{{ session('official_prediction_error') }}</div>
+        @endif
+
+        <form method="POST" action="{{ route('admin.prediction-engine.save-official', ['match' => $m->id]) }}" class="mb-3">
+            @csrf
+            <button type="submit" class="btn btn-primary btn-sm">
+                Salva prediction ufficiale
+            </button>
+        </form>
+
+        <div class="small">
+            @if($lastOfficialPrediction)
+            <span class="text-muted">Stato: SALVATA</span> —
+            <span class="font-monospace ms-1">
+                generated_at {{ $lastOfficialPrediction->generated_at->format('d/m/Y H:i:s') }} —
+                P1 {{ number_format($lastOfficialPrediction->probability_home * 100, 1) }}% /
+                PX {{ number_format($lastOfficialPrediction->probability_draw * 100, 1) }}% /
+                P2 {{ number_format($lastOfficialPrediction->probability_away * 100, 1) }}%
+            </span>
+            @else
+            <span class="text-muted">Stato: NON SALVATA</span>
+            @endif
+        </div>
+
+    </div>{{-- card-body --}}
+</div>{{-- card --}}
+
 {{-- Diagnostic context --}}
 @if($matchContext)
 @php

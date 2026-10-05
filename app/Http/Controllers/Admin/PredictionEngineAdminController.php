@@ -5,12 +5,16 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\DataSource;
 use App\Models\FootballMatch;
+use App\Models\Prediction;
 use App\Services\Analytics\TeamStructuralRatingCalculator;
 use App\Services\Prediction\CandidateModelService;
 use App\Services\Prediction\MatchPredictionService;
+use App\Services\Prediction\OfficialPredictionRecorder;
 use Carbon\Carbon;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
+use InvalidArgumentException;
 use Throwable;
 
 class PredictionEngineAdminController extends Controller
@@ -52,10 +56,18 @@ class PredictionEngineAdminController extends Controller
         $matches = $matchQuery->get();
 
         // Prediction for selected match
-        $prediction   = null;
-        $comparison   = null;
-        $matchContext = null;
-        $error        = null;
+        $prediction             = null;
+        $comparison             = null;
+        $matchContext           = null;
+        $error                  = null;
+        $lastOfficialPrediction = null;
+
+        if ($matchId) {
+            $lastOfficialPrediction = Prediction::where('match_id', $matchId)
+                ->where('model_key', 'candidate47_structural_log')
+                ->orderByDesc('generated_at')
+                ->first();
+        }
 
         if ($matchId) {
             $match = FootballMatch::with([
@@ -95,15 +107,88 @@ class PredictionEngineAdminController extends Controller
         }
 
         return view('admin.prediction-engine.index', [
-            'matches'       => $matches,
-            'selectedId'    => $matchId,
-            'competitionId' => $competitionId,
-            'showFinished'  => $showFinished,
-            'prediction'    => $prediction,
-            'comparison'    => $comparison,
-            'matchContext'  => $matchContext,
-            'error'         => $error,
+            'matches'                => $matches,
+            'selectedId'             => $matchId,
+            'competitionId'          => $competitionId,
+            'showFinished'           => $showFinished,
+            'prediction'             => $prediction,
+            'comparison'             => $comparison,
+            'matchContext'           => $matchContext,
+            'error'                  => $error,
+            'lastOfficialPrediction' => $lastOfficialPrediction,
         ]);
+    }
+
+    /**
+     * Explicit, intentional action: (re)generate ROBETTING CANDIDATE V2 LOG
+     * (candidate47_structural_log) for this match and persist it as an
+     * official, immutable snapshot.
+     *
+     * predictWithDebug() is used ONLY to obtain the extracted 59-feature
+     * vector (same pattern as PublicMatchPredictionService) — its own FULL59
+     * lambda/probability output is never saved here; every number persisted
+     * (lambda, probabilities, model/feature-set version, the 47-feature
+     * vector, both snapshot timestamps) comes from
+     * CandidateModelService::officialPredictionData(), the exact same
+     * runtime pipeline the admin comparison page and the public match page
+     * already use for Candidate V2 LOG — no duplicated math.
+     *
+     * Never triggered by index()/compare() — only by this POST action.
+     */
+    public function saveOfficial(FootballMatch $match): RedirectResponse
+    {
+        $redirectBack = redirect()
+            ->route('admin.prediction-engine.index', ['match_id' => $match->id]);
+
+        if ($match->kickoff_at === null || Carbon::parse($match->kickoff_at)->isPast()) {
+            return $redirectBack->with(
+                'official_prediction_error',
+                "Match #{$match->id}: kickoff_at non è nel futuro — salvataggio rifiutato."
+            );
+        }
+
+        try {
+            $base = $this->predictionService->predictWithDebug($match);
+
+            $official = $this->candidateService->officialPredictionData(
+                $base['features'],
+                (int) $match->home_team_id,
+                (int) $match->away_team_id,
+                (string) $match->kickoff_at,
+            );
+
+            if ($official === null) {
+                return $redirectBack->with(
+                    'official_prediction_error',
+                    'Candidate V2 LOG non disponibile per questo match (Structural/Latent snapshot mancante o squadra non presente) — salvataggio rifiutato.'
+                );
+            }
+
+            OfficialPredictionRecorder::record([
+                'match_id'             => $match->id,
+                'model_key'            => $official['model_key'],
+                'model_version'        => $official['model_version'],
+                'feature_set_version'  => $official['feature_set_version'],
+                'artifact_path'        => $official['artifact_path'],
+                'generated_at'         => now(),
+                'kickoff_at'           => $match->kickoff_at,
+                'lambda_home'          => $official['lambda_home'],
+                'lambda_away'          => $official['lambda_away'],
+                'lambda3'              => $official['lambda3'],
+                'probability_home'     => $official['probability_home'],
+                'probability_draw'     => $official['probability_draw'],
+                'probability_away'     => $official['probability_away'],
+                'features_json'        => $official['features_json'],
+                'structural_snapshot_version'  => $official['structural_snapshot_generated_at'],
+                'latent_snapshot_generated_at' => $official['latent_snapshot_generated_at'],
+            ]);
+        } catch (InvalidArgumentException $e) {
+            return $redirectBack->with('official_prediction_error', 'Prediction non valida: ' . $e->getMessage());
+        } catch (Throwable $e) {
+            return $redirectBack->with('official_prediction_error', 'Errore salvataggio: ' . $e->getMessage());
+        }
+
+        return $redirectBack->with('official_prediction_saved', true);
     }
 
     /**

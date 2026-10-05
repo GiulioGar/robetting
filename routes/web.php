@@ -40,6 +40,9 @@ Route::delete('/competitions/{competition:slug}/seasons/{season}/zones/{zone}', 
 Route::get('admin/prediction-engine', [PredictionEngineAdminController::class, 'index'])
     ->name('admin.prediction-engine.index');
 
+Route::post('admin/prediction-engine/{match}/save-official', [PredictionEngineAdminController::class, 'saveOfficial'])
+    ->name('admin.prediction-engine.save-official');
+
 Route::prefix('admin/api-football')->name('admin.api-football.')->group(function () {
     Route::get('/', [ApiFootballAdminController::class, 'dashboard'])->name('dashboard');
     Route::get('teams', [ApiFootballAdminController::class, 'teams'])->name('teams');

@@ -190,6 +190,102 @@ class CandidateModelService
     }
 
     /**
+     * P26B — build the exact audit payload needed to persist an OFFICIAL
+     * Candidate V2 LOG (candidate47_structural_log) prediction.
+     *
+     * Runs the IDENTICAL runtime pipeline as the candidate47_structural_log
+     * branch of compare() (same addDerivedFeatures(), same snapshot loading/
+     * resolution, same structuralLogFeatures(), same inferRobustBP() math) —
+     * nothing here duplicates or re-derives the model. The only difference
+     * from compare() is that this method also surfaces metadata compare()
+     * intentionally never exposes (model_version, feature_set_version,
+     * artifact_path, the exact 47-feature vector, and both snapshots'
+     * generated_at), because compare() must stay lean for the normal
+     * comparison UI (see class docblock) and only the explicit "save
+     * official" action needs this audit-grade detail.
+     *
+     * @param  array<string, float|null>  $features59  Output of PredictionEngineV1 extraction
+     * @return array{
+     *   model_key: string,
+     *   model_version: string,
+     *   feature_set_version: string,
+     *   artifact_path: string,
+     *   lambda_home: float,
+     *   lambda_away: float,
+     *   lambda3: float,
+     *   probability_home: float,
+     *   probability_draw: float,
+     *   probability_away: float,
+     *   features_json: array<string, float|null>,
+     *   structural_snapshot_generated_at: string,
+     *   latent_snapshot_generated_at: string,
+     * }|null  null when Candidate V2 LOG is unavailable for this match (same
+     *         anti-leakage/availability gate compare() uses for candidate47:
+     *         missing snapshot, team not in snapshot, snapshot not strictly
+     *         before kickoff, or non-positive TOP25 value)
+     */
+    public function officialPredictionData(
+        array $features59,
+        int $homeTeamId,
+        int $awayTeamId,
+        string $kickoffAt,
+    ): ?array {
+        $extFeatures = $this->addDerivedFeatures($features59);
+
+        try {
+            $latentSnapshot     = $this->loadLatentSnapshot();
+            $structuralSnapshot = $this->loadStructuralSnapshot();
+        } catch (RuntimeException) {
+            return null;
+        }
+
+        $latent     = $this->resolveLatentFeatures($latentSnapshot, $homeTeamId, $awayTeamId, $kickoffAt);
+        $structural = $this->resolveStructuralFeatures($structuralSnapshot, $homeTeamId, $awayTeamId, $kickoffAt);
+        if ($latent === null || $structural === null) {
+            return null;
+        }
+
+        $logFeatures = self::structuralLogFeatures($structural['structural_home'], $structural['structural_away']);
+        if ($logFeatures === null) {
+            return null;
+        }
+
+        $ext47 = array_merge($extFeatures, $latent, $logFeatures);
+
+        try {
+            $artifact = $this->loadArtifact(self::CAND47_STRUCTURAL_LOG_FILE);
+        } catch (RuntimeException) {
+            return null;
+        }
+
+        $inference = $this->inferRobustBP($artifact, $ext47);
+
+        // Persist exactly the 47 features the artifact actually consumes (in
+        // its own declared order) — not the wider merged superset, which
+        // also carries baseline keys the model never looks at.
+        $usedFeatures = [];
+        foreach ($artifact['features'] as $name) {
+            $usedFeatures[$name] = $ext47[$name] ?? null;
+        }
+
+        return [
+            'model_key'                        => 'candidate47_structural_log',
+            'model_version'                     => (string) $artifact['model_version'],
+            'feature_set_version'               => (string) $artifact['feature_set_version'],
+            'artifact_path'                      => $this->artifactPathFor(self::CAND47_STRUCTURAL_LOG_FILE),
+            'lambda_home'                       => $inference['lambda_home'],
+            'lambda_away'                       => $inference['lambda_away'],
+            'lambda3'                           => $inference['lambda3'],
+            'probability_home'                  => $inference['probability_home'],
+            'probability_draw'                  => $inference['probability_draw'],
+            'probability_away'                  => $inference['probability_away'],
+            'features_json'                     => $usedFeatures,
+            'structural_snapshot_generated_at'  => (string) $structuralSnapshot['generated_at'],
+            'latent_snapshot_generated_at'      => (string) $latentSnapshot['generated_at'],
+        ];
+    }
+
+    /**
      * Append derived features to the base feature vector.
      * Currently adds: elo_gap_signed_square = copysign((elo_h - elo_a)^2, elo_h - elo_a)
      *
@@ -549,14 +645,19 @@ class CandidateModelService
     // Artifact loading
     // ─────────────────────────────────────────────────────────────────────────
 
+    private function artifactPathFor(string $filename): string
+    {
+        $dir = self::$artifactDir ?? base_path('tools/models');
+        return $dir . DIRECTORY_SEPARATOR . $filename;
+    }
+
     private function loadArtifact(string $filename): array
     {
         if (isset(self::$cache[$filename])) {
             return self::$cache[$filename];
         }
 
-        $dir  = self::$artifactDir ?? base_path('tools/models');
-        $path = $dir . DIRECTORY_SEPARATOR . $filename;
+        $path = $this->artifactPathFor($filename);
 
         if (! file_exists($path)) {
             throw new RuntimeException("Candidate artifact not found: {$path}");
