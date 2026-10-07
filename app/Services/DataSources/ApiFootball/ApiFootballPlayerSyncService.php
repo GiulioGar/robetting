@@ -189,6 +189,38 @@ class ApiFootballPlayerSyncService
             $page++;
         } while ($page <= $totalPages);
 
+        // ─── Current-roster supplement ─────────────────────────────────────
+        // /players?team&season (above) is stats-driven and can omit current
+        // squad members who have no statistics yet for this season.
+        // /players/squads?team= is the authoritative CURRENT roster — used
+        // here ONLY to fill that gap, identity exclusively via player.id
+        // (never by name). Existing players are never updated/overwritten
+        // here; only their season_player membership is ensured.
+        try {
+            $squadResponse = $this->client->get('players/squads', ['team' => $extId]);
+            $apiCalls++;
+            $lastRemaining = $squadResponse->requestsRemaining ?? $lastRemaining;
+
+            $squadPlayers = $squadResponse->response[0]['players'] ?? [];
+
+            foreach ($squadPlayers as $item) {
+                $result = $this->ensureSquadMembership($item, $team, $season, $ds->id);
+
+                if ($result['outcome'] === 'created') {
+                    $created++;
+                }
+                if ($result['membership_created']) {
+                    $membCreated++;
+                } else {
+                    $membUnchanged++;
+                }
+            }
+        } catch (ApiFootballException $e) {
+            $msg = "team {$team->name} squads supplement: {$e->getMessage()}";
+            Log::warning("api-football-player-sync: {$msg}");
+            $warnings[] = $msg;
+        }
+
         return [
             'team'                 => $team->name,
             'created'              => $created,
@@ -199,6 +231,55 @@ class ApiFootballPlayerSyncService
             'daily_remaining'      => $lastRemaining,
             'warnings'             => $warnings,
         ];
+    }
+
+    /**
+     * Fills a current-squad member missing from the stats-driven sync above.
+     * Identity is resolved EXCLUSIVELY via the API-Football player.id — never
+     * by name. If the player already exists, master data (players row) is
+     * never touched here; only season_player membership is ensured
+     * (firstOrCreate, never updateOrCreate — a repeat run must not overwrite
+     * a position already set by the richer /players?season payload).
+     *
+     * @return array{outcome:'created'|'unchanged', membership_created:bool}
+     */
+    private function ensureSquadMembership(array $item, Team $team, Season $season, int $dsId): array
+    {
+        $apiId = (string) ($item['id'] ?? '');
+        if ($apiId === '') {
+            return ['outcome' => 'unchanged', 'membership_created' => false];
+        }
+
+        $extRecord = PlayerExternalId::where('data_source_id', $dsId)
+            ->where('external_id', $apiId)
+            ->with('player')
+            ->first();
+
+        $position = $this->normalizePosition($item['position'] ?? null);
+
+        if ($extRecord !== null) {
+            $player  = $extRecord->player;
+            $outcome = 'unchanged';
+        } else {
+            $name   = ($item['name'] ?? null) ?: "Player #{$apiId}";
+            $player = Player::create(['name' => $name, 'position' => $position]);
+
+            PlayerExternalId::create([
+                'player_id'      => $player->id,
+                'data_source_id' => $dsId,
+                'external_id'    => $apiId,
+                'external_name'  => $name,
+            ]);
+
+            $outcome = 'created';
+        }
+
+        $membership = SeasonPlayer::firstOrCreate(
+            ['season_id' => $season->id, 'team_id' => $team->id, 'player_id' => $player->id],
+            ['position'  => $position],
+        );
+
+        return ['outcome' => $outcome, 'membership_created' => $membership->wasRecentlyCreated];
     }
 
     // -------------------------------------------------------------------------

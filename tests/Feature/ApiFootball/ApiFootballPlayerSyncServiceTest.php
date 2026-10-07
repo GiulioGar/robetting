@@ -117,7 +117,9 @@ class ApiFootballPlayerSyncServiceTest extends TestCase
         // Inter processes first → 2 players created.
         // Milan processes second → same API IDs already exist → 2 players updated.
         // season_player: 4 rows (each player × 2 teams).
-        Http::fake(['v3.football.api-sports.io/players*' => Http::response(
+        Http::fake([
+            'v3.football.api-sports.io/players/squads*' => Http::response($this->emptySquadResponse(), 200),
+            'v3.football.api-sports.io/players?*' => Http::response(
             $this->oneTeamResponse([
                 $this->playerItem(19241, 'L. Martinez', 'Lautaro Javier', 'Martinez', 'Attacker'),
                 $this->playerItem(9895,  'R. Lukaku',   'Romelu',         'Lukaku',   'Attacker'),
@@ -142,7 +144,9 @@ class ApiFootballPlayerSyncServiceTest extends TestCase
 
     public function test_sync_season_stores_correct_player_master_data(): void
     {
-        Http::fake(['v3.football.api-sports.io/players*' => Http::response(
+        Http::fake([
+            'v3.football.api-sports.io/players/squads*' => Http::response($this->emptySquadResponse(), 200),
+            'v3.football.api-sports.io/players?*' => Http::response(
             $this->onlyInterResponse([
                 $this->playerItem(19241, 'L. Martinez', 'Lautaro Javier', 'Martinez', 'Attacker',
                     height: '174 cm', weight: '75 kg', nationality: 'Argentina', birthDate: '1997-08-22'),
@@ -167,7 +171,9 @@ class ApiFootballPlayerSyncServiceTest extends TestCase
 
     public function test_sync_season_stores_external_id_mapping(): void
     {
-        Http::fake(['v3.football.api-sports.io/players*' => Http::response(
+        Http::fake([
+            'v3.football.api-sports.io/players/squads*' => Http::response($this->emptySquadResponse(), 200),
+            'v3.football.api-sports.io/players?*' => Http::response(
             $this->onlyInterResponse([$this->playerItem(19241, 'L. Martinez', 'Lautaro Javier', 'Martinez', 'Attacker')]),
             200,
         )]);
@@ -183,7 +189,9 @@ class ApiFootballPlayerSyncServiceTest extends TestCase
 
     public function test_sync_season_creates_season_player_membership(): void
     {
-        Http::fake(['v3.football.api-sports.io/players*' => Http::response(
+        Http::fake([
+            'v3.football.api-sports.io/players/squads*' => Http::response($this->emptySquadResponse(), 200),
+            'v3.football.api-sports.io/players?*' => Http::response(
             $this->onlyInterResponse([$this->playerItem(19241, 'L. Martinez', 'Lautaro Javier', 'Martinez', 'Attacker')]),
             200,
         )]);
@@ -208,7 +216,9 @@ class ApiFootballPlayerSyncServiceTest extends TestCase
         // Same response repeated for both teams on both runs.
         // Run 1: Inter creates player, Milan updates it. 2 memberships created (one per team).
         // Run 2: Both teams update. 2 memberships unchanged.
-        Http::fake(['v3.football.api-sports.io/players*' => Http::response(
+        Http::fake([
+            'v3.football.api-sports.io/players/squads*' => Http::response($this->emptySquadResponse(), 200),
+            'v3.football.api-sports.io/players?*' => Http::response(
             $this->onlyInterResponse([$this->playerItem(19241, 'L. Martinez', 'Lautaro Javier', 'Martinez', 'Attacker')]),
             200,
         )]);
@@ -237,11 +247,13 @@ class ApiFootballPlayerSyncServiceTest extends TestCase
         ]);
 
         // 2 teams × 2 runs = 4 requests consumed from the sequence.
-        Http::fake(['v3.football.api-sports.io/players*' => Http::sequence()
-            ->push($original, 200) // Inter  — run 1
-            ->push($original, 200) // Milan  — run 1
-            ->push($updated, 200)  // Inter  — run 2
-            ->push($updated, 200), // Milan  — run 2
+        Http::fake([
+            'v3.football.api-sports.io/players/squads*' => Http::response($this->emptySquadResponse(), 200),
+            'v3.football.api-sports.io/players?*' => Http::sequence()
+                ->push($original, 200) // Inter  — run 1
+                ->push($original, 200) // Milan  — run 1
+                ->push($updated, 200)  // Inter  — run 2
+                ->push($updated, 200), // Milan  — run 2
         ]);
 
         $service = $this->service();
@@ -329,7 +341,9 @@ class ApiFootballPlayerSyncServiceTest extends TestCase
         $item = $this->playerItem(19241, 'L. Martinez', 'Lautaro Javier', 'Martinez', 'Attacker');
         $item['statistics'] = [];
 
-        Http::fake(['v3.football.api-sports.io/players*' => Http::response(
+        Http::fake([
+            'v3.football.api-sports.io/players/squads*' => Http::response($this->emptySquadResponse(), 200),
+            'v3.football.api-sports.io/players?*' => Http::response(
             $this->onlyInterResponse([$item]),
             200,
         )]);
@@ -349,7 +363,9 @@ class ApiFootballPlayerSyncServiceTest extends TestCase
 
     public function test_height_weight_parsed_from_string(): void
     {
-        Http::fake(['v3.football.api-sports.io/players*' => Http::response(
+        Http::fake([
+            'v3.football.api-sports.io/players/squads*' => Http::response($this->emptySquadResponse(), 200),
+            'v3.football.api-sports.io/players?*' => Http::response(
             $this->onlyInterResponse([
                 $this->playerItem(19241, 'L. Martinez', 'Lautaro', 'Martinez', 'Attacker', height: '184 cm', weight: '78 kg'),
             ]),
@@ -365,7 +381,9 @@ class ApiFootballPlayerSyncServiceTest extends TestCase
 
     public function test_height_weight_null_when_missing(): void
     {
-        Http::fake(['v3.football.api-sports.io/players*' => Http::response(
+        Http::fake([
+            'v3.football.api-sports.io/players/squads*' => Http::response($this->emptySquadResponse(), 200),
+            'v3.football.api-sports.io/players?*' => Http::response(
             $this->onlyInterResponse([
                 $this->playerItem(19241, 'L. Martinez', 'Lautaro', 'Martinez', 'Attacker', height: null, weight: null),
             ]),
@@ -385,7 +403,9 @@ class ApiFootballPlayerSyncServiceTest extends TestCase
 
     public function test_name_built_from_firstname_lastname(): void
     {
-        Http::fake(['v3.football.api-sports.io/players*' => Http::response(
+        Http::fake([
+            'v3.football.api-sports.io/players/squads*' => Http::response($this->emptySquadResponse(), 200),
+            'v3.football.api-sports.io/players?*' => Http::response(
             $this->onlyInterResponse([
                 $this->playerItem(19241, 'L. Martinez', 'Lautaro Javier', 'Martinez', 'Attacker'),
             ]),
@@ -402,7 +422,9 @@ class ApiFootballPlayerSyncServiceTest extends TestCase
         $item['player']['firstname'] = '';
         $item['player']['lastname']  = '';
 
-        Http::fake(['v3.football.api-sports.io/players*' => Http::response(
+        Http::fake([
+            'v3.football.api-sports.io/players/squads*' => Http::response($this->emptySquadResponse(), 200),
+            'v3.football.api-sports.io/players?*' => Http::response(
             $this->onlyInterResponse([$item]),
             200,
         )]);
@@ -429,16 +451,18 @@ class ApiFootballPlayerSyncServiceTest extends TestCase
         );
         $milanEmpty  = $this->oneTeamResponse([]);
 
-        Http::fake(['v3.football.api-sports.io/players*' => Http::sequence()
-            ->push($interPage1, 200)
-            ->push($interPage2, 200)
-            ->push($milanEmpty, 200),
+        Http::fake([
+            'v3.football.api-sports.io/players/squads*' => Http::response($this->emptySquadResponse(), 200),
+            'v3.football.api-sports.io/players?*' => Http::sequence()
+                ->push($interPage1, 200)
+                ->push($interPage2, 200)
+                ->push($milanEmpty, 200),
         ]);
 
         $result = $this->service()->syncSeason(2026, 'serie-a');
 
         $this->assertSame(2, $result['players_created']);
-        $this->assertSame(3, $result['api_calls']); // 2 for Inter + 1 for Milan
+        $this->assertSame(5, $result['api_calls']); // 2+1 for /players, + 1 squads supplement per team (2)
         $this->assertSame(2, Player::count());
     }
 
@@ -450,7 +474,9 @@ class ApiFootballPlayerSyncServiceTest extends TestCase
     {
         // serie-a has 2 teams → 2 API calls total.
         // Inter creates the player; Milan updates (same ID) → created_count = 1.
-        Http::fake(['v3.football.api-sports.io/players*' => Http::response(
+        Http::fake([
+            'v3.football.api-sports.io/players/squads*' => Http::response($this->emptySquadResponse(), 200),
+            'v3.football.api-sports.io/players?*' => Http::response(
             $this->onlyInterResponse([$this->playerItem(19241, 'L. Martinez', 'Lautaro', 'Martinez', 'Attacker')]),
             200,
             ['x-ratelimit-requests-remaining' => '7200'],
@@ -463,7 +489,7 @@ class ApiFootballPlayerSyncServiceTest extends TestCase
         $this->assertSame($this->ds->id, $run->data_source_id);
         $this->assertSame('ok', $run->status);
         $this->assertSame(1, $run->created_count);
-        $this->assertSame(2, $run->api_calls); // Inter + Milan
+        $this->assertSame(4, $run->api_calls); // (Inter + Milan) /players + (Inter + Milan) squads supplement
     }
 
     // -------------------------------------------------------------------------
@@ -494,7 +520,9 @@ class ApiFootballPlayerSyncServiceTest extends TestCase
             'external_id'    => '2026',
         ]);
 
-        Http::fake(['v3.football.api-sports.io/players*' => Http::response(
+        Http::fake([
+            'v3.football.api-sports.io/players/squads*' => Http::response($this->emptySquadResponse(), 200),
+            'v3.football.api-sports.io/players?*' => Http::response(
             $this->onlyInterResponse([$this->playerItem(19241, 'L. Martinez', 'Lautaro', 'Martinez', 'Attacker')]),
             200,
         )]);
@@ -514,7 +542,9 @@ class ApiFootballPlayerSyncServiceTest extends TestCase
         // Remove Milan's external ID
         TeamExternalId::where('team_id', $this->milan->id)->delete();
 
-        Http::fake(['v3.football.api-sports.io/players*' => Http::response(
+        Http::fake([
+            'v3.football.api-sports.io/players/squads*' => Http::response($this->emptySquadResponse(), 200),
+            'v3.football.api-sports.io/players?*' => Http::response(
             $this->onlyInterResponse([$this->playerItem(19241, 'L. Martinez', 'Lautaro', 'Martinez', 'Attacker')]),
             200,
         )]);
@@ -556,7 +586,9 @@ class ApiFootballPlayerSyncServiceTest extends TestCase
 
     public function test_artisan_command_runs_successfully(): void
     {
-        Http::fake(['v3.football.api-sports.io/players*' => Http::response(
+        Http::fake([
+            'v3.football.api-sports.io/players/squads*' => Http::response($this->emptySquadResponse(), 200),
+            'v3.football.api-sports.io/players?*' => Http::response(
             $this->onlyInterResponse([$this->playerItem(19241, 'L. Martinez', 'Lautaro', 'Martinez', 'Attacker')]),
             200,
         )]);
@@ -569,13 +601,141 @@ class ApiFootballPlayerSyncServiceTest extends TestCase
 
     public function test_artisan_command_default_season_is_accepted(): void
     {
-        Http::fake(['v3.football.api-sports.io/players*' => Http::response(
+        Http::fake([
+            'v3.football.api-sports.io/players/squads*' => Http::response($this->emptySquadResponse(), 200),
+            'v3.football.api-sports.io/players?*' => Http::response(
             $this->onlyInterResponse([]),
             200,
         )]);
 
         $this->artisan('robetting:sync-api-football-players')
             ->assertSuccessful();
+    }
+
+    // -------------------------------------------------------------------------
+    // Current-roster supplement (/players/squads) — Availability V1 Step 4H
+    // -------------------------------------------------------------------------
+
+    public function test_squad_supplement_creates_player_missing_from_stats_endpoint(): void
+    {
+        // /players?team&season has nothing for Inter this season (no stats yet),
+        // but /players/squads shows one current-roster player (id=63934).
+        Http::fake([
+            'v3.football.api-sports.io/players/squads*' => Http::response(
+                $this->squadResponse([$this->squadItem(63934, 'A. Furlanetto', 'Goalkeeper')]),
+                200,
+            ),
+            'v3.football.api-sports.io/players?*' => Http::response($this->onlyInterResponse([]), 200),
+        ]);
+
+        $this->service()->syncSeason(2026, 'serie-a');
+
+        $this->assertDatabaseHas('players', ['name' => 'A. Furlanetto']);
+        $this->assertDatabaseHas('player_external_ids', [
+            'external_id'    => '63934',
+            'data_source_id' => $this->ds->id,
+            'external_name'  => 'A. Furlanetto',
+        ]);
+
+        $player = Player::where('name', 'A. Furlanetto')->firstOrFail();
+        $this->assertSame('goalkeeper', $player->position);
+
+        $this->assertDatabaseHas('season_player', [
+            'season_id' => $this->season->id,
+            'team_id'   => $this->inter->id,
+            'player_id' => $player->id,
+            'position'  => 'goalkeeper',
+        ]);
+    }
+
+    public function test_squad_supplement_never_updates_existing_player_master_data(): void
+    {
+        // Player already exists via the stats endpoint with rich master data.
+        Http::fake([
+            'v3.football.api-sports.io/players/squads*' => Http::response(
+                $this->squadResponse([$this->squadItem(19241, 'Totally Different Name', 'Defender')]),
+                200,
+            ),
+            'v3.football.api-sports.io/players?*' => Http::response(
+                $this->onlyInterResponse([
+                    $this->playerItem(19241, 'L. Martinez', 'Lautaro Javier', 'Martinez', 'Attacker'),
+                ]),
+                200,
+            ),
+        ]);
+
+        $this->service()->syncSeason(2026, 'serie-a');
+
+        $this->assertSame(1, Player::count());
+        $player = Player::firstOrFail();
+        // Master data stays exactly what the stats endpoint wrote — the squad
+        // supplement never calls update(), even though its own payload has a
+        // different name/position for the SAME api id.
+        $this->assertSame('Lautaro Javier Martinez', $player->name);
+        $this->assertSame('attacker', $player->position);
+    }
+
+    public function test_squad_supplement_identity_is_by_player_id_never_by_name(): void
+    {
+        // Stats endpoint creates "M. Kean" (id=877). Squad supplement lists a
+        // DIFFERENT id (999) with the SAME display name "M. Kean" — must be
+        // treated as a distinct player, never merged by name.
+        Http::fake([
+            'v3.football.api-sports.io/players/squads*' => Http::response(
+                $this->squadResponse([$this->squadItem(999, 'M. Kean', 'Attacker')]),
+                200,
+            ),
+            'v3.football.api-sports.io/players?*' => Http::response(
+                $this->onlyInterResponse([
+                    $this->playerItem(877, 'M. Kean', 'Moise', 'Kean', 'Attacker'),
+                ]),
+                200,
+            ),
+        ]);
+
+        $this->service()->syncSeason(2026, 'serie-a');
+
+        $this->assertSame(2, Player::count());
+        $this->assertDatabaseHas('player_external_ids', ['external_id' => '877', 'data_source_id' => $this->ds->id]);
+        $this->assertDatabaseHas('player_external_ids', ['external_id' => '999', 'data_source_id' => $this->ds->id]);
+    }
+
+    public function test_squad_supplement_is_idempotent_on_second_run(): void
+    {
+        Http::fake([
+            'v3.football.api-sports.io/players/squads*' => Http::response(
+                $this->squadResponse([$this->squadItem(63934, 'A. Furlanetto', 'Goalkeeper')]),
+                200,
+            ),
+            'v3.football.api-sports.io/players?*' => Http::response($this->onlyInterResponse([]), 200),
+        ]);
+
+        $service = $this->service();
+        $service->syncSeason(2026, 'serie-a');
+        $result2 = $service->syncSeason(2026, 'serie-a');
+
+        $this->assertSame(1, Player::where('name', 'A. Furlanetto')->count());
+        $this->assertSame(1, PlayerExternalId::where('external_id', '63934')->count());
+        $this->assertSame(2, SeasonPlayer::count()); // Inter + Milan, both from the squad supplement
+        $this->assertSame(0, $result2['players_created']);
+    }
+
+    public function test_squad_supplement_api_error_is_logged_as_warning_without_aborting(): void
+    {
+        Http::fake([
+            'v3.football.api-sports.io/players/squads*' => Http::response([], 500),
+            'v3.football.api-sports.io/players?*' => Http::response(
+                $this->onlyInterResponse([
+                    $this->playerItem(19241, 'L. Martinez', 'Lautaro Javier', 'Martinez', 'Attacker'),
+                ]),
+                200,
+            ),
+        ]);
+
+        $result = $this->service()->syncSeason(2026, 'serie-a');
+
+        $this->assertSame(1, $result['players_created']); // stats-endpoint player still created
+        $this->assertNotEmpty($result['warnings']);
     }
 
     // -------------------------------------------------------------------------
@@ -602,6 +762,29 @@ class ApiFootballPlayerSyncServiceTest extends TestCase
     private function onlyInterResponse(array $players, int $page = 1, int $total = 1): array
     {
         return $this->oneTeamResponse($players, $page, $total);
+    }
+
+    /** Shape of /players/squads?team= with an empty current squad. */
+    private function emptySquadResponse(): array
+    {
+        return $this->squadResponse([]);
+    }
+
+    /** Shape of /players/squads?team= with the given current-squad players. */
+    private function squadResponse(array $players): array
+    {
+        return [
+            'errors'   => [],
+            'results'  => 1,
+            'paging'   => ['current' => 1, 'total' => 1],
+            'response' => [['team' => ['id' => 0, 'name' => ''], 'players' => $players]],
+        ];
+    }
+
+    /** One /players/squads current-squad entry. */
+    private function squadItem(int $id, string $name, string $position): array
+    {
+        return ['id' => $id, 'name' => $name, 'age' => 0, 'number' => null, 'position' => $position, 'photo' => ''];
     }
 
     private function playerItem(
@@ -659,7 +842,9 @@ class ApiFootballPlayerSyncServiceTest extends TestCase
     {
         $item = $this->playerItem(99, 'Test Player', 'Test', 'Player', $rawPosition);
 
-        Http::fake(['v3.football.api-sports.io/players*' => Http::response(
+        Http::fake([
+            'v3.football.api-sports.io/players/squads*' => Http::response($this->emptySquadResponse(), 200),
+            'v3.football.api-sports.io/players?*' => Http::response(
             $this->onlyInterResponse([$item]),
             200,
         )]);
