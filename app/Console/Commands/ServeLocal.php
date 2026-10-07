@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\DataSource;
 use App\Models\DataSyncRun;
 use App\Services\DataSources\ApiFootball\ApiFootballFixtureSyncService;
+use App\Services\DataSources\ApiFootball\ApiFootballInjurySyncService;
 use App\Services\DataSources\ApiFootball\ApiFootballMatchEventSyncService;
 use App\Services\DataSources\ApiFootball\ApiFootballMatchLineupSyncService;
 use App\Services\DataSources\ApiFootball\ApiFootballMatchStatisticsSyncService;
@@ -29,8 +30,9 @@ class ServeLocal extends Command
         ApiFootballMatchStatisticsSyncService $statsService,
         ApiFootballMatchEventSyncService      $eventsService,
         ApiFootballMatchLineupSyncService     $lineupsService,
+        ApiFootballInjurySyncService          $injuriesService,
     ): int {
-        $this->runStartup($refreshService, $fixtureService, $statsService, $eventsService, $lineupsService);
+        $this->runStartup($refreshService, $fixtureService, $statsService, $eventsService, $lineupsService, $injuriesService);
 
         if ($this->option('once')) {
             $this->runRefresh($refreshService);
@@ -39,6 +41,7 @@ class ServeLocal extends Command
             $this->runLiveStats($statsService);
             $this->runPendingStats($statsService);
             $this->runPendingEvents($eventsService);
+            $this->runPendingInjuries($injuriesService);
             return self::SUCCESS;
         }
 
@@ -64,6 +67,7 @@ class ServeLocal extends Command
             $this->runLiveStats($statsService);
             $this->runPendingStats($statsService);
             $this->runPendingEvents($eventsService);
+            $this->runPendingInjuries($injuriesService);
         }
 
         return self::SUCCESS;
@@ -75,6 +79,7 @@ class ServeLocal extends Command
         ApiFootballMatchStatisticsSyncService $statsService,
         ApiFootballMatchEventSyncService      $eventsService,
         ApiFootballMatchLineupSyncService     $lineupsService,
+        ApiFootballInjurySyncService          $injuriesService,
     ): void {
         $this->info('[startup] Running catch-up...');
         $catchUp = $refreshService->catchUp();
@@ -91,6 +96,9 @@ class ServeLocal extends Command
 
         $this->info('[startup] Syncing pending events...');
         $this->runPendingEvents($eventsService);
+
+        $this->info('[startup] Syncing pending injuries (72h window)...');
+        $this->runPendingInjuries($injuriesService);
 
         $this->info('[startup] Capturing learning data...');
         $this->runOfficialResultsCapture();
@@ -208,6 +216,27 @@ class ServeLocal extends Command
         $result = $service->syncPending();
         if ($result['candidates'] > 0) {
             $this->line("[pending-lineups] candidates={$result['candidates']}  synced={$result['synced']}  failed={$result['failed']}  empty={$result['empty']}  api_calls={$result['api_calls']}");
+        }
+    }
+
+    /**
+     * Availability V1 Step 5D — prospective player-absence snapshot on a
+     * fixed 72h window (matches the validated manual run in Step 5C). The
+     * service owns its own kickoff-distance throttle (Step 5B); nothing is
+     * duplicated here. Wrapped in try/catch because an uncaught failure here
+     * (e.g. missing api-football DataSource) must never block server startup
+     * or the periodic refresh loop — same fail-safe posture as the P27G
+     * learning-capture calls above.
+     */
+    private function runPendingInjuries(ApiFootballInjurySyncService $service): void
+    {
+        try {
+            $result = $service->syncPending(3);
+            if ($result['candidates'] > 0) {
+                $this->line("[pending-injuries] candidates={$result['candidates']}  synced={$result['synced']}  skipped_throttle={$result['skipped_throttle']}  failed={$result['failed']}  api_calls={$result['api_calls']}");
+            }
+        } catch (\Throwable $e) {
+            $this->error('[pending-injuries] sync failed: ' . $e->getMessage());
         }
     }
 
