@@ -24,6 +24,7 @@ Safety:
     responses), the run ABORTS — no partial snapshot is ever written
   - atomic write: built in a temp file, then os.replace() onto the final path
 """
+import argparse
 import json
 import os
 import sys
@@ -41,6 +42,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / 'structural'))
 from p16c_pilot_squad_parser import parse_squad_page  # noqa: E402
 
 OUT_PATH = ROOT / 'tools/models/structural_strength_current.json'
+PLAYERS_OUT_PATH = ROOT / 'tools/models/structural_players_current.json'
 REQUEST_DELAY_SECONDS = 3
 CONSECUTIVE_FAILURE_ABORT_THRESHOLD = 3
 
@@ -61,6 +63,17 @@ def fetch_squad_page(tm_id: int, timeout: int = 30) -> tuple[int, str]:
 
 
 def main() -> int:
+    arg_parser = argparse.ArgumentParser()
+    arg_parser.add_argument(
+        '--players-only',
+        action='store_true',
+        help=(
+            'Reuse the same fetch/parse pipeline but write ONLY '
+            f'{PLAYERS_OUT_PATH.name} — {OUT_PATH.name} is left untouched.'
+        ),
+    )
+    args = arg_parser.parse_args()
+
     # ─── Load the committed team_id -> club_id mapping (P16A automated +
     # P16E manually-verified additions), consolidated into a single durable
     # file — see tools/scripts/p16_team_club_mapping.tsv for provenance.
@@ -87,6 +100,7 @@ def main() -> int:
 
     generated_at = datetime.now(timezone.utc).isoformat()
     teams_out = {}
+    players_out = {}
     consecutive_failures = 0
     aborted = False
 
@@ -120,6 +134,20 @@ def main() -> int:
                     'team_name': name,
                     'players_count': len(players),
                     'top25_market_value': top25_sum,
+                }
+                # Full squad (not just TOP25) kept separately \u2014 never consumed
+                # by the Structural TOP25 output above, which is unchanged.
+                players_out[tid] = {
+                    'transfermarkt_club_id': int(club_id),
+                    'team_name': name,
+                    'players': [
+                        {
+                            'tm_player_id': p['player_id'],
+                            'name': p['name'],
+                            'market_value': p['market_value'],
+                        }
+                        for p in players
+                    ],
                 }
                 print(f"[{i+1}/{len(to_fetch)}] {name:<28} players={len(players):>3}  top25=\u20ac{top25_sum:,}")
 
@@ -157,18 +185,48 @@ def main() -> int:
         return 1
 
     # ─── Atomic write ─────────────────────────────────────────────────────────
-    snapshot = {
+    structural_snapshot, players_snapshot = build_snapshots(teams_out, players_out, generated_at)
+
+    if args.players_only:
+        print(f"\n--players-only: {OUT_PATH} left untouched (not written)")
+    else:
+        _write_json_atomic(OUT_PATH, structural_snapshot)
+        print(f"\nSnapshot written atomically -> {OUT_PATH}")
+        print(f"generated_at: {generated_at}")
+
+    _write_json_atomic(PLAYERS_OUT_PATH, players_snapshot)
+    print(f"Player-level snapshot written atomically -> {PLAYERS_OUT_PATH}")
+
+    return 0
+
+
+def build_snapshots(teams_out: dict, players_out: dict, generated_at: str) -> tuple[dict, dict]:
+    """
+    Pure, no-I/O builder for the two output dicts. Kept separate from main()
+    so it can be unit-tested with synthetic data (no network, no real files).
+
+    The Structural (TOP25) dict is byte-for-byte what main() has always
+    written — this function only adds the second, independent dict; it
+    performs no sorting/filtering/derivation of its own, so it cannot change
+    the existing Structural output.
+    """
+    structural_snapshot = {
         'generated_at': generated_at,
         'definition': 'top25_market_value',
         'teams': teams_out,
     }
-    tmp_path = OUT_PATH.with_suffix('.json.tmp')
-    tmp_path.write_text(json.dumps(snapshot, indent=2, ensure_ascii=False), encoding='utf-8')
-    os.replace(tmp_path, OUT_PATH)
-    print(f"\nSnapshot written atomically -> {OUT_PATH}")
-    print(f"generated_at: {generated_at}")
+    players_snapshot = {
+        'generated_at': generated_at,
+        'definition': 'squad_players_market_value',
+        'teams': players_out,
+    }
+    return structural_snapshot, players_snapshot
 
-    return 0
+
+def _write_json_atomic(path: Path, data: dict) -> None:
+    tmp_path = path.with_suffix('.json.tmp')
+    tmp_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding='utf-8')
+    os.replace(tmp_path, path)
 
 
 if __name__ == '__main__':
