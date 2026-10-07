@@ -403,8 +403,8 @@ class ApiFootballInjurySyncService
                 ],
                 [
                     'team_id'      => $canonicalTeamId,
-                    'absence_type' => ($item['type'] ?? null) ?: null,
-                    'reason'       => ($item['reason'] ?? null) ?: null,
+                    'absence_type' => ($item['player']['type'] ?? null) ?: null,
+                    'reason'       => ($item['player']['reason'] ?? null) ?: null,
                     'raw_data'     => $item ?: null,
                 ],
             );

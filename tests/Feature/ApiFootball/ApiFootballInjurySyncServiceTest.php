@@ -742,12 +742,10 @@ class ApiFootballInjurySyncServiceTest extends TestCase
         string $reason = 'Knee Injury',
     ): array {
         return [
-            'player'  => ['id' => $playerId, 'name' => $playerName, 'photo' => ''],
+            'player'  => ['id' => $playerId, 'name' => $playerName, 'photo' => '', 'type' => $type, 'reason' => $reason],
             'team'    => ['id' => $teamApiId, 'name' => 'Team', 'logo' => ''],
             'fixture' => ['id' => (int) self::FUTURE_EXT_ID, 'timezone' => 'UTC', 'date' => '', 'timestamp' => 0],
             'league'  => ['id' => 135, 'name' => 'Serie A', 'country' => 'Italy', 'logo' => '', 'flag' => '', 'season' => 2026],
-            'type'    => $type,
-            'reason'  => $reason,
         ];
     }
 }
