@@ -50,7 +50,7 @@
             <div class="flex-fill">
                 {{ $match->homeTeam->name }} &ndash; {{ $match->awayTeam->name }}
             </div>
-            @if($prediction !== null)
+            @if($match->status === 'scheduled' && $prediction !== null)
             <div class="d-flex gap-2 small text-muted" style="min-width:8rem">
                 <span>1 {{ $pct($prediction['probability_home'] * 100) }}</span>
                 <span>X {{ $pct($prediction['probability_draw'] * 100) }}</span>

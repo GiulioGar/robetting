@@ -28,16 +28,37 @@ use Illuminate\Support\Collection;
 use Illuminate\View\View;
 
 /**
- * Serves both finished and future/scheduled matches on the same page (Fase 1
- * + Fase 2 of the Match Page): the header adapts to whether an FT score
- * exists, while every pre-match analytics block always applies the same
- * as-of-kickoff cutoff regardless of the target match's own status — so
- * reopening a finished match still shows the stats as they stood right
- * before that match's kickoff, not the final season totals.
+ * Serves scheduled, finished, and any other-status match on the same route,
+ * but — Step 1B.2 — NOT with the same computation. `show()` classifies the
+ * match into one of three view modes and only ever runs the heavy pre-match
+ * analytics pipeline (13 calculators + their 2 historical-scan queries) for
+ * 'pre_match'. 'finished' and 'other' get exclusively the real post-match
+ * data (result/statistics/events/lineups) — no pre-match query/calculator is
+ * executed for them, not merely hidden in the view. See $matchViewMode.
  */
 class MatchController extends Controller
 {
     private const H2H_LIMIT = 5;
+
+    /**
+     * Step 1B.2 — three internal view modes, deliberately NOT a general
+     * enum/abstraction (per instructions, kept minimal for this step):
+     *   - 'pre_match': status = scheduled. Unchanged behaviour (Step 1B.1
+     *     baseline) — full pre-match analytics pipeline.
+     *   - 'finished': status = finished. Real post-match content only.
+     *   - 'other': anything else (today: awarded, abandoned; anticipated but
+     *     never yet observed: live/postponed/suspended/cancelled/walkover).
+     *     Safe fallback — same reduced computation as 'finished', no
+     *     per-status special-casing invented here.
+     */
+    private function classifyViewMode(string $status): string
+    {
+        return match ($status) {
+            'scheduled' => 'pre_match',
+            'finished'  => 'finished',
+            default     => 'other',
+        };
+    }
     private const DISPLAY_TIMEZONE = 'Europe/Rome';
 
     /**
@@ -51,15 +72,30 @@ class MatchController extends Controller
     {
         $date = $this->resolveRequestedDate($request->query('date'));
 
+        // Step 1D — half-open interval [start of day, start of NEXT day),
+        // not inclusive endOfDay(): equivalent for any normal datetime value,
+        // but immune to any theoretical microsecond-boundary edge case and
+        // the more conventional pattern for a day-range query. Both bounds
+        // are computed from the same Europe/Rome-anchored $date, converted
+        // to UTC only for the comparison, exactly as before — no change in
+        // which day a match belongs to, forward or backward.
         $dayStartUtc = $date->copy()->utc();
-        $dayEndUtc   = $date->copy()->endOfDay()->utc();
+        $nextDayStartUtc = $date->copy()->addDay()->utc();
 
         $matches = FootballMatch::with(['competition:id,name', 'homeTeam:id,name', 'awayTeam:id,name'])
-            ->whereBetween('kickoff_at', [$dayStartUtc, $dayEndUtc])
+            ->where('kickoff_at', '>=', $dayStartUtc)
+            ->where('kickoff_at', '<', $nextDayStartUtc)
             ->orderBy('kickoff_at')
             ->get();
 
-        $predictions = $this->publicPredictions($matches->pluck('id'));
+        // Step 1D — public_latest is only ever generated for scheduled
+        // fixtures (PublicPredictionRefreshService); skipping the lookup for
+        // every other status avoids a pointless IN(...) over finished/other
+        // match ids on a day with a lot of past matches, and keeps the blade
+        // from ever needing to special-case a stale row left over from
+        // before a match was played.
+        $scheduledMatchIds = $matches->where('status', 'scheduled')->pluck('id');
+        $predictions = $this->publicPredictions($scheduledMatchIds);
 
         $matchesByCompetition = $matches->groupBy(fn (FootballMatch $m) => $m->competition->name);
 
@@ -127,6 +163,8 @@ class MatchController extends Controller
     {
         $match->load(['competition.country', 'season', 'homeTeam', 'awayTeam']);
 
+        $matchViewMode = $this->classifyViewMode($match->status);
+
         $lineupDsSlug = config('imports.lineups_source_slug', 'api-football');
         $lineupDs     = DataSource::where('slug', $lineupDsSlug)->first();
         $lineups      = $lineupDs
@@ -137,6 +175,49 @@ class MatchController extends Controller
                 ->keyBy('team_id')
             : collect();
 
+        $matchEvents = MatchEvent::where('match_id', $match->id)
+            ->orderBy('minute')
+            ->orderBy('id')
+            ->get();
+
+        $data = [
+            'match'         => $match,
+            'matchViewMode' => $matchViewMode,
+            'matchEvents'   => $matchEvents,
+            'lineups'       => $lineups,
+        ];
+
+        if ($matchViewMode === 'pre_match') {
+            // Real match-level statistics are still shown for a pre-match
+            // fixture if it somehow already has any (defensive — normally
+            // empty before kickoff), so this stays outside the mode branch
+            // in spirit but is computed together with the rest below since
+            // it needs $homePrevious/$awayPrevious either way.
+            $data = array_merge($data, $this->buildPreMatchData($match, $publicPredictionService));
+        } else {
+            // 'finished' / 'other' — Step 1B.2: NOT merely hidden in the
+            // view, genuinely never computed. No previousMatches()/
+            // allCompetitionPreviousMatches() scan, none of the 13 pre-match
+            // calculators, no prediction pipeline call.
+            $matchStatistics = PreferredMatchStatisticResolver::forMatchIds(collect([$match->id]));
+            $data['matchStatistic']   = $matchStatistics->get($match->id);
+            $data['publicPrediction'] = null;
+        }
+
+        return view('matches.show', $data);
+    }
+
+    /**
+     * Step 1B.2 — the full pre-match analytics pipeline, unchanged from the
+     * pre-Step-1B.2 behaviour (Step 1B.1 baseline): same queries, same 13
+     * calculators, same public prediction call. Extracted verbatim into its
+     * own method only so show() can skip it entirely for 'finished'/'other'
+     * — no formula, calculator, or cutoff logic was touched.
+     *
+     * @return array<string, mixed>
+     */
+    private function buildPreMatchData(FootballMatch $match, PublicMatchPredictionService $publicPredictionService): array
+    {
         $homePrevious = $this->previousMatches($match, $match->home_team_id);
         $awayPrevious = $this->previousMatches($match, $match->away_team_id);
         $h2hMatches   = $this->headToHead($match);
@@ -148,11 +229,6 @@ class MatchController extends Controller
         );
 
         $matchStatistic = $matchStatistics->get($match->id);
-
-        $matchEvents = MatchEvent::where('match_id', $match->id)
-            ->orderBy('minute')
-            ->orderBy('id')
-            ->get();
 
         $homeHomeOnly = $homePrevious->where('home_team_id', $match->home_team_id)->values();
         $awayAwayOnly = $awayPrevious->where('away_team_id', $match->away_team_id)->values();
@@ -299,11 +375,8 @@ class MatchController extends Controller
         // P17B — public pre-match 1X2 (Candidate V2, FULL59 technical fallback).
         $publicPrediction = $publicPredictionService->predict($match);
 
-        return view('matches.show', [
-            'match'               => $match,
+        return [
             'matchStatistic'      => $matchStatistic,
-            'matchEvents'         => $matchEvents,
-            'lineups'             => $lineups,
             'homeSeasonAnalytics' => $homeSeasonAnalytics,
             'homeLast5Analytics'  => $homeLast5Analytics,
             'homeLast10Analytics' => $homeLast10Analytics,
@@ -336,7 +409,7 @@ class MatchController extends Controller
             'homeTimeDecay'               => $homeTimeDecay,
             'awayTimeDecay'               => $awayTimeDecay,
             'publicPrediction'            => $publicPrediction,
-        ]);
+        ];
     }
 
     /**

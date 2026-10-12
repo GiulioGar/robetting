@@ -163,13 +163,16 @@ class MatchPageEloTest extends TestCase
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // 6. Target match excluded (anti-leakage)
-    //    A finished target match must NOT affect the pre-match Elo shown.
+    // 6. Step 1B.2 superseded this test's original premise (reopening a
+    //    finished match used to still compute+show an anti-leakage-safe Elo;
+    //    now Elo is never computed at all for 'finished'). Re-purposed to
+    //    assert the new behaviour directly at the view-data level (stronger
+    //    than the HTML-text check in test_section_hidden_on_finished_match):
+    //    'eloData' must not even exist in the view payload.
     // ─────────────────────────────────────────────────────────────────────────
 
-    public function test_target_match_result_excluded(): void
+    public function test_elo_data_not_computed_for_finished_match(): void
     {
-        // Give the target match a finished result.
         $this->match->update([
             'status'        => 'finished',
             'home_score_ft' => 5,
@@ -178,11 +181,7 @@ class MatchPageEloTest extends TestCase
 
         $response = $this->get(route('matches.show', $this->match));
         $response->assertOk();
-
-        $elo = $response->viewData('eloData');
-        // No prior matches → both teams still at INITIAL_ELO.
-        $this->assertSame(TeamEloCalculator::INITIAL_ELO, $elo['home_elo']);
-        $this->assertSame(TeamEloCalculator::INITIAL_ELO, $elo['away_elo']);
+        $response->assertViewMissing('eloData');
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -266,7 +265,10 @@ class MatchPageEloTest extends TestCase
     // 11. Section visible on finished match
     // ─────────────────────────────────────────────────────────────────────────
 
-    public function test_section_visible_on_finished_match(): void
+    // Step 1B.2 — pre-match analytics (including this section) are no longer
+    // rendered at all for finished matches: the controller doesn't even
+    // compute them (see MatchControllerStatusViewModeTest).
+    public function test_section_hidden_on_finished_match(): void
     {
         $this->match->update([
             'status'        => 'finished',
@@ -276,8 +278,7 @@ class MatchPageEloTest extends TestCase
 
         $response = $this->get(route('matches.show', $this->match));
         $response->assertOk();
-        $response->assertSee('Forza dinamica Elo');
-        $response->assertSee('Rating Elo');
+        $response->assertDontSee('Forza dinamica Elo');
     }
 
     // ─────────────────────────────────────────────────────────────────────────

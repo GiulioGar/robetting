@@ -312,7 +312,10 @@ class MatchPageStarterContinuityTest extends TestCase
     // 12. Section visible on finished match
     // ─────────────────────────────────────────────────────────────────────────
 
-    public function test_section_visible_on_finished_match(): void
+    // Step 1B.2 — pre-match analytics (including this section) are no longer
+    // rendered at all for finished matches: the controller doesn't even
+    // compute them (see MatchControllerStatusViewModeTest).
+    public function test_section_hidden_on_finished_match(): void
     {
         $this->match->update([
             'status'        => 'finished',
@@ -323,7 +326,7 @@ class MatchPageStarterContinuityTest extends TestCase
         $response = $this->get(route('matches.show', $this->match));
 
         $response->assertOk();
-        $response->assertSee('Continuità titolari');
+        $response->assertDontSee('Continuità titolari');
     }
 
     // ─────────────────────────────────────────────────────────────────────────

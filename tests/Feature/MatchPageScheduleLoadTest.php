@@ -290,10 +290,10 @@ class MatchPageScheduleLoadTest extends TestCase
     }
 
     // -------------------------------------------------------------------------
-    // 9. Section visible for finished matches too (always-visible validation block)
+    // 9. Step 1B.2 — section hidden for finished matches (no longer always-visible)
     // -------------------------------------------------------------------------
 
-    public function test_section_visible_for_finished_match(): void
+    public function test_section_hidden_for_finished_match(): void
     {
         $finishedMatch = FootballMatch::create([
             'competition_id' => $this->comp->id,
@@ -309,6 +309,6 @@ class MatchPageScheduleLoadTest extends TestCase
         $response = $this->get(route('matches.show', $finishedMatch));
 
         $response->assertOk();
-        $response->assertSee('Carico recente');
+        $response->assertDontSee('Carico recente');
     }
 }

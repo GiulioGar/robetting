@@ -425,10 +425,10 @@ class MatchPageRecentPerformanceTest extends TestCase
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // [19] section visible on finished match (not gated by status)
+    // [19] Step 1B.2 — section hidden on finished match (no longer status-agnostic)
     // ─────────────────────────────────────────────────────────────────────────
 
-    public function test_section_visible_on_finished_match(): void
+    public function test_section_hidden_on_finished_match(): void
     {
         $finishedMatch = FootballMatch::create([
             'competition_id' => $this->comp->id,
@@ -443,7 +443,7 @@ class MatchPageRecentPerformanceTest extends TestCase
 
         $response = $this->get(route('matches.show', $finishedMatch));
         $response->assertOk();
-        $response->assertSee('Prestazione recente');
+        $response->assertDontSee('Prestazione recente');
     }
 
     // ─────────────────────────────────────────────────────────────────────────

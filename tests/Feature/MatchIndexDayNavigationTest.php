@@ -14,8 +14,11 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * Struttura portale, Step 1A: /matches day-by-day navigation.
- * DB-only, no API calls, no new distinction finished/open (out of scope).
+ * Struttura portale, Step 1A/1D: /matches day-by-day navigation.
+ * DB-only, no API calls. Step 1D adds: historical dates (past matches)
+ * must render correctly, and a 'finished' row must never show prediction
+ * percentages (real FT score instead), even if a stale public_latest row
+ * happens to still exist for it.
  */
 class MatchIndexDayNavigationTest extends TestCase
 {
@@ -130,6 +133,60 @@ class MatchIndexDayNavigationTest extends TestCase
         $response->assertSee('Terminata');
         $response->assertSee('2 - 1');
         $response->assertSee(route('matches.show', $match));
+    }
+
+    // Step 1D — 1. historical date with finished matches must render them,
+    // same as any future date. Uses a date strictly before "now" (not a
+    // fixed literal), so this stays a real regression guard regardless of
+    // when the suite runs.
+    public function test_historical_date_with_finished_matches_is_visible(): void
+    {
+        $pastDate = Carbon::now('Europe/Rome')->subYear()->format('Y-m-d');
+        $pastMatch = $this->match($pastDate . ' 18:00:00', 'finished', 3, 0);
+
+        $response = $this->get(route('home', ['date' => $pastDate]));
+
+        $response->assertOk();
+        $response->assertSee('Napoli');
+        $response->assertSee('3 - 0');
+        $response->assertSee(route('matches.show', $pastMatch));
+    }
+
+    // Step 1D — 2. "Giorno precedente" from a past date keeps moving further
+    // back and still finds matches (not just forward from today).
+    public function test_previous_day_navigation_works_from_a_past_date(): void
+    {
+        $pastDate = Carbon::now('Europe/Rome')->subYear()->format('Y-m-d');
+        $dayBefore = Carbon::parse($pastDate)->subDay();
+        $earlierMatch = $this->match($dayBefore->format('Y-m-d') . ' 18:00:00', 'finished', 1, 1);
+
+        $response = $this->get(route('home', ['date' => $pastDate]));
+        $response->assertOk();
+        $response->assertSee(route('home', ['date' => $dayBefore->format('Y-m-d')]), false);
+
+        $prevResponse = $this->get(route('home', ['date' => $dayBefore->format('Y-m-d')]));
+        $prevResponse->assertOk();
+        $prevResponse->assertSee(route('matches.show', $earlierMatch));
+        $prevResponse->assertSee('1 - 1');
+    }
+
+    // Step 1D — 4. finished: percentuali prediction non mostrate anche se
+    // esiste una public_latest (riga "stale" lasciata da prima che il match
+    // venisse giocato — scenario reale, non ipotetico).
+    public function test_finished_match_never_shows_prediction_even_with_stale_public_latest_row(): void
+    {
+        $match = $this->match('2026-11-21 18:00:00', 'finished', 2, 1);
+        $this->predictionRow($match, [
+            'probability_home' => 0.70,
+            'probability_draw' => 0.20,
+            'probability_away' => 0.10,
+        ]);
+
+        $response = $this->get(route('home', ['date' => '2026-11-21']));
+
+        $response->assertOk();
+        $response->assertSee('2 - 1');
+        $response->assertDontSee('1 70%');
     }
 
     public function test_empty_day_shows_no_matches_message(): void

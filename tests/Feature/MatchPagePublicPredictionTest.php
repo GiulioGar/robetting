@@ -152,7 +152,12 @@ class MatchPagePublicPredictionTest extends TestCase
     {
         $start = strpos($html, 'data-testid="public-prediction"');
         $this->assertNotFalse($start, 'Public prediction block not rendered');
-        $end = strpos($html, 'Statistiche match', $start);
+        // Step 1C.1 — "Statistiche match" no longer follows the prediction
+        // block on a pre-match page (hidden for 'pre_match'); the next
+        // section is now "Confronto pre-match" (all these tests target a
+        // scheduled/pre-match fixture).
+        $end = strpos($html, 'Confronto pre-match', $start);
+        $this->assertNotFalse($end, 'Expected following section not found');
 
         return substr($html, $start, $end - $start);
     }
@@ -292,7 +297,10 @@ class MatchPagePublicPredictionTest extends TestCase
         $response->assertOk();
         $this->assertNull($response->viewData('publicPrediction'));
         $response->assertDontSee('Pronostico Robetting');
-        $response->assertSee('Statistiche match');
+        // Step 1C.1 — "Statistiche match" is no longer shown for a pre-match
+        // fixture; "Confronto pre-match" is the next section instead, proof
+        // the rest of the page still renders fine.
+        $response->assertSee('Confronto pre-match');
     }
 
     public function test_H_public_block_hides_technical_details(): void
