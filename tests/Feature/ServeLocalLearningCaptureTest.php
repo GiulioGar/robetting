@@ -10,6 +10,7 @@ use App\Services\DataSources\ApiFootball\ApiFootballMatchStatisticsSyncService;
 use App\Services\DataSources\ApiFootball\ApiFootballResultRefreshService;
 use App\Services\Prediction\OfficialPredictionCaptureService;
 use App\Services\Prediction\OfficialPredictionResultCaptureService;
+use App\Services\Prediction\PublicPredictionRefreshService;
 use Database\Seeders\ApiFootballDataSourceSeeder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -45,6 +46,7 @@ class ServeLocalLearningCaptureTest extends TestCase
     {
         $this->seedFreshCalendar();
         $this->mockQuietSyncServices();
+        $this->mockQuietPublicPredictionsRefresh();
 
         $this->mock(OfficialPredictionResultCaptureService::class, function ($mock) {
             $mock->shouldReceive('matchIdsWithPredictions')->once()->andReturn([]);
@@ -81,6 +83,7 @@ class ServeLocalLearningCaptureTest extends TestCase
     {
         $this->seedFreshCalendar();
         $this->mockQuietSyncServices();
+        $this->mockQuietPublicPredictionsRefresh();
 
         $this->mock(OfficialPredictionResultCaptureService::class, function ($mock) {
             $mock->shouldReceive('matchIdsWithPredictions')->once()->andReturn([123]);
@@ -104,6 +107,7 @@ class ServeLocalLearningCaptureTest extends TestCase
     {
         $this->seedFreshCalendar();
         $this->mockQuietSyncServices();
+        $this->mockQuietPublicPredictionsRefresh();
 
         $this->mock(OfficialPredictionResultCaptureService::class, function ($mock) {
             $mock->shouldReceive('matchIdsWithPredictions')->once()->andThrow(new \RuntimeException('DB exploded'));
@@ -144,6 +148,23 @@ class ServeLocalLearningCaptureTest extends TestCase
             'daily_remaining' => null,
             'details'         => null,
         ]);
+    }
+
+    /**
+     * Step 1A.5 — isolates this Learning Loop test suite from the
+     * PublicPredictionRefreshService startup call added alongside it: without
+     * this, the real service would additionally invoke the (here-mocked)
+     * OfficialPredictionCaptureService::findEligibleMatches(), doubling its
+     * call count and desyncing this file's own `->once()`/`->with(..., 72)`
+     * expectations from a concern this file isn't about.
+     */
+    private function mockQuietPublicPredictionsRefresh(): void
+    {
+        $this->mock(PublicPredictionRefreshService::class, function ($mock) {
+            $mock->shouldReceive('refresh')->andReturn([
+                'eligible' => 0, 'created' => 0, 'updated' => 0, 'skipped_today' => 0, 'unavailable' => 0, 'errors' => 0,
+            ]);
+        });
     }
 
     /** Mocks every pre-existing startup/refresh service to no-op quietly, isolating the P27G additions. */

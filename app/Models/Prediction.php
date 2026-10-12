@@ -7,9 +7,16 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Prediction extends Model
 {
+    /** Immutable/append-only — Learning Loop (evaluation, training dataset, result capture). This is also the column default, so every pre-existing row is implicitly official. */
+    public const PURPOSE_OFFICIAL = 'official';
+
+    /** Portal-facing, refreshed periodically — not yet written by any service (Step 1A.3: schema/isolation only). */
+    public const PURPOSE_PUBLIC_LATEST = 'public_latest';
+
     protected $fillable = [
         'match_id',
         'model_key',
+        'purpose',
         'model_version',
         'feature_set_version',
         'artifact_sha256',

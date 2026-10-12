@@ -42,6 +42,8 @@ class ServeLocal extends Command
             $this->runPendingStats($statsService);
             $this->runPendingEvents($eventsService);
             $this->runPendingInjuries($injuriesService);
+            $this->info('[startup] Refreshing public predictions...');
+            $this->runPublicPredictionsRefresh();
             return self::SUCCESS;
         }
 
@@ -49,6 +51,20 @@ class ServeLocal extends Command
         if (!$this->option('skip-server')) {
             $server = $this->startDevServer();
         }
+
+        // Step 1A.6 — deliberately AFTER the dev server is already up: the
+        // first refresh of a given day can take well over a minute (full
+        // Candidate47 pipeline per eligible match), and running it inside
+        // runStartup() (before the server starts) made the whole site
+        // unreachable for that entire time. The site is reachable the moment
+        // startDevServer() returns; this call only delays the command's own
+        // entry into the periodic sleep loop below, not the site itself.
+        // Still exactly once per process start, never inside the loop — the
+        // per-match/per-day freshness guard already in
+        // PublicPredictionRecorder/PublicPredictionRefreshService is the only
+        // source of truth for whether any work actually happens here.
+        $this->info('[startup] Refreshing public predictions...');
+        $this->runPublicPredictionsRefresh();
 
         $interval = max(60, (int) $this->option('interval'));
         $this->info("Result refresh every {$interval}s. Ctrl+C to stop.");
@@ -135,6 +151,29 @@ class ServeLocal extends Command
             $this->line('[learning] official predictions capture completed');
         } catch (\Throwable $e) {
             $this->error('[learning] official predictions capture failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Step 1A.5/1A.6 — portal-facing PUBLIC_LATEST predictions, kept fresh
+     * automatically once per process start (called from handle(), not
+     * runStartup() — see the Step 1A.6 comment at the call site: the first
+     * refresh of a given day can take well over a minute, so it must never
+     * run before the dev server is already reachable). Still exactly once
+     * per start, never in the periodic refresh loop. The command/service's
+     * own per-match, per-day (Europe/Rome) freshness guard is the sole source
+     * of truth for whether any work actually happens on a given call;
+     * ServeLocal does not duplicate or re-check that freshness itself. Same
+     * fail-safe posture as the official capture calls above: a failure here
+     * must never prevent the dev server from starting.
+     */
+    private function runPublicPredictionsRefresh(): void
+    {
+        try {
+            $this->callSilently('robetting:refresh-public-predictions', ['--days' => 30]);
+            $this->line('[public] public predictions refresh completed');
+        } catch (\Throwable $e) {
+            $this->error('[public] public predictions refresh failed: ' . $e->getMessage());
         }
     }
 

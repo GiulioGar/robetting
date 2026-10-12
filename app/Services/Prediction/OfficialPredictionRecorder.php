@@ -84,7 +84,11 @@ class OfficialPredictionRecorder
     }
 
     /**
-     * Fill in the real outcome for every still-unresolved prediction row of a match.
+     * Fill in the real outcome for every still-unresolved OFFICIAL prediction
+     * row of a match. Scoped to purpose=official — public_latest rows (not
+     * yet written by any service as of Step 1A.3) are never touched here,
+     * they are a separate, non-append-only concept with their own future
+     * update path.
      *
      * Only ever writes result columns (home_goals, away_goals, outcome,
      * match_status_at_result, result_recorded_at) and only on rows where
@@ -99,6 +103,7 @@ class OfficialPredictionRecorder
 
         return Prediction::query()
             ->where('match_id', $matchId)
+            ->where('purpose', Prediction::PURPOSE_OFFICIAL)
             ->whereNull('home_goals')
             ->update([
                 'home_goals'              => $homeGoals,

@@ -32,14 +32,17 @@ use App\Services\DataSources\ApiFootball\ApiFootballFixtureSyncService;
 class OfficialPredictionResultCaptureService
 {
     /**
-     * Distinct match_ids that have at least one official prediction row,
-     * oldest first (stable, deterministic iteration order).
+     * Distinct match_ids that have at least one OFFICIAL prediction row,
+     * oldest first (stable, deterministic iteration order). public_latest
+     * rows (not yet written by any service as of Step 1A.3) are ignored —
+     * this is exclusively the Learning Loop's result-capture step.
      *
      * @return array<int>
      */
     public function matchIdsWithPredictions(): array
     {
         return Prediction::query()
+            ->where('purpose', Prediction::PURPOSE_OFFICIAL)
             ->distinct()
             ->orderBy('match_id')
             ->pluck('match_id')
@@ -57,6 +60,7 @@ class OfficialPredictionResultCaptureService
     {
         try {
             $unresolvedCount = Prediction::where('match_id', $matchId)
+                ->where('purpose', Prediction::PURPOSE_OFFICIAL)
                 ->whereNull('home_goals')
                 ->count();
 

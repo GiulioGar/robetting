@@ -230,6 +230,51 @@ class OfficialPredictionCaptureServiceTest extends TestCase
         $this->assertSame(2, Prediction::count());
     }
 
+    // Step 1A.3b — a public_latest row for the exact same match/model_key/kickoff
+    // must NOT be mistaken for an already-captured official prediction.
+    public function test_public_latest_row_does_not_block_official_capture(): void
+    {
+        $match = $this->createMatch(now()->addHours(10)->toIso8601String());
+        $this->mockPredictionService();
+        $this->writeSnapshots();
+
+        Prediction::create([
+            'match_id'            => $match->id,
+            'model_key'           => OfficialPredictionCaptureService::MODEL_KEY,
+            'purpose'             => Prediction::PURPOSE_PUBLIC_LATEST,
+            'model_version'       => '1.0.0',
+            'feature_set_version' => 'core_v1',
+            'generated_at'        => now()->subMinute(),
+            'kickoff_at'          => $match->kickoff_at,
+            'lambda_home'         => 1.5,
+            'lambda_away'         => 1.1,
+            'probability_home'    => 0.5,
+            'probability_draw'    => 0.3,
+            'probability_away'    => 0.2,
+            'features_json'       => ['a' => 1.0],
+        ]);
+
+        $this->runCommand(24)->assertExitCode(0);
+
+        $this->assertSame(2, Prediction::count()); // the pre-existing public_latest + the new official
+        $this->assertSame(1, Prediction::where('purpose', Prediction::PURPOSE_OFFICIAL)->count());
+    }
+
+    // Control case for the same step: an OFFICIAL row for the exact same
+    // match/model_key/kickoff must keep producing ALREADY_CAPTURED as before.
+    public function test_official_row_still_produces_already_captured(): void
+    {
+        $match = $this->createMatch(now()->addHours(10)->toIso8601String());
+        $this->mockPredictionService();
+        $this->writeSnapshots();
+
+        $this->runCommand(24);
+        $this->assertSame(1, Prediction::count());
+
+        $this->runCommand(24); // same kickoff, same official row already there -> no duplicate
+        $this->assertSame(1, Prediction::count());
+    }
+
     // 8. officialPredictionData unavailable -> nessuna riga
     public function test_model_unavailable_creates_no_row(): void
     {

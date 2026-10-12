@@ -18,8 +18,12 @@ use App\Services\Analytics\TeamOpponentAdjustedPerformanceCalculator;
 use App\Services\Analytics\TeamOpponentQualityCalculator;
 use App\Services\Analytics\TeamStrengthComparisonCalculator;
 use App\Services\Analytics\TeamTimeDecayedPerformanceCalculator;
+use App\Models\Prediction;
 use App\Services\Matches\PreferredMatchStatisticResolver;
 use App\Services\Prediction\PublicMatchPredictionService;
+use App\Services\Prediction\PublicPredictionRefreshService;
+use Carbon\Carbon;
+use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\View\View;
 
@@ -34,6 +38,90 @@ use Illuminate\View\View;
 class MatchController extends Controller
 {
     private const H2H_LIMIT = 5;
+    private const DISPLAY_TIMEZONE = 'Europe/Rome';
+
+    /**
+     * Day-by-day match index (Struttura portale, Step 1A). DB-only, no API
+     * calls. "Day" boundaries are computed in Europe/Rome (same display
+     * timezone used by matches.show) and converted to UTC for the query,
+     * since kickoff_at is stored in UTC. No lower/upper bound on navigation —
+     * ?date= accepts any Y-m-d, invalid/missing falls back to today.
+     */
+    public function index(Request $request): View
+    {
+        $date = $this->resolveRequestedDate($request->query('date'));
+
+        $dayStartUtc = $date->copy()->utc();
+        $dayEndUtc   = $date->copy()->endOfDay()->utc();
+
+        $matches = FootballMatch::with(['competition:id,name', 'homeTeam:id,name', 'awayTeam:id,name'])
+            ->whereBetween('kickoff_at', [$dayStartUtc, $dayEndUtc])
+            ->orderBy('kickoff_at')
+            ->get();
+
+        $predictions = $this->publicPredictions($matches->pluck('id'));
+
+        $matchesByCompetition = $matches->groupBy(fn (FootballMatch $m) => $m->competition->name);
+
+        $today = Carbon::now(self::DISPLAY_TIMEZONE)->startOfDay();
+
+        return view('matches.index', [
+            'date'       => $date,
+            'matchesByCompetition' => $matchesByCompetition,
+            'predictions' => $predictions,
+            'prevDate'   => $date->copy()->subDay()->format('Y-m-d'),
+            'nextDate'   => $date->copy()->addDay()->format('Y-m-d'),
+            'todayDate'  => $today->format('Y-m-d'),
+            'isToday'    => $date->isSameDay($today),
+        ]);
+    }
+
+    private function resolveRequestedDate(?string $dateParam): Carbon
+    {
+        if ($dateParam !== null && preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateParam)) {
+            try {
+                $parsed = Carbon::createFromFormat('!Y-m-d', $dateParam, self::DISPLAY_TIMEZONE);
+                if ($parsed !== false && $parsed->format('Y-m-d') === $dateParam) {
+                    return $parsed->startOfDay();
+                }
+            } catch (\Exception) {
+                // falls through to today below
+            }
+        }
+
+        return Carbon::now(self::DISPLAY_TIMEZONE)->startOfDay();
+    }
+
+    /**
+     * Step 1A.5 — PUBLIC_LATEST 1X2 preview for the day's matches, read ONLY
+     * from already-persisted `predictions` rows (purpose=public_latest,
+     * model_key=candidate47_structural_log) via a single batch query. NO
+     * live pipeline call, NO FULL59 fallback, NO per-match loop: a match with
+     * no persisted row simply gets no entry in the returned map (the view
+     * already renders that as "no percentages shown", same as before).
+     *
+     * The application-level invariant is "at most one current row per
+     * match_id+model_key", but this query stays robust even if that were
+     * ever violated: ordering ascending by generated_at before keyBy() means
+     * the LAST (freshest) row for a given match_id is the one that survives
+     * the dedup, never an older duplicate.
+     *
+     * @param  \Illuminate\Support\Collection<int, int>  $matchIds
+     * @return \Illuminate\Support\Collection<int, Prediction>  keyed by match_id
+     */
+    private function publicPredictions(Collection $matchIds): Collection
+    {
+        if ($matchIds->isEmpty()) {
+            return collect();
+        }
+
+        return Prediction::whereIn('match_id', $matchIds)
+            ->where('purpose', Prediction::PURPOSE_PUBLIC_LATEST)
+            ->where('model_key', PublicPredictionRefreshService::MODEL_KEY)
+            ->orderBy('generated_at')
+            ->get()
+            ->keyBy('match_id');
+    }
 
     public function show(FootballMatch $match, PublicMatchPredictionService $publicPredictionService): View
     {

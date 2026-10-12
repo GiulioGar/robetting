@@ -5,6 +5,7 @@ namespace Tests\Feature\Admin;
 use App\Models\Competition;
 use App\Models\Country;
 use App\Models\FootballMatch;
+use App\Models\Prediction;
 use App\Models\Season;
 use App\Models\Team;
 use App\Services\Prediction\CandidateModelService;
@@ -121,6 +122,57 @@ class PredictionEngineAdminControllerTest extends TestCase
         $response = $this->get(route('admin.prediction-engine.index', ['match_id' => $match->id]));
         $response->assertStatus(200);
         $response->assertSee('GOAL EXPECTANCY');
+    }
+
+    // Step 1A.3b — $lastOfficialPrediction must ignore a more recent public_latest
+    // row for the same match/model_key: it must keep showing the official one.
+    /** @test */
+    public function test_last_official_prediction_ignores_a_more_recent_public_latest_row(): void
+    {
+        $match = $this->createMinimalMatch();
+        $this->mockPredictionService($match->id);
+
+        Prediction::create([
+            'match_id'            => $match->id,
+            'model_key'           => 'candidate47_structural_log',
+            'purpose'             => Prediction::PURPOSE_OFFICIAL,
+            'model_version'       => '1.0.0',
+            'feature_set_version' => 'core_v1',
+            'generated_at'        => now()->subHours(2),
+            'kickoff_at'          => $match->kickoff_at,
+            'lambda_home'         => 1.5,
+            'lambda_away'         => 1.1,
+            'probability_home'    => 0.50,
+            'probability_draw'    => 0.30,
+            'probability_away'    => 0.20,
+            'features_json'       => ['a' => 1.0],
+        ]);
+
+        // Newer, but public_latest — must NOT be picked as $lastOfficialPrediction.
+        Prediction::create([
+            'match_id'            => $match->id,
+            'model_key'           => 'candidate47_structural_log',
+            'purpose'             => Prediction::PURPOSE_PUBLIC_LATEST,
+            'model_version'       => '1.0.0',
+            'feature_set_version' => 'core_v1',
+            'generated_at'        => now()->subMinute(),
+            'kickoff_at'          => $match->kickoff_at,
+            'lambda_home'         => 1.9,
+            'lambda_away'         => 0.9,
+            'probability_home'    => 0.70,
+            'probability_draw'    => 0.15,
+            'probability_away'    => 0.15,
+            'features_json'       => ['a' => 1.0],
+        ]);
+
+        $response = $this->get(route('admin.prediction-engine.index', ['match_id' => $match->id]));
+        $response->assertStatus(200);
+
+        // Official values (50/30/20), not the newer public_latest ones (70/15/15).
+        $response->assertSee('P1 50.0%');
+        $response->assertSee('PX 30.0%');
+        $response->assertSee('P2 20.0%');
+        $response->assertDontSee('P1 70.0%');
     }
 
     /** @test */

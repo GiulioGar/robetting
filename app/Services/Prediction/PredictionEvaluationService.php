@@ -74,6 +74,7 @@ class PredictionEvaluationService
             ? [$modelVersion]
             : Prediction::query()
                 ->where('model_key', $modelKey)
+                ->where('purpose', Prediction::PURPOSE_OFFICIAL)
                 ->distinct()
                 ->orderBy('model_version')
                 ->pluck('model_version')
@@ -92,6 +93,7 @@ class PredictionEvaluationService
         $rows = Prediction::query()
             ->where('model_key', $modelKey)
             ->where('model_version', $modelVersion)
+            ->where('purpose', Prediction::PURPOSE_OFFICIAL)
             ->with('match.competition')
             ->get();
 

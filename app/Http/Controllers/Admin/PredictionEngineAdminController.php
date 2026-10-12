@@ -65,6 +65,7 @@ class PredictionEngineAdminController extends Controller
         if ($matchId) {
             $lastOfficialPrediction = Prediction::where('match_id', $matchId)
                 ->where('model_key', 'candidate47_structural_log')
+                ->where('purpose', Prediction::PURPOSE_OFFICIAL)
                 ->orderByDesc('generated_at')
                 ->first();
         }

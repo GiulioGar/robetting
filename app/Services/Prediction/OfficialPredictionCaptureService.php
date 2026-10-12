@@ -85,6 +85,7 @@ class OfficialPredictionCaptureService
 
         $alreadyCaptured = Prediction::where('match_id', $match->id)
             ->where('model_key', self::MODEL_KEY)
+            ->where('purpose', Prediction::PURPOSE_OFFICIAL)
             ->get(['kickoff_at'])
             ->contains(fn ($p) => $p->kickoff_at->copy()->utc()->format('Y-m-d H:i:s') === $currentKickoff);
 
