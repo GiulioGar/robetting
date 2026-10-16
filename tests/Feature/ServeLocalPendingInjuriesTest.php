@@ -63,7 +63,8 @@ class ServeLocalPendingInjuriesTest extends TestCase
             $mock->shouldReceive('syncLive')->once()->andReturn($this->emptyEventsResult());
         });
         $this->mock(ApiFootballInjurySyncService::class, function ($mock) {
-            $mock->shouldReceive('syncPending')->with(3)->atLeast()->once()->andReturn($this->emptyInjuriesResult());
+            // A5.5: ServeLocal now also passes core_leagues slugs to scope injuries to CORE only.
+            $mock->shouldReceive('syncPending')->with(3, \Mockery::any())->atLeast()->once()->andReturn($this->emptyInjuriesResult());
         });
 
         $this->artisan('robetting:serve', ['--once' => true, '--skip-server' => true])
@@ -95,7 +96,8 @@ class ServeLocalPendingInjuriesTest extends TestCase
         });
         $this->mock(ApiFootballInjurySyncService::class, function ($mock) {
             // once in runStartup(), once in the --once refresh cycle.
-            $mock->shouldReceive('syncPending')->with(3)->twice()->andReturn($this->emptyInjuriesResult());
+            // A5.5: ServeLocal now also passes core_leagues slugs to scope injuries to CORE only.
+            $mock->shouldReceive('syncPending')->with(3, \Mockery::any())->twice()->andReturn($this->emptyInjuriesResult());
         });
 
         $this->artisan('robetting:serve', ['--once' => true, '--skip-server' => true])

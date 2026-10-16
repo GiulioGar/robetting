@@ -41,6 +41,12 @@ class HistoricalPredictionDatasetBuilder
      *
      * @param  Collection<FootballMatch>  $matches
      * @param  string                     $mode  'core_only'|'core_plus_experimental'
+     * @param  string  $recentWindowMode  Step C1 — OPT-IN only, forwarded verbatim to
+     *                                    PreMatchFeatureAggregator::aggregate() so training
+     *                                    and runtime use IDENTICAL semantics for the same
+     *                                    target+mode. Default 'legacy' — identical to pre-C1
+     *                                    behaviour; Candidate47/the current champion is
+     *                                    unaffected unless this is passed explicitly.
      * @return array{
      *   rows: array<int, array>,
      *   coverage_report: array<string, array{non_null: int, null: int, coverage: float, class: string}>,
@@ -51,7 +57,11 @@ class HistoricalPredictionDatasetBuilder
      *
      * @throws InvalidArgumentException on unknown mode or unexpected aggregator failure
      */
-    public function build(Collection $matches, string $mode = 'core_only'): array
+    public function build(
+        Collection $matches,
+        string $mode = 'core_only',
+        string $recentWindowMode = PreMatchFeatureAggregator::RECENT_WINDOW_LEGACY,
+    ): array
     {
         if (! array_key_exists($mode, self::MODE_VERSION_MAP)) {
             throw new InvalidArgumentException(
@@ -80,7 +90,7 @@ class HistoricalPredictionDatasetBuilder
             }
 
             // ── Step 2: feature snapshot — unexpected exceptions propagate ────────
-            $snapshot = PreMatchFeatureAggregator::aggregate($match, $bulkEloContext);
+            $snapshot = PreMatchFeatureAggregator::aggregate($match, $bulkEloContext, $recentWindowMode);
             $flat     = PreMatchFeatureAggregator::flatten($snapshot);
 
             // ── Step 3: warmup — read from snapshot, zero extra queries ──────────

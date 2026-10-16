@@ -16,11 +16,33 @@ return [
 
     // Canonical slug for each core league ID. Used by the league importer to
     // map API-Football's numeric ID to the project's canonical competition slug.
+    // core_leagues = competitions Robetting predicts on. Never mix with
+    // additional_competitions below, even though both feed the same importer.
     'core_leagues' => [
         135 => 'serie-a',
         39  => 'premier-league',
         140 => 'la-liga',
         78  => 'bundesliga',
         61  => 'ligue-1',
+    ],
+
+    // Non-core competitions Robetting still imports — Team History / Elo
+    // Network data only, never prediction-eligible (see CORE_COMPETITION_IDS
+    // in OfficialPredictionCaptureService, which is unaffected by this list).
+    // The 3 UEFA club competitions are imported in FULL (Elo Network, see
+    // SyncAdditionalCompetition). The 6 national cups are imported
+    // SELECTIVELY — fixtures only where a core team is involved (see
+    // SyncSelectiveCompetition, Step B1) — both share this same config
+    // bucket because both are equally "never core_leagues".
+    'additional_competitions' => [
+        2   => 'uefa-champions-league',
+        3   => 'uefa-europa-league',
+        848 => 'uefa-conference-league',
+        137 => 'coppa-italia',
+        45  => 'fa-cup',
+        48  => 'league-cup',
+        143 => 'copa-del-rey',
+        81  => 'dfb-pokal',
+        66  => 'coupe-de-france',
     ],
 ];

@@ -94,10 +94,13 @@ class ApiFootballMatchEventSyncService
             }
         }
 
-        $matchIds = FootballMatch::whereIn('season_id', $seasonIds)
-            ->whereIn('status', ApiFootballFixtureSyncService::DEFINITIVE_STATUSES)
-            ->whereNull('events_fetched_at')
-            ->pluck('id');
+        $matchIds = MatchDataScope::filterByScope(
+            FootballMatch::whereIn('season_id', $seasonIds)
+                ->whereIn('status', ApiFootballFixtureSyncService::DEFINITIVE_STATUSES)
+                ->whereNull('events_fetched_at')
+                ->get(['id', 'competition_id', 'season_id', 'home_team_id', 'away_team_id']),
+            [MatchDataScope::CORE],
+        )->pluck('id');
 
         if ($matchIds->isEmpty()) {
             return ['status' => 'ok', 'candidates' => 0, 'synced' => 0, 'empty' => 0, 'failed' => 0, 'api_calls' => 0, 'daily_remaining' => null];
@@ -168,7 +171,10 @@ class ApiFootballMatchEventSyncService
     {
         $ds = $this->dataSource();
 
-        $liveIds = FootballMatch::where('status', 'live')->pluck('id');
+        $liveIds = MatchDataScope::filterByScope(
+            FootballMatch::where('status', 'live')->get(['id', 'competition_id', 'season_id', 'home_team_id', 'away_team_id']),
+            [MatchDataScope::CORE],
+        )->pluck('id');
 
         if ($liveIds->isEmpty()) {
             return ['status' => 'ok', 'candidates' => 0, 'synced' => 0, 'failed' => 0, 'api_calls' => 0];
@@ -236,16 +242,19 @@ class ApiFootballMatchEventSyncService
         $cutoff       = now()->subMinutes($gracePeriodMinutes);
         $legacyCutoff = now()->subMinutes(90 + $gracePeriodMinutes);
 
-        $definitiveIds = FootballMatch::whereIn('status', ApiFootballFixtureSyncService::DEFINITIVE_STATUSES)
-            ->whereNull('events_fetched_at')
-            ->where(function ($q) use ($cutoff, $legacyCutoff) {
-                $q->where('definitive_at', '<=', $cutoff)
-                  ->orWhere(function ($q2) use ($legacyCutoff) {
-                      $q2->whereNull('definitive_at')
-                         ->where('kickoff_at', '<=', $legacyCutoff);
-                  });
-            })
-            ->pluck('id');
+        $definitiveIds = MatchDataScope::filterByScope(
+            FootballMatch::whereIn('status', ApiFootballFixtureSyncService::DEFINITIVE_STATUSES)
+                ->whereNull('events_fetched_at')
+                ->where(function ($q) use ($cutoff, $legacyCutoff) {
+                    $q->where('definitive_at', '<=', $cutoff)
+                      ->orWhere(function ($q2) use ($legacyCutoff) {
+                          $q2->whereNull('definitive_at')
+                             ->where('kickoff_at', '<=', $legacyCutoff);
+                      });
+                })
+                ->get(['id', 'competition_id', 'season_id', 'home_team_id', 'away_team_id']),
+            [MatchDataScope::CORE],
+        )->pluck('id');
 
         if ($definitiveIds->isEmpty()) {
             return ['status' => 'ok', 'candidates' => 0, 'synced' => 0, 'failed' => 0, 'api_calls' => 0];

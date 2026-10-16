@@ -40,15 +40,18 @@ class ApiFootballMatchLineupSyncService
         $windowEnd   = $now->copy()->addMinutes(75);
         $throttle    = $now->copy()->subMinutes(15);
 
-        $candidateIds = FootballMatch::whereNotIn('status', ApiFootballFixtureSyncService::DEFINITIVE_STATUSES)
-            ->whereNotNull('kickoff_at')
-            ->where('kickoff_at', '<=', $windowEnd)
-            ->where('kickoff_at', '>=', $windowStart)
-            ->where(function ($q) use ($throttle) {
-                $q->whereNull('lineups_last_attempt_at')
-                  ->orWhere('lineups_last_attempt_at', '<=', $throttle);
-            })
-            ->pluck('id');
+        $candidateIds = MatchDataScope::filterByScope(
+            FootballMatch::whereNotIn('status', ApiFootballFixtureSyncService::DEFINITIVE_STATUSES)
+                ->whereNotNull('kickoff_at')
+                ->where('kickoff_at', '<=', $windowEnd)
+                ->where('kickoff_at', '>=', $windowStart)
+                ->where(function ($q) use ($throttle) {
+                    $q->whereNull('lineups_last_attempt_at')
+                      ->orWhere('lineups_last_attempt_at', '<=', $throttle);
+                })
+                ->get(['id', 'competition_id', 'season_id', 'home_team_id', 'away_team_id']),
+            [MatchDataScope::CORE, MatchDataScope::TEAM_HISTORY],
+        )->pluck('id');
 
         if ($candidateIds->isEmpty()) {
             return ['status' => 'ok', 'candidates' => 0, 'synced' => 0, 'failed' => 0, 'empty' => 0, 'api_calls' => 0];
@@ -134,10 +137,13 @@ class ApiFootballMatchLineupSyncService
             }
         }
 
-        $matchIds = FootballMatch::whereIn('season_id', $seasonIds)
-            ->whereIn('status', ApiFootballFixtureSyncService::DEFINITIVE_STATUSES)
-            ->whereNull('lineups_fetched_at')
-            ->pluck('id');
+        $matchIds = MatchDataScope::filterByScope(
+            FootballMatch::whereIn('season_id', $seasonIds)
+                ->whereIn('status', ApiFootballFixtureSyncService::DEFINITIVE_STATUSES)
+                ->whereNull('lineups_fetched_at')
+                ->get(['id', 'competition_id', 'season_id', 'home_team_id', 'away_team_id']),
+            [MatchDataScope::CORE, MatchDataScope::TEAM_HISTORY],
+        )->pluck('id');
 
         if ($matchIds->isEmpty()) {
             return ['status' => 'ok', 'candidates' => 0, 'synced' => 0, 'empty' => 0, 'failed' => 0, 'api_calls' => 0, 'daily_remaining' => null];

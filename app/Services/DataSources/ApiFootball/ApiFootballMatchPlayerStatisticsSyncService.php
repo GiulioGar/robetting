@@ -66,7 +66,10 @@ class ApiFootballMatchPlayerStatisticsSyncService
     {
         $ds = $this->dataSource();
 
-        $liveIds = FootballMatch::where('status', 'live')->pluck('id');
+        $liveIds = MatchDataScope::filterByScope(
+            FootballMatch::where('status', 'live')->get(['id', 'competition_id', 'season_id', 'home_team_id', 'away_team_id']),
+            [MatchDataScope::CORE, MatchDataScope::TEAM_HISTORY],
+        )->pluck('id');
 
         if ($liveIds->isEmpty()) {
             return ['status' => 'ok', 'candidates' => 0, 'synced' => 0, 'failed' => 0, 'api_calls' => 0];
@@ -135,16 +138,19 @@ class ApiFootballMatchPlayerStatisticsSyncService
         $cutoff       = now()->subMinutes($gracePeriodMinutes);
         $legacyCutoff = now()->subMinutes(90 + $gracePeriodMinutes);
 
-        $definitiveIds = FootballMatch::whereIn('status', ApiFootballFixtureSyncService::DEFINITIVE_STATUSES)
-            ->whereNull('player_stats_fetched_at')
-            ->where(function ($q) use ($cutoff, $legacyCutoff) {
-                $q->where('definitive_at', '<=', $cutoff)
-                  ->orWhere(function ($q2) use ($legacyCutoff) {
-                      $q2->whereNull('definitive_at')
-                         ->where('kickoff_at', '<=', $legacyCutoff);
-                  });
-            })
-            ->pluck('id');
+        $definitiveIds = MatchDataScope::filterByScope(
+            FootballMatch::whereIn('status', ApiFootballFixtureSyncService::DEFINITIVE_STATUSES)
+                ->whereNull('player_stats_fetched_at')
+                ->where(function ($q) use ($cutoff, $legacyCutoff) {
+                    $q->where('definitive_at', '<=', $cutoff)
+                      ->orWhere(function ($q2) use ($legacyCutoff) {
+                          $q2->whereNull('definitive_at')
+                             ->where('kickoff_at', '<=', $legacyCutoff);
+                      });
+                })
+                ->get(['id', 'competition_id', 'season_id', 'home_team_id', 'away_team_id']),
+            [MatchDataScope::CORE, MatchDataScope::TEAM_HISTORY],
+        )->pluck('id');
 
         if ($definitiveIds->isEmpty()) {
             return ['status' => 'ok', 'candidates' => 0, 'synced' => 0, 'failed' => 0, 'api_calls' => 0];
@@ -202,12 +208,18 @@ class ApiFootballMatchPlayerStatisticsSyncService
      * api-football external ID but player_stats_fetched_at IS NULL.
      *
      * @param  int|null  $seasonYear  year_start of target season; null = current season(s).
+     * @param  array<int, string>|null  $allowedScopes  MatchDataScope scopes eligible for backfill.
+     *                                                   Defaults to [CORE, TEAM_HISTORY] — the behaviour
+     *                                                   already in place before this parameter existed.
+     *                                                   Pass [MatchDataScope::TEAM_HISTORY] to restrict to
+     *                                                   Team History matches only (see Step B4).
      *
      * @return array{status:string,candidates:int,synced:int,empty:int,failed:int,api_calls:int,daily_remaining:null}
      */
-    public function syncMissingHistorical(?int $seasonYear = null): array
+    public function syncMissingHistorical(?int $seasonYear = null, ?array $allowedScopes = null): array
     {
         $ds = $this->dataSource();
+        $allowedScopes ??= [MatchDataScope::CORE, MatchDataScope::TEAM_HISTORY];
 
         if ($seasonYear !== null) {
             $seasonIds = Season::where('year_start', $seasonYear)->pluck('id');
@@ -221,10 +233,13 @@ class ApiFootballMatchPlayerStatisticsSyncService
             }
         }
 
-        $matchIds = FootballMatch::whereIn('season_id', $seasonIds)
-            ->whereIn('status', ApiFootballFixtureSyncService::DEFINITIVE_STATUSES)
-            ->whereNull('player_stats_fetched_at')
-            ->pluck('id');
+        $matchIds = MatchDataScope::filterByScope(
+            FootballMatch::whereIn('season_id', $seasonIds)
+                ->whereIn('status', ApiFootballFixtureSyncService::DEFINITIVE_STATUSES)
+                ->whereNull('player_stats_fetched_at')
+                ->get(['id', 'competition_id', 'season_id', 'home_team_id', 'away_team_id']),
+            $allowedScopes,
+        )->pluck('id');
 
         if ($matchIds->isEmpty()) {
             return ['status' => 'ok', 'candidates' => 0, 'synced' => 0, 'empty' => 0, 'failed' => 0, 'api_calls' => 0, 'daily_remaining' => null];

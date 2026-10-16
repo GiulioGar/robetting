@@ -208,6 +208,83 @@ class ApiFootballFixtureSyncService
     }
 
     /**
+     * Like syncCompetition(), but persists only the given pre-fetched/pre-
+     * filtered fixture items instead of fetching /fixtures itself — zero
+     * extra API calls. Used by selective imports (e.g. national cups, see
+     * ApiFootballSelectiveFixtureSyncService / Step B1) that already fetched
+     * the raw fixtures to decide which teams to create before persisting.
+     * Reuses processFixtureItem() verbatim — identical normalization and
+     * idempotency to the full sync path.
+     *
+     * @param  array<int, array>  $fixtureItems  Raw API-Football fixture items
+     *                                            (same shape as the /fixtures response array).
+     * @return array{competition_slug:string,league_id:string,status:string,created:int,updated:int,unchanged:int,skipped:int,warnings:list<string>}
+     */
+    public function syncFilteredFixtures(CompetitionExternalId $cei, int $season, array $fixtureItems, string $mode = self::MODE_FULL): array
+    {
+        $ds          = $this->dataSource();
+        $competition = Competition::find($cei->competition_id);
+        $slug        = $competition?->slug ?? "competition-{$cei->competition_id}";
+
+        $base = [
+            'competition_slug' => $slug,
+            'league_id'        => $cei->external_id,
+            'created'          => 0,
+            'updated'          => 0,
+            'unchanged'        => 0,
+            'skipped'          => 0,
+            'warnings'         => [],
+        ];
+
+        $sei = SeasonExternalId::where('data_source_id', $ds->id)
+            ->where('competition_id', $cei->competition_id)
+            ->where('external_id', (string) $season)
+            ->first();
+
+        if (!$sei) {
+            $msg = "no season_external_id for {$slug} season {$season} — skipped";
+            Log::warning("api-football-fixture-sync: {$msg}");
+            return array_merge($base, ['status' => 'skipped', 'message' => $msg]);
+        }
+
+        $seasonId = $sei->season_id;
+
+        $teamMap = TeamExternalId::where('data_source_id', $ds->id)
+            ->pluck('team_id', 'external_id')
+            ->all();
+
+        $existingMatchMap = MatchExternalId::where('data_source_id', $ds->id)
+            ->pluck('match_id', 'external_id')
+            ->all();
+
+        $matchIds    = array_values($existingMatchMap);
+        $matchesById = $matchIds
+            ? FootballMatch::whereIn('id', $matchIds)->get()->keyBy('id')->all()
+            : [];
+
+        foreach ($fixtureItems as $item) {
+            $result = $this->processFixtureItem(
+                $item, $ds, $cei->competition_id, $seasonId,
+                $teamMap, $existingMatchMap, $matchesById, $mode
+            );
+
+            match ($result['outcome']) {
+                'created'   => $base['created']++,
+                'updated'   => $base['updated']++,
+                'unchanged' => $base['unchanged']++,
+                'skipped'   => $base['skipped']++,
+                default     => null,
+            };
+
+            if (isset($result['warning'])) {
+                $base['warnings'][] = $result['warning'];
+            }
+        }
+
+        return array_merge($base, ['status' => 'ok']);
+    }
+
+    /**
      * @return array{outcome:string, warning?:string}
      */
     private function processFixtureItem(

@@ -29,7 +29,7 @@ class BackfillStatisticsCommandTest extends TestCase
         $this->mock(ApiFootballMatchStatisticsSyncService::class, function ($mock) {
             $mock->shouldReceive('syncMissingHistorical')
                 ->once()
-                ->with(null)
+                ->with(null, null)
                 ->andReturn($this->mockResult());
         });
 
@@ -41,7 +41,7 @@ class BackfillStatisticsCommandTest extends TestCase
         $this->mock(ApiFootballMatchStatisticsSyncService::class, function ($mock) {
             $mock->shouldReceive('syncMissingHistorical')
                 ->once()
-                ->with(2025)
+                ->with(2025, null)
                 ->andReturn($this->mockResult(candidates: 5, created: 5));
         });
 
@@ -53,7 +53,7 @@ class BackfillStatisticsCommandTest extends TestCase
         $this->mock(ApiFootballMatchStatisticsSyncService::class, function ($mock) {
             $mock->shouldReceive('syncMissingHistorical')
                 ->once()
-                ->with(null)
+                ->with(null, null)
                 ->andReturn($this->mockResult(candidates: 10, created: 8));
         });
 

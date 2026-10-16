@@ -62,21 +62,25 @@ class ApiFootballInjurySyncService
      * Applies per-fixture throttle based on time-to-kickoff.
      * Stops updating a fixture once kickoff_at <= now().
      *
+     * @param  string|array<int,string>|null  $leagueSlug  Restrict to these competition slug(s)
+     *                                                      (e.g. core_leagues) — single whereIn,
+     *                                                      never one query per slug.
      * @return array{status:string,candidates:int,synced:int,empty:int,skipped_throttle:int,
      *               failed:int,created:int,updated:int,unchanged:int,removed:int,
      *               warnings:int,api_calls:int,daily_remaining:int|null}
      */
-    public function syncPending(int $windowDays = 7, ?string $leagueSlug = null): array
+    public function syncPending(int $windowDays = 7, string|array|null $leagueSlug = null): array
     {
         $ds        = $this->dataSource();
         $started   = now();
         $windowEnd = now()->addDays($windowDays);
+        $slugs     = $leagueSlug === null ? null : (array) $leagueSlug;
 
         $candidateIds = FootballMatch::whereNotIn('status', ApiFootballFixtureSyncService::DEFINITIVE_STATUSES)
             ->whereNotNull('kickoff_at')
             ->where('kickoff_at', '>', now())
             ->where('kickoff_at', '<=', $windowEnd)
-            ->when($leagueSlug, fn ($q) => $q->whereHas('competition', fn ($q2) => $q2->where('slug', $leagueSlug)))
+            ->when($slugs, fn ($q) => $q->whereHas('competition', fn ($q2) => $q2->whereIn('slug', $slugs)))
             ->pluck('id');
 
         if ($candidateIds->isEmpty()) {

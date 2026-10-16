@@ -270,7 +270,11 @@ class ServeLocal extends Command
     private function runPendingInjuries(ApiFootballInjurySyncService $service): void
     {
         try {
-            $result = $service->syncPending(3);
+            // Scoped to core_leagues: Availability has its own pipeline/coverage
+            // and must never auto-extend to additional_competitions (UEFA/coppe)
+            // — see A5.4/A5.5 audit.
+            $coreSlugs = array_values((array) config('api-football.core_leagues', []));
+            $result    = $service->syncPending(3, $coreSlugs);
             if ($result['candidates'] > 0) {
                 $this->line("[pending-injuries] candidates={$result['candidates']}  synced={$result['synced']}  skipped_throttle={$result['skipped_throttle']}  failed={$result['failed']}  api_calls={$result['api_calls']}");
             }

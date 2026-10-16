@@ -5,6 +5,7 @@ namespace App\Services\Analytics;
 use App\Models\DataSource;
 use App\Models\FootballMatch;
 use App\Services\Matches\PreferredMatchStatisticResolver;
+use App\Services\Prediction\TeamHistoryMatchEligibility;
 use Illuminate\Support\Collection;
 use InvalidArgumentException;
 
@@ -62,6 +63,9 @@ class PreMatchFeatureAggregator
 {
     private const H2H_LIMIT = 10;
 
+    public const RECENT_WINDOW_LEGACY       = 'legacy';
+    public const RECENT_WINDOW_TEAM_HISTORY = 'team_history';
+
     /**
      * Compute the full pre-match feature snapshot for $match.
      *
@@ -70,14 +74,34 @@ class PreMatchFeatureAggregator
      *                                               (OPT-1C). Shape: [match_id => {home_elo, away_elo, league_mean_elo}].
      *                                               When provided, skips internal Elo replay and leagueTeamIds query.
      *                                               null = single-match OPT-1B path (default).
-     * @throws InvalidArgumentException when kickoff_at is null.
+     * @param  string  $recentWindowMode  Step C1 — OPT-IN only. Controls the input window
+     *                                    for core_recent_* (E8/TAC) exclusively:
+     *                                      - 'legacy' (default): IDENTICAL to pre-C1 behaviour —
+     *                                        same competition+season, last 10. Champion/Candidate47
+     *                                        inference is unaffected unless this is changed explicitly.
+     *                                      - 'team_history': last 10 chronologically eligible matches
+     *                                        per TeamHistoryMatchEligibility (CORE+TEAM_HISTORY,
+     *                                        cross-competition, cross-season).
+     *                                    Elo (E6), opponent quality (E9), opponent-adjusted (E10),
+     *                                    time-decay (E12) and H2H are NEVER affected by this parameter
+     *                                    — they keep using the legacy windows regardless (see Step C1 §3/§5).
+     * @throws InvalidArgumentException when kickoff_at is null, or $recentWindowMode is unknown.
      * @return array{identity: array, core: array, experimental: array, metadata: array}
      */
-    public static function aggregate(FootballMatch $match, ?array $precomputedEloContext = null): array
-    {
+    public static function aggregate(
+        FootballMatch $match,
+        ?array $precomputedEloContext = null,
+        string $recentWindowMode = self::RECENT_WINDOW_LEGACY,
+    ): array {
         if ($match->kickoff_at === null) {
             throw new InvalidArgumentException(
                 "Cannot aggregate features for match #{$match->id}: kickoff_at is null."
+            );
+        }
+
+        if (!in_array($recentWindowMode, [self::RECENT_WINDOW_LEGACY, self::RECENT_WINDOW_TEAM_HISTORY], true)) {
+            throw new InvalidArgumentException(
+                "Unknown recentWindowMode '{$recentWindowMode}'. Valid: legacy, team_history."
             );
         }
 
@@ -100,10 +124,25 @@ class PreMatchFeatureAggregator
         $homeLast5Home = $homePrev->where('home_team_id', $match->home_team_id)->slice(-5)->values();
         $awayLast5Away = $awayPrev->where('away_team_id', $match->away_team_id)->slice(-5)->values();
 
-        // Match statistics covering both teams' histories + the target match itself.
+        // Step C1 — OPT-IN recent window for E8/TAC ONLY. Elo (E6), E9, E10, E12
+        // and H2H keep using $homeLast10/$awayLast10 (legacy) unconditionally,
+        // regardless of $recentWindowMode — see docblock above.
+        if ($recentWindowMode === self::RECENT_WINDOW_TEAM_HISTORY) {
+            $homeRecentWindow = TeamHistoryMatchEligibility::matchesBefore((int) $match->home_team_id, $kickoff)->slice(-10)->values();
+            $awayRecentWindow = TeamHistoryMatchEligibility::matchesBefore((int) $match->away_team_id, $kickoff)->slice(-10)->values();
+        } else {
+            $homeRecentWindow = $homeLast10;
+            $awayRecentWindow = $awayLast10;
+        }
+
+        // Match statistics covering both teams' histories + the target match itself
+        // + the team_history recent window (when it pulls in matches outside the
+        // legacy competition+season scope — e.g. UEFA/coppa matches).
         $statMatchIds = collect([$match->id])
             ->merge($homePrev->pluck('id'))
             ->merge($awayPrev->pluck('id'))
+            ->merge($homeRecentWindow->pluck('id'))
+            ->merge($awayRecentWindow->pluck('id'))
             ->unique();
         $matchStats = PreferredMatchStatisticResolver::forMatchIds($statMatchIds);
 
@@ -151,12 +190,13 @@ class PreMatchFeatureAggregator
             $sharedEloContext[$match->id] ?? null
         );
 
-        // E8: Recent performance — TAC over the last-10 window.
+        // E8: Recent performance — TAC over the last-10 window (legacy or
+        // team_history per $recentWindowMode — see docblock above).
         $homeTacL10 = TeamAnalyticsCalculator::calculate(
-            $homeLast10, (int) $match->home_team_id, $matchStats
+            $homeRecentWindow, (int) $match->home_team_id, $matchStats
         );
         $awayTacL10 = TeamAnalyticsCalculator::calculate(
-            $awayLast10, (int) $match->away_team_id, $matchStats
+            $awayRecentWindow, (int) $match->away_team_id, $matchStats
         );
 
         // E4: Schedule load — all definitive matches across competitions.

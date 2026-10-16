@@ -20,6 +20,22 @@ class ApiFootballLeagueImporter
     }
 
     /**
+     * Resolve the canonical slug for a league ID against core_leagues first,
+     * then additional_competitions (e.g. UEFA) — never an arbitrary ID.
+     * importCoreLeagues() is unaffected: it only ever reads core_leagues keys.
+     */
+    private function resolveCanonicalSlug(int $leagueId): ?string
+    {
+        $core = (array) config('api-football.core_leagues', []);
+        if (isset($core[$leagueId])) {
+            return $core[$leagueId];
+        }
+
+        $additional = (array) config('api-football.additional_competitions', []);
+        return $additional[$leagueId] ?? null;
+    }
+
+    /**
      * Import one league + season from API-Football and persist idempotently.
      *
      * @throws ApiFootballException  on HTTP failure or API-level error
@@ -78,7 +94,7 @@ class ApiFootballLeagueImporter
             return array_merge($baseReport, ['status' => 'skipped', 'message' => $msg]);
         }
 
-        $slug = ((array) config('api-football.core_leagues', []))[$leagueId] ?? null;
+        $slug = $this->resolveCanonicalSlug($leagueId);
         if ($slug === null) {
             $msg = "league {$leagueId}: no canonical slug configured — skipped";
             Log::warning("api-football-league-importer: {$msg}");
