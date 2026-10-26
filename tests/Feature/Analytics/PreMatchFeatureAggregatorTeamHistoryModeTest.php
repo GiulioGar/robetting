@@ -109,7 +109,7 @@ class PreMatchFeatureAggregatorTeamHistoryModeTest extends TestCase
 
         $target = $this->makeTargetMatch('2026-10-01 20:45:00');
 
-        $snapshot = PreMatchFeatureAggregator::aggregate($target); // default = legacy
+        $snapshot = PreMatchFeatureAggregator::aggregate($target, null, PreMatchFeatureAggregator::RECENT_WINDOW_LEGACY); // explicit legacy (benchmark mode)
         $flat     = PreMatchFeatureAggregator::flatten($snapshot);
 
         $this->assertSame(1, $flat['core_recent_home_matches_considered']);
@@ -149,7 +149,7 @@ class PreMatchFeatureAggregatorTeamHistoryModeTest extends TestCase
         // Target in August 2026 — new season hasn't produced any matches yet.
         $target = $this->makeTargetMatch('2026-08-15 20:45:00');
 
-        $legacySnapshot = PreMatchFeatureAggregator::aggregate($target); // legacy: season-bound
+        $legacySnapshot = PreMatchFeatureAggregator::aggregate($target, null, PreMatchFeatureAggregator::RECENT_WINDOW_LEGACY); // explicit legacy: season-bound
         $legacyFlat      = PreMatchFeatureAggregator::flatten($legacySnapshot);
         $this->assertSame(0, $legacyFlat['core_recent_home_matches_considered'], 'legacy must NOT see the previous season');
 

@@ -182,7 +182,7 @@ class MatchDataScopeTest extends TestCase
     // Sync eligibility — statistics: CORE yes, TEAM_HISTORY yes, ELO_ONLY no
     // -------------------------------------------------------------------------
 
-    public function test_statistics_sync_pending_includes_core_and_team_history_excludes_elo_only(): void
+    public function test_statistics_sync_pending_includes_core_team_history_and_current_season_uefa_elo_only(): void
     {
         $serieASeason = $this->domesticSeason($this->serieA, 2026);
         $core         = Team::create(['name' => 'Napoli', 'type' => 'club', 'is_active' => true]);
@@ -202,13 +202,92 @@ class MatchDataScopeTest extends TestCase
 
         $result = app(ApiFootballMatchStatisticsSyncService::class)->syncPending();
 
-        // Only 2 candidates reach the API: CORE + TEAM_HISTORY. ELO_ONLY excluded BEFORE the call.
-        $this->assertSame(2, $result['candidates']);
-        Http::assertSentCount(2);
+        // CORE + TEAM_HISTORY unchanged; the ELO_ONLY match is a UEFA (CL) match of the
+        // competition's current season, so match_statistics is now admitted for it too.
+        $this->assertSame(3, $result['candidates']);
+        Http::assertSentCount(3);
 
         $this->assertNotNull(MatchStatistic::where('match_id', $coreMatch->id)->first());
         $this->assertNotNull(MatchStatistic::where('match_id', $teamHistoryMatch->id)->first());
-        $this->assertNull(MatchStatistic::where('match_id', $eloOnlyMatch->id)->first());
+        $this->assertNotNull(MatchStatistic::where('match_id', $eloOnlyMatch->id)->first());
+    }
+
+    public function test_statistics_sync_pending_excludes_uefa_elo_only_of_past_season(): void
+    {
+        $this->uefaSeason(2026); // current season exists, the match below is in the previous one
+        $pastSeason = $this->uefaSeason(2025);
+        $a = Team::create(['name' => 'Benfica', 'type' => 'club', 'is_active' => true]);
+        $b = Team::create(['name' => 'PSV',     'type' => 'club', 'is_active' => true]);
+        $past = $this->makeFinishedMatch($this->championsLeague, $pastSeason, $a, $b, 7001);
+
+        Http::fake(['v3.football.api-sports.io/fixtures/statistics*' => Http::response($this->minimalStatsResponse(), 200)]);
+
+        $result = app(ApiFootballMatchStatisticsSyncService::class)->syncPending();
+
+        $this->assertSame(0, $result['candidates']);
+        Http::assertNothingSent();
+        $this->assertNull(MatchStatistic::where('match_id', $past->id)->first());
+    }
+
+    public function test_statistics_sync_pending_excludes_non_uefa_elo_only_competition(): void
+    {
+        config(['api-football.additional_competitions' => [2 => 'uefa-champions-league', 137 => 'coppa-italia']]);
+        $cup = Competition::create([
+            'country_id' => Country::first()->id, 'name' => 'Coppa Italia', 'slug' => 'coppa-italia', 'format' => 'cup', 'is_active' => true,
+        ]);
+        $season = $this->domesticSeason($cup, 2026);
+        $a = Team::create(['name' => 'Foo', 'type' => 'club', 'is_active' => true]);
+        $b = Team::create(['name' => 'Bar', 'type' => 'club', 'is_active' => true]);
+        $match = $this->makeFinishedMatch($cup, $season, $a, $b, 7002);
+        $this->assertSame(MatchDataScope::ELO_ONLY, MatchDataScope::classify($match));
+
+        Http::fake(['v3.football.api-sports.io/fixtures/statistics*' => Http::response($this->minimalStatsResponse(), 200)]);
+
+        $result = app(ApiFootballMatchStatisticsSyncService::class)->syncPending();
+
+        $this->assertSame(0, $result['candidates']);
+        Http::assertNothingSent();
+        $this->assertNull(MatchStatistic::where('match_id', $match->id)->first());
+    }
+
+    public function test_statistics_sync_pending_makes_no_call_when_uefa_row_already_current_schema(): void
+    {
+        $season = $this->uefaSeason(2026);
+        $a = Team::create(['name' => 'Benfica', 'type' => 'club', 'is_active' => true]);
+        $b = Team::create(['name' => 'PSV',     'type' => 'club', 'is_active' => true]);
+        $match = $this->makeFinishedMatch($this->championsLeague, $season, $a, $b, 7003);
+        MatchStatistic::create([
+            'match_id' => $match->id, 'data_source_id' => $this->ds->id, 'fetched_at' => now(),
+            'stats_schema_version' => ApiFootballMatchStatisticsSyncService::CURRENT_STATS_SCHEMA_VERSION,
+            'home_shots' => 5, 'away_shots' => 3,
+        ]);
+
+        Http::fake(['v3.football.api-sports.io/fixtures/statistics*' => Http::response($this->minimalStatsResponse(), 200)]);
+
+        app(ApiFootballMatchStatisticsSyncService::class)->syncPending();
+
+        Http::assertNothingSent();
+    }
+
+    public function test_uefa_current_backfill_scope_touches_only_uefa_current_season(): void
+    {
+        $serieASeason = $this->domesticSeason($this->serieA, 2026);
+        $core    = Team::create(['name' => 'Napoli', 'type' => 'club', 'is_active' => true]);
+        $other   = Team::create(['name' => 'Inter',  'type' => 'club', 'is_active' => true]);
+        $nonCore = Team::create(['name' => 'Benfica', 'type' => 'club', 'is_active' => true]);
+        $psv     = Team::create(['name' => 'PSV',     'type' => 'club', 'is_active' => true]);
+        $this->makeCoreMembership($core, $serieASeason);
+
+        $coreMatch = $this->makeFinishedMatch($this->serieA, $serieASeason, $core, $other, 7101);
+        $uefa      = $this->makeFinishedMatch($this->championsLeague, $this->uefaSeason(2026), $nonCore, $psv, 7102);
+
+        Http::fake(['v3.football.api-sports.io/fixtures/statistics*' => Http::response($this->minimalStatsResponse(), 200)]);
+
+        $result = app(ApiFootballMatchStatisticsSyncService::class)->syncMissingHistorical(2026, null, true);
+
+        $this->assertSame(1, $result['candidates']);
+        $this->assertNull(MatchStatistic::where('match_id', $coreMatch->id)->first());
+        $this->assertNotNull(MatchStatistic::where('match_id', $uefa->id)->first());
     }
 
     // -------------------------------------------------------------------------

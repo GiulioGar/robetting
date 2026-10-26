@@ -10,7 +10,7 @@ class BackfillStatistics extends Command
 {
     protected $signature   = 'robetting:backfill-statistics
                               {--season= : year_start of the target season (e.g. 2025). Defaults to current season.}
-                              {--scope=  : Optional MatchDataScope filter. Omit for the existing default (CORE+TEAM_HISTORY). Only "team-history" is accepted — restricts to Team History matches only (see Step B6).}';
+                              {--scope=  : Optional MatchDataScope filter. Omit for the existing default (CORE+TEAM_HISTORY). "team-history" restricts to Team History matches only (see Step B6); "uefa-current" restricts to UEFA CL/EL/ECL matches of the current season (pair with --season=<year_start>).}';
     protected $description = 'Backfill match statistics for all definitive matches in the current (or specified) season that have no statistics yet.';
 
     public function handle(ApiFootballMatchStatisticsSyncService $service): int
@@ -21,19 +21,26 @@ class BackfillStatistics extends Command
 
         $allowedScopes = null; // service default: [CORE, TEAM_HISTORY]
         $scopeOption   = $this->option('scope');
+        $uefaCurrentOnly = false;
         if ($scopeOption !== null) {
-            if ($scopeOption !== 'team-history') {
-                $this->error("Invalid --scope '{$scopeOption}'. Only 'team-history' is accepted.");
+            if (! in_array($scopeOption, ['team-history', 'uefa-current'], true)) {
+                $this->error("Invalid --scope '{$scopeOption}'. Accepted: 'team-history', 'uefa-current'.");
                 return self::FAILURE;
             }
-            $allowedScopes = [MatchDataScope::TEAM_HISTORY];
+            if ($scopeOption === 'uefa-current') {
+                $uefaCurrentOnly = true;
+            } else {
+                $allowedScopes = [MatchDataScope::TEAM_HISTORY];
+            }
         }
 
         $label = $seasonYear !== null ? "season year_start={$seasonYear}" : 'current season';
-        $label .= $allowedScopes !== null ? ', scope=team-history' : '';
+        $label .= $uefaCurrentOnly ? ', scope=uefa-current' : ($allowedScopes !== null ? ', scope=team-history' : '');
         $this->info("Starting statistics backfill for {$label} …");
 
-        $result = $service->syncMissingHistorical($seasonYear, $allowedScopes);
+        $result = $uefaCurrentOnly
+            ? $service->syncMissingHistorical($seasonYear, null, true)
+            : $service->syncMissingHistorical($seasonYear, $allowedScopes);
 
         $this->table(
             ['Metric', 'Value'],

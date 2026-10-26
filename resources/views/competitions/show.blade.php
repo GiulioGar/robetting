@@ -11,6 +11,7 @@
         @if($competition->country)
         <div class="text-muted small">{{ $competition->country->name }}</div>
         @endif
+        <div class="text-muted small">Stagione {{ $season->name }}</div>
     </div>
     <select class="form-select form-select-sm mt-1" style="width:auto;min-width:100px"
             onchange="location.href=this.value">
@@ -40,6 +41,36 @@
     </li>
 </ul>
 
+{{-- Ultimi risultati / Prossime partite (whole season, any round). Predictions stay on the Match Page. --}}
+<div class="row g-3 mb-4">
+    @foreach([
+        ['title' => 'Ultimi risultati', 'items' => $recentResults,   'empty' => 'Nessun risultato disponibile.', 'finished' => true],
+        ['title' => 'Prossime partite', 'items' => $upcomingMatches, 'empty' => 'Nessuna partita in programma.', 'finished' => false],
+    ] as $block)
+    <div class="col-12 col-lg-6">
+        <h2 class="fs-5 fw-semibold mb-3">{{ $block['title'] }}</h2>
+        <div class="card">
+            <ul class="list-group list-group-flush">
+                @forelse($block['items'] as $m)
+                @php $ko = $m->kickoff_at?->copy()->setTimezone('Europe/Rome'); @endphp
+                <li class="list-group-item d-flex align-items-center gap-2 small">
+                    <span class="text-muted text-nowrap" style="width:90px">{{ $ko?->format('d/m H:i') ?? '–' }}</span>
+                    <span class="flex-fill text-end">{{ $m->homeTeam->name }}</span>
+                    <a href="{{ route('matches.show', $m->id) }}" class="text-center fw-bold text-decoration-none text-nowrap" style="min-width:56px">
+                        @if($block['finished']){{ $m->home_score_ft }} – {{ $m->away_score_ft }}@else vs @endif
+                    </a>
+                    <span class="flex-fill">{{ $m->awayTeam->name }}</span>
+                </li>
+                @empty
+                <li class="list-group-item text-muted small">{{ $block['empty'] }}</li>
+                @endforelse
+            </ul>
+        </div>
+    </div>
+    @endforeach
+</div>
+
+@if($hasMatchdays)
 {{-- Matchday navigation --}}
 <div class="d-flex align-items-center justify-content-between mb-3">
 
@@ -163,7 +194,9 @@
 </div>
 
 
-{{-- Standings (league format only) --}}
+@endif {{-- hasMatchdays --}}
+
+{{-- Standings (league format, or league phase of a cup competition) --}}
 @if($standings !== null)
 
 {{-- Zone row indicators: one border-left color per zone type, generated from config --}}
@@ -177,7 +210,7 @@
 
 <div class="mt-5">
     <div class="d-flex align-items-baseline justify-content-between mb-3">
-        <h2 class="fs-5 fw-semibold mb-0">Classifica</h2>
+        <h2 class="fs-5 fw-semibold mb-0">{{ $standingsTitle }}</h2>
         <a href="{{ route('competitions.seasons.zones.index', ['competition' => $competition->slug, 'season' => $season->year_start]) }}"
            class="small text-muted">Gestisci fasce</a>
     </div>

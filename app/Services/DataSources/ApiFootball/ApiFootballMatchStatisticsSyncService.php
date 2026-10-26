@@ -332,10 +332,14 @@ class ApiFootballMatchStatisticsSyncService
      *                                                   Pass [MatchDataScope::TEAM_HISTORY] to restrict to
      *                                                   Team History matches only (see Step B6).
      */
-    public function syncMissingHistorical(?int $seasonYear = null, ?array $allowedScopes = null): array
+    public function syncMissingHistorical(?int $seasonYear = null, ?array $allowedScopes = null, bool $uefaCurrentSeasonOnly = false): array
     {
         $ds = $this->dataSource();
         $allowedScopes ??= [MatchDataScope::CORE, MatchDataScope::TEAM_HISTORY];
+        if ($uefaCurrentSeasonOnly) {
+            // Manual opt-in only: no CORE/TEAM_HISTORY, just UEFA CL/EL/ECL of the current season.
+            $allowedScopes = [];
+        }
 
         if ($seasonYear !== null) {
             $seasonIds = Season::where('year_start', $seasonYear)->pluck('id');
@@ -349,12 +353,14 @@ class ApiFootballMatchStatisticsSyncService
             }
         }
 
-        $matchIds = MatchDataScope::filterByScope(
-            FootballMatch::whereIn('season_id', $seasonIds)
-                ->whereIn('status', ApiFootballFixtureSyncService::DEFINITIVE_STATUSES)
-                ->get(['id', 'competition_id', 'season_id', 'home_team_id', 'away_team_id']),
-            $allowedScopes,
-        )->pluck('id');
+        $candidateMatches = FootballMatch::whereIn('season_id', $seasonIds)
+            ->whereIn('status', ApiFootballFixtureSyncService::DEFINITIVE_STATUSES)
+            ->get(['id', 'competition_id', 'season_id', 'home_team_id', 'away_team_id']);
+
+        // The default backfill is unchanged (UEFA excluded unless explicitly requested).
+        $matchIds = $uefaCurrentSeasonOnly
+            ? MatchStatisticsSyncPolicy::filter($candidateMatches, [], true)->pluck('id')
+            : MatchDataScope::filterByScope($candidateMatches, $allowedScopes)->pluck('id');
 
         if ($matchIds->isEmpty()) {
             return ['status' => 'ok', 'candidates' => 0, 'created' => 0, 'updated' => 0, 'unchanged' => 0, 'failed' => 0, 'api_calls' => 0, 'daily_remaining' => null];
@@ -459,7 +465,9 @@ class ApiFootballMatchStatisticsSyncService
         // approximate using kickoff_at + 90 min (standard match duration).
         $legacyCutoff = now()->subMinutes(90 + $gracePeriodMinutes);
 
-        $definitiveIds = MatchDataScope::filterByScope(
+        // CORE + TEAM_HISTORY, plus UEFA (CL/EL/ECL) ELO_ONLY of the competition's
+        // current season — statistics only (MatchStatisticsSyncPolicy).
+        $definitiveIds = MatchStatisticsSyncPolicy::filter(
             FootballMatch::whereIn('status', ApiFootballFixtureSyncService::DEFINITIVE_STATUSES)
                 ->where(function ($q) use ($cutoff, $legacyCutoff) {
                     $q->where('definitive_at', '<=', $cutoff)
@@ -469,7 +477,6 @@ class ApiFootballMatchStatisticsSyncService
                       });
                 })
                 ->get(['id', 'competition_id', 'season_id', 'home_team_id', 'away_team_id']),
-            [MatchDataScope::CORE, MatchDataScope::TEAM_HISTORY],
         )->pluck('id');
 
         if ($definitiveIds->isEmpty()) {

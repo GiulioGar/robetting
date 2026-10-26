@@ -22,6 +22,8 @@ class CandidateModelService
     private const CAND44_BP_FILE      = 'prediction_engine_candidate44_bp.json';
     private const CAND48_STRUCTURAL_FILE = 'prediction_engine_candidate48_structural.json';
     private const CAND47_STRUCTURAL_LOG_FILE = 'prediction_engine_candidate47_structural_log.json';
+    /** Production runtime Candidate47 (Team History Recent + Elo extended features); preferred over the legacy file when present. */
+    private const CAND47_RUNTIME_FILE = 'prediction_engine_candidate47_team_history_recent.json';
     private const LATENT_SNAPSHOT_FILE = 'latent_strength_current.json';
     private const STRUCTURAL_SNAPSHOT_FILE = 'structural_strength_current.json';
 
@@ -105,8 +107,12 @@ class CandidateModelService
         ?int $homeTeamId = null,
         ?int $awayTeamId = null,
         ?string $kickoffAt = null,
+        ?array $candidate47Features59 = null,
     ): array {
-        // Extended feature vector: features59 + derived features
+        // Extended feature vector: features59 + derived features.
+        // $features59 carries the legacy semantics (FULL59/C40/C44/NO_E9*); Candidate47
+        // Team History uses $candidate47Features59 (Recent team_history + Elo extended)
+        // when given, otherwise the same vector (callers/tests without routing).
         $extFeatures = $this->addDerivedFeatures($features59);
 
         $full59 = PredictionEngineV1::predict($features59);
@@ -202,7 +208,11 @@ class CandidateModelService
             $logFeatures = self::structuralLogFeatures($structural['structural_home'], $structural['structural_away']);
             if ($logFeatures !== null) {
                 try {
-                    $ext47 = array_merge($extFeatures, $latent, $logFeatures);
+                    $ext47 = array_merge(
+                        $candidate47Features59 !== null ? $this->addDerivedFeatures($candidate47Features59) : $extFeatures,
+                        $latent,
+                        $logFeatures
+                    );
                     $artCand47 = $this->loadCand47Artifact();
                     $cand47Log = $this->inferRobustBP($artCand47, $ext47);
                     $cand47LogAvailable = true;
@@ -316,7 +326,7 @@ class CandidateModelService
             'model_key'                        => 'candidate47_structural_log',
             'model_version'                     => (string) $artifact['model_version'],
             'feature_set_version'               => (string) $artifact['feature_set_version'],
-            'artifact_path'                      => $this->artifactPathFor(self::CAND47_STRUCTURAL_LOG_FILE),
+            'artifact_path'                      => $this->cand47ArtifactOverride ?? $this->artifactPathFor($this->cand47DefaultFilename()),
             'lambda_home'                       => $inference['lambda_home'],
             'lambda_away'                       => $inference['lambda_away'],
             'lambda3'                           => $inference['lambda3'],
@@ -752,7 +762,19 @@ class CandidateModelService
     {
         return $this->cand47ArtifactOverride !== null
             ? $this->loadArtifactFromAbsolutePath($this->cand47ArtifactOverride)
-            : $this->loadArtifact(self::CAND47_STRUCTURAL_LOG_FILE);
+            : $this->loadArtifact($this->cand47DefaultFilename());
+    }
+
+    /**
+     * Runtime Candidate47 artifact: the Team History Recent one when present in
+     * the artifact dir, otherwise the legacy structural_log file (so a directory
+     * without the new file, e.g. test fixtures, still resolves).
+     */
+    private function cand47DefaultFilename(): string
+    {
+        return is_file($this->artifactPathFor(self::CAND47_RUNTIME_FILE))
+            ? self::CAND47_RUNTIME_FILE
+            : self::CAND47_STRUCTURAL_LOG_FILE;
     }
 
     /**

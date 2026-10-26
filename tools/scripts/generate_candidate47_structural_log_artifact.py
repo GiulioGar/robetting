@@ -77,6 +77,9 @@ parser.add_argument('--historical', default=None,
 parser.add_argument('--output-artifact', default=None,
                      help='Override the artifact output path (for tests only — default is the real '
                           'production path, tools/models/prediction_engine_candidate47_structural_log.json).')
+parser.add_argument('--model-version', default='1.0.0',
+                     help='model_version written into the artifact (default 1.0.0, the legacy-Recent artifact). '
+                          'The Team History Recent artifact is versioned 1.1.0.')
 parser.add_argument('--golden-fixture', default=None,
                      help='Override the golden fixture output path (for tests only).')
 args = parser.parse_args()
@@ -129,7 +132,7 @@ print(f"Home model converged: {model_h.n_iter_} iters")
 print(f"Away model converged: {model_a.n_iter_} iters")
 
 artifact = {
-    'model_version': '1.0.0',
+    'model_version': args.model_version,
     'feature_set_version': 'core_v1_candidate47_structural_log',
     'trained_seasons': [2024, 2025],
     'training_matches': len(raw_rows),

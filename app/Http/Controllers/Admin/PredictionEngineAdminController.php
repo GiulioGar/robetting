@@ -91,6 +91,7 @@ class PredictionEngineAdminController extends Controller
                             (int) $match->home_team_id,
                             (int) $match->away_team_id,
                             (string) $match->kickoff_at,
+                            $prediction['features_candidate47'] ?? null,
                         );
                     } catch (Throwable) {
                         // Candidate artifacts not available — comparison stays null.
@@ -152,7 +153,7 @@ class PredictionEngineAdminController extends Controller
             $base = $this->predictionService->predictWithDebug($match);
 
             $official = $this->candidateService->officialPredictionData(
-                $base['features'],
+                $base['features_candidate47'] ?? $base['features'],
                 (int) $match->home_team_id,
                 (int) $match->away_team_id,
                 (string) $match->kickoff_at,

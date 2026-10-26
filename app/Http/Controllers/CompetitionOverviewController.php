@@ -18,6 +18,11 @@ use Illuminate\View\View;
 
 class CompetitionOverviewController extends Controller
 {
+    private const OVERVIEW_LIST_LIMIT = 10;
+
+    /** `matches.round` prefixes identifying a league-phase round (e.g. "League Stage - 3"). */
+    private const LEAGUE_PHASE_ROUND_PREFIXES = ['League Stage', 'League Phase'];
+
     public function index(Competition $competition): RedirectResponse
     {
         $season = $this->resolveCurrentSeason($competition);
@@ -66,20 +71,28 @@ class CompetitionOverviewController extends Controller
             ->get();
 
         $standings   = null;
+        $standingsTitle = 'Classifica';
         $zoneMap     = [];
         $zoneLegend  = [];
         $statistics  = null;
         $marketTrends = null;
+
+        // Non-league competitions (UEFA cups, national cups): a standings table
+        // applies only if the season has a league phase (rounds "League Stage - N" /
+        // "League Phase - N"); otherwise the block is omitted.
+        if ($competition->format !== 'league') {
+            $leaguePhaseMatches = $this->seasonMatchesForStandings($competition, $seasonModel, true);
+            if ($leaguePhaseMatches->isNotEmpty()) {
+                $standings      = LeagueStandingsCalculator::calculate($leaguePhaseMatches);
+                $standingsTitle = 'Classifica · League Phase';
+                $zones          = $this->resolveZones($seasonModel->id);
+                $zoneMap        = $zones['map'];
+                $zoneLegend     = $zones['legend'];
+            }
+        }
+
         if ($competition->format === 'league') {
-            $allSeasonMatches = FootballMatch::with(['homeTeam:id,name', 'awayTeam:id,name'])
-                ->where('competition_id', $competition->id)
-                ->where('season_id', $seasonModel->id)
-                ->select([
-                    'id', 'home_team_id', 'away_team_id', 'status',
-                    'home_score_ft', 'away_score_ft', 'home_score_ht', 'away_score_ht',
-                    'kickoff_at',
-                ])
-                ->get();
+            $allSeasonMatches = $this->seasonMatchesForStandings($competition, $seasonModel, false);
             $standings = LeagueStandingsCalculator::calculate($allSeasonMatches);
 
             // Only finished matches can have gameplay stats worth resolving.
@@ -96,7 +109,32 @@ class CompetitionOverviewController extends Controller
             $zoneLegend = $zones['legend'];
         }
 
+        // Latest results / next fixtures across the whole season (any round), independent
+        // of the matchday navigator. Predictions stay on the Match Page.
+        $recentResults = FootballMatch::with(['homeTeam:id,name', 'awayTeam:id,name'])
+            ->where('competition_id', $competition->id)
+            ->where('season_id', $seasonModel->id)
+            ->where('status', 'finished')
+            ->whereNotNull('home_score_ft')
+            ->whereNotNull('away_score_ft')
+            ->orderByDesc('kickoff_at')
+            ->limit(self::OVERVIEW_LIST_LIMIT)
+            ->get();
+
+        $upcomingMatches = FootballMatch::with(['homeTeam:id,name', 'awayTeam:id,name'])
+            ->where('competition_id', $competition->id)
+            ->where('season_id', $seasonModel->id)
+            ->where('status', 'scheduled')
+            ->where('kickoff_at', '>', Carbon::now('UTC'))
+            ->orderBy('kickoff_at')
+            ->limit(self::OVERVIEW_LIST_LIMIT)
+            ->get();
+
         return view('competitions.show', [
+            'hasMatchdays'    => $mdRange?->min_md !== null,
+            'recentResults'   => $recentResults,
+            'upcomingMatches' => $upcomingMatches,
+            'standingsTitle'  => $standingsTitle,
             'competition'     => $competition,
             'season'          => $seasonModel,
             'allSeasons'      => $allSeasons,
@@ -114,6 +152,32 @@ class CompetitionOverviewController extends Controller
     }
 
     // -------------------------------------------------------------------------
+
+    /**
+     * All matches of the season (or only its league-phase rounds) with the
+     * columns the standings/statistics calculators need.
+     */
+    private function seasonMatchesForStandings(Competition $competition, Season $season, bool $leaguePhaseOnly)
+    {
+        $query = FootballMatch::with(['homeTeam:id,name', 'awayTeam:id,name'])
+            ->where('competition_id', $competition->id)
+            ->where('season_id', $season->id)
+            ->select([
+                'id', 'home_team_id', 'away_team_id', 'status',
+                'home_score_ft', 'away_score_ft', 'home_score_ht', 'away_score_ht',
+                'kickoff_at',
+            ]);
+
+        if ($leaguePhaseOnly) {
+            $query->where(function ($q) {
+                foreach (self::LEAGUE_PHASE_ROUND_PREFIXES as $prefix) {
+                    $q->orWhere('round', 'like', $prefix . '%');
+                }
+            });
+        }
+
+        return $query->get();
+    }
 
     private function resolveCurrentSeason(Competition $competition): ?Season
     {

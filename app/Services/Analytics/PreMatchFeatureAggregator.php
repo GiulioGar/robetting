@@ -86,14 +86,14 @@ class PreMatchFeatureAggregator
      *                                               (OPT-1C). Shape: [match_id => {home_elo, away_elo, league_mean_elo}].
      *                                               When provided, skips internal Elo replay and leagueTeamIds query.
      *                                               null = single-match OPT-1B path (default).
-     * @param  string  $recentWindowMode  Step C1 — OPT-IN only. Controls the input window
+     * @param  string  $recentWindowMode  Controls the input window
      *                                    for core_recent_* (E8/TAC) exclusively:
-     *                                      - 'legacy' (default): IDENTICAL to pre-C1 behaviour —
-     *                                        same competition+season, last 10. Champion/Candidate47
-     *                                        inference is unaffected unless this is changed explicitly.
-     *                                      - 'team_history': last 10 chronologically eligible matches
-     *                                        per TeamHistoryMatchEligibility (CORE+TEAM_HISTORY,
+     *                                      - 'team_history' (default, standard semantics): last 10
+     *                                        chronologically eligible matches per
+     *                                        TeamHistoryMatchEligibility (CORE+TEAM_HISTORY,
      *                                        cross-competition, cross-season).
+     *                                      - 'legacy': EXPLICIT opt-in only (benchmark / historical
+     *                                        backtest) — same competition+season, last 10, as pre-C1.
      *                                    Elo (E6), opponent quality (E9), opponent-adjusted (E10),
      *                                    time-decay (E12) and H2H are NEVER affected by this parameter
      *                                    — they keep using the legacy windows regardless (see Step C1 §3/§5).
@@ -121,7 +121,7 @@ class PreMatchFeatureAggregator
     public static function aggregate(
         FootballMatch $match,
         ?array $precomputedEloContext = null,
-        string $recentWindowMode = self::RECENT_WINDOW_LEGACY,
+        string $recentWindowMode = self::RECENT_WINDOW_TEAM_HISTORY,
         string $eloMode = self::ELO_MODE_LEGACY,
     ): array {
         if ($match->kickoff_at === null) {

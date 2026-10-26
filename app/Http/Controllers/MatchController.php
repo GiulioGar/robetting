@@ -20,6 +20,7 @@ use App\Services\Analytics\TeamStrengthComparisonCalculator;
 use App\Services\Analytics\TeamTimeDecayedPerformanceCalculator;
 use App\Models\Prediction;
 use App\Services\Matches\PreferredMatchStatisticResolver;
+use App\Services\Prediction\TeamHistoryMatchEligibility;
 use App\Services\Prediction\PublicMatchPredictionService;
 use App\Services\Prediction\PublicPredictionRefreshService;
 use Carbon\Carbon;
@@ -232,10 +233,24 @@ class MatchController extends Controller
         $awayPrevious = $this->previousMatches($match, $match->away_team_id);
         $h2hMatches   = $this->headToHead($match);
 
+        // Team History (cross-competition, cross-season, CORE+TEAM_HISTORY, as-of
+        // kickoff): the standard Recent window, same eligibility the prediction
+        // pipeline (PreMatchFeatureAggregator, recentWindowMode=team_history) uses.
+        // Competition-specific blocks (season trend, home/away split, E9/E10/E12,
+        // league context, H2H) keep reading $homePrevious/$awayPrevious.
+        $homeTeamHistory = $match->kickoff_at !== null
+            ? TeamHistoryMatchEligibility::matchesBefore((int) $match->home_team_id, $match->kickoff_at)
+            : collect();
+        $awayTeamHistory = $match->kickoff_at !== null
+            ? TeamHistoryMatchEligibility::matchesBefore((int) $match->away_team_id, $match->kickoff_at)
+            : collect();
+
         $matchStatistics = PreferredMatchStatisticResolver::forMatchIds(
             collect([$match->id])
                 ->merge($homePrevious->pluck('id'))
                 ->merge($awayPrevious->pluck('id'))
+                ->merge($homeTeamHistory->pluck('id'))
+                ->merge($awayTeamHistory->pluck('id'))
         );
 
         $matchStatistic = $matchStatistics->get($match->id);
@@ -252,17 +267,25 @@ class MatchController extends Controller
         $homeLast5Home = $this->lastN($homeHomeOnly, 5);
         $awayLast5Away = $this->lastN($awayAwayOnly, 5);
 
+        // Recent windows (Forma prima del match, Prestazione recente) — Team History.
+        $homeRecent5     = $this->lastN($homeTeamHistory, 5);
+        $homeRecent10    = $this->lastN($homeTeamHistory, 10);
+        $homeRecent5Home = $this->lastN($homeTeamHistory->where('home_team_id', $match->home_team_id)->values(), 5);
+        $awayRecent5     = $this->lastN($awayTeamHistory, 5);
+        $awayRecent10    = $this->lastN($awayTeamHistory, 10);
+        $awayRecent5Away = $this->lastN($awayTeamHistory->where('away_team_id', $match->away_team_id)->values(), 5);
+
         $homeSeasonAnalytics     = TeamAnalyticsCalculator::calculate($homePrevious, $match->home_team_id, $matchStatistics);
-        $homeLast5Analytics      = TeamAnalyticsCalculator::calculate($homeLast5, $match->home_team_id, $matchStatistics);
-        $homeLast10Analytics     = TeamAnalyticsCalculator::calculate($homeLast10, $match->home_team_id, $matchStatistics);
+        $homeLast5Analytics      = TeamAnalyticsCalculator::calculate($homeRecent5, $match->home_team_id, $matchStatistics);
+        $homeLast10Analytics     = TeamAnalyticsCalculator::calculate($homeRecent10, $match->home_team_id, $matchStatistics);
         $homeHomeAnalytics       = TeamAnalyticsCalculator::calculate($homeHomeOnly, $match->home_team_id, $matchStatistics);
-        $homeRecentHomeAnalytics = TeamAnalyticsCalculator::calculate($homeLast5Home, $match->home_team_id, $matchStatistics);
+        $homeRecentHomeAnalytics = TeamAnalyticsCalculator::calculate($homeRecent5Home, $match->home_team_id, $matchStatistics);
 
         $awaySeasonAnalytics     = TeamAnalyticsCalculator::calculate($awayPrevious, $match->away_team_id, $matchStatistics);
-        $awayLast5Analytics      = TeamAnalyticsCalculator::calculate($awayLast5, $match->away_team_id, $matchStatistics);
-        $awayLast10Analytics     = TeamAnalyticsCalculator::calculate($awayLast10, $match->away_team_id, $matchStatistics);
+        $awayLast5Analytics      = TeamAnalyticsCalculator::calculate($awayRecent5, $match->away_team_id, $matchStatistics);
+        $awayLast10Analytics     = TeamAnalyticsCalculator::calculate($awayRecent10, $match->away_team_id, $matchStatistics);
         $awayAwayAnalytics       = TeamAnalyticsCalculator::calculate($awayAwayOnly, $match->away_team_id, $matchStatistics);
-        $awayRecentAwayAnalytics = TeamAnalyticsCalculator::calculate($awayLast5Away, $match->away_team_id, $matchStatistics);
+        $awayRecentAwayAnalytics = TeamAnalyticsCalculator::calculate($awayRecent5Away, $match->away_team_id, $matchStatistics);
 
         $headToHead = HeadToHeadCalculator::calculate($h2hMatches, $match->home_team_id, $match->away_team_id);
 

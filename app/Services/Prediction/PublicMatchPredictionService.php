@@ -20,8 +20,13 @@ use Throwable;
  * Returns null (no public block) for non pre-match fixtures or when not even
  * the FULL59 fallback can be computed. No DB writes.
  *
+ * Runtime semantics (all requests): recentWindowMode=team_history + eloMode=extended,
+ * Candidate47 artifact resolved by CandidateModelService (Team History Recent file
+ * when present). UEFA club competitions additionally use the Champions profile below
+ * (without exposing the diagnostic profile unless ?debug_predict=1).
+ *
  * Step C-DEBUG-EXPERIMENTAL ($experimental=true, driven ONLY by MatchController's
- * ?debug_predict=1): uses recentWindowMode=team_history + eloMode=extended on the
+ * ?debug_predict=1): forces the Champions profile for any match, with recentWindowMode=team_history + eloMode=extended on the
  * SAME injected $predictionService (its PreMatchFeatureAggregator call takes the
  * mode as a parameter — no duplicated aggregation logic), and a freshly
  * constructed, request-local CandidateModelService pointed at the 3 experimental
@@ -35,7 +40,9 @@ class PublicMatchPredictionService
     public const MODEL_CANDIDATE_V2 = 'candidate47_structural_log';
     public const MODEL_FULL59       = 'full59';
 
-    private const EXPERIMENTAL_CAND47_ARTIFACT     = 'prediction_engine_candidate47_team_history_recent.json';
+    private const UEFA_CLUB_SLUGS = ['uefa-champions-league', 'uefa-europa-league', 'uefa-conference-league'];
+
+    private const EXPERIMENTAL_CAND47_ARTIFACT    = 'prediction_engine_candidate47_team_history_recent.json';
     private const EXPERIMENTAL_LATENT_SNAPSHOT     = 'latent_strength_champions_anchored.json';
     private const EXPERIMENTAL_STRUCTURAL_SNAPSHOT = 'structural_strength_champions_extended.json';
 
@@ -65,21 +72,22 @@ class PublicMatchPredictionService
             return null;
         }
 
-        $recentWindowMode = $experimental
-            ? PreMatchFeatureAggregator::RECENT_WINDOW_TEAM_HISTORY
-            : PreMatchFeatureAggregator::RECENT_WINDOW_LEGACY;
-        $eloMode = $experimental
-            ? PreMatchFeatureAggregator::ELO_MODE_EXTENDED
-            : PreMatchFeatureAggregator::ELO_MODE_LEGACY;
+        // Feature routing (MatchPredictionService::predictWithDebug): 'features' keeps
+        // the legacy semantics FULL59 was trained with; 'features_candidate47' is
+        // Recent team_history + Elo extended and feeds ONLY Candidate47 Team History.
+        $recentWindowMode = PreMatchFeatureAggregator::RECENT_WINDOW_TEAM_HISTORY;
+        $eloMode          = PreMatchFeatureAggregator::ELO_MODE_EXTENDED;
 
         try {
-            $base = $this->predictionService->predictWithDebug($match, $recentWindowMode, $eloMode);
+            $base = $this->predictionService->predictWithDebug($match);
         } catch (Throwable) {
             return null;
         }
 
-        if ($experimental) {
-            return $this->predictExperimental($match, $base, $recentWindowMode, $eloMode);
+        // Champions profile (anchored latent + extended structural snapshots):
+        // UEFA club competitions, or any match under ?debug_predict=1.
+        if ($experimental || $this->isUefaClubCompetition($match)) {
+            return $this->predictExperimental($match, $base, $recentWindowMode, $eloMode, $experimental);
         }
 
         $comparison = null;
@@ -89,6 +97,7 @@ class PublicMatchPredictionService
                 (int) $match->home_team_id,
                 (int) $match->away_team_id,
                 (string) $match->kickoff_at,
+                $base['features_candidate47'] ?? null,
             );
         } catch (Throwable) {
             // Candidate models unavailable — fall back to FULL59 below.
@@ -119,15 +128,15 @@ class PublicMatchPredictionService
      * service, so the error surfaced in $fallback_reason always names exactly
      * which experimental file(s) are missing, never a generic/ambiguous one.
      */
-    private function predictExperimental(FootballMatch $match, array $base, string $recentWindowMode, string $eloMode): array
+    private function predictExperimental(FootballMatch $match, array $base, string $recentWindowMode, string $eloMode, bool $exposeProfile = true): array
     {
-        $profile = [
+        $profile = $exposeProfile ? [
             'recent_window_mode'  => $recentWindowMode,
             'elo_mode'            => $eloMode,
             'cand47_artifact'     => self::EXPERIMENTAL_CAND47_ARTIFACT,
             'latent_snapshot'     => self::EXPERIMENTAL_LATENT_SNAPSHOT,
             'structural_snapshot' => self::EXPERIMENTAL_STRUCTURAL_SNAPSHOT,
-        ];
+        ] : null;
 
         $filenames = [
             self::EXPERIMENTAL_CAND47_ARTIFACT,
@@ -160,6 +169,7 @@ class PublicMatchPredictionService
                 (int) $match->home_team_id,
                 (int) $match->away_team_id,
                 (string) $match->kickoff_at,
+                $base['features_candidate47'] ?? null,
             );
         } catch (Throwable) {
         }
@@ -175,6 +185,13 @@ class PublicMatchPredictionService
         );
 
         return $this->format($comparison['full59'] ?? $base, self::MODEL_FULL59, true, $fallbackReason, $profile);
+    }
+
+    private function isUefaClubCompetition(FootballMatch $match): bool
+    {
+        $slug = (string) $match->competition?->slug;
+
+        return in_array($slug, self::UEFA_CLUB_SLUGS, true);
     }
 
     private function isPreMatch(FootballMatch $match): bool

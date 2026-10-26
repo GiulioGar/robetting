@@ -91,10 +91,25 @@ class MatchPredictionService
     ): array {
         $t0  = microtime(true);
         $flat = $this->buildFlatSnapshot($match, $recentWindowMode, $eloMode);
-        $tAgg = (microtime(true) - $t0) * 1000;
 
         $featureNames = PredictionEngineV1::featureNames();
         $engineInput  = $this->extractFeatures($featureNames, $flat);
+
+        // Feature routing: 'features' follows the requested modes (default legacy =
+        // the semantics FULL59 / C40 / C44 / NO_E9* were trained with). Candidate47
+        // Team History was trained on Recent team_history + Elo extended, so it gets
+        // its own vector from the SAME aggregation path with those modes.
+        if ($recentWindowMode === PreMatchFeatureAggregator::RECENT_WINDOW_TEAM_HISTORY
+            && $eloMode === PreMatchFeatureAggregator::ELO_MODE_EXTENDED) {
+            $candidate47Input = $engineInput;
+        } else {
+            $candidate47Input = $this->extractFeatures($featureNames, $this->buildFlatSnapshot(
+                $match,
+                PreMatchFeatureAggregator::RECENT_WINDOW_TEAM_HISTORY,
+                PreMatchFeatureAggregator::ELO_MODE_EXTENDED,
+            ));
+        }
+        $tAgg = (microtime(true) - $t0) * 1000;
         $nullCount    = count(array_filter($engineInput, fn ($v) => $v === null));
 
         $t1         = microtime(true);
@@ -115,6 +130,7 @@ class MatchPredictionService
             'probability_draw'    => $prediction['probability_draw'],
             'probability_away'    => $prediction['probability_away'],
             'features'            => $engineInput,
+            'features_candidate47' => $candidate47Input,
             'timing_agg_ms'       => round($tAgg, 1),
             'timing_inf_ms'       => round($tInf, 3),
             'timing_total_ms'     => round($tAgg + $tInf, 1),
