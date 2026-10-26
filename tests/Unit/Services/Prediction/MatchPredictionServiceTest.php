@@ -3,6 +3,7 @@
 namespace Tests\Unit\Services\Prediction;
 
 use App\Models\FootballMatch;
+use App\Services\Analytics\PreMatchFeatureAggregator;
 use App\Services\Prediction\MatchPredictionService;
 use App\Services\Prediction\PredictionEngineV1;
 use InvalidArgumentException;
@@ -67,7 +68,7 @@ class MatchPredictionServiceTest extends TestCase
         return new class($flat) extends MatchPredictionService {
             public function __construct(private array $flat) {}
 
-            protected function buildFlatSnapshot(FootballMatch $match): array
+            protected function buildFlatSnapshot(FootballMatch $match, string $recentWindowMode = PreMatchFeatureAggregator::RECENT_WINDOW_LEGACY, string $eloMode = PreMatchFeatureAggregator::ELO_MODE_LEGACY): array
             {
                 return $this->flat;
             }
@@ -214,7 +215,7 @@ class MatchPredictionServiceTest extends TestCase
     public function test_extract_returns_exactly_artifact_count_of_features(): void
     {
         $service   = new class extends MatchPredictionService {
-            protected function buildFlatSnapshot(FootballMatch $match): array { return []; }
+            protected function buildFlatSnapshot(FootballMatch $match, string $recentWindowMode = PreMatchFeatureAggregator::RECENT_WINDOW_LEGACY, string $eloMode = PreMatchFeatureAggregator::ELO_MODE_LEGACY): array { return []; }
             public function callExtract(array $names, array $flat): array
             {
                 return $this->extractFeatures($names, $flat);

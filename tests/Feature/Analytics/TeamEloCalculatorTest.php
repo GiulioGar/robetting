@@ -843,4 +843,193 @@ class TeamEloCalculatorTest extends TestCase
             'away_score_ft'  => in_array($status, ['finished', 'awarded', 'walkover']) ? $awayScore : null,
         ]);
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Step C-ELO — $allowedCompetitionIds (legacy=null preserves global replay;
+    // non-null restricts the historical replay to those competition_ids only)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // [U] Explicit null == default == current global (unscoped) replay.
+    public function test_null_allowed_competition_ids_preserves_global_behaviour(): void
+    {
+        $country2 = Country::create(['name' => 'England2', 'football_code' => 'E2']);
+        $comp2    = Competition::create([
+            'country_id' => $country2->id,
+            'name'       => 'Other Competition',
+            'slug'       => 'other-competition',
+            'format'     => 'cup',
+            'is_active'  => true,
+        ]);
+        $season2 = Season::create([
+            'competition_id' => $comp2->id,
+            'name'           => '2026/27',
+            'year_start'     => 2026,
+            'year_end'       => 2027,
+            'is_current'     => true,
+        ]);
+
+        $this->makeMatch(Carbon::parse(self::TARGET)->subDays(14), $this->teamA, $this->teamB, 1, 0);
+        FootballMatch::create([
+            'competition_id' => $comp2->id,
+            'season_id'      => $season2->id,
+            'home_team_id'   => $this->teamA->id,
+            'away_team_id'   => $this->teamB->id,
+            'kickoff_at'     => Carbon::parse(self::TARGET)->subDays(7),
+            'status'         => 'finished',
+            'home_score_ft'  => 2,
+            'away_score_ft'  => 0,
+        ]);
+
+        $default   = TeamEloCalculator::calculateRatingsBefore(Carbon::parse(self::TARGET));
+        $explicitNull = TeamEloCalculator::calculateRatingsBefore(Carbon::parse(self::TARGET), null);
+
+        $this->assertEqualsWithDelta($default[$this->teamA->id], $explicitNull[$this->teamA->id], self::DELTA);
+        $this->assertEqualsWithDelta($default[$this->teamB->id], $explicitNull[$this->teamB->id], self::DELTA);
+    }
+
+    // [V] Network scope excludes a non-network competition from the replay.
+    public function test_allowed_competition_ids_excludes_non_listed_competition(): void
+    {
+        $country2 = Country::create(['name' => 'OtherCupCountry', 'football_code' => 'OC']);
+        $cupComp  = Competition::create([
+            'country_id' => $country2->id,
+            'name'       => 'National Cup',
+            'slug'       => 'some-national-cup',
+            'format'     => 'cup',
+            'is_active'  => true,
+        ]);
+        $cupSeason = Season::create([
+            'competition_id' => $cupComp->id,
+            'name'           => '2026/27',
+            'year_start'     => 2026,
+            'year_end'       => 2027,
+            'is_current'     => true,
+        ]);
+
+        // Domestic (core) win — should count.
+        $this->makeMatch(Carbon::parse(self::TARGET)->subDays(14), $this->teamA, $this->teamB, 1, 0);
+        // Cup win — must be excluded when the allowlist omits $cupComp->id.
+        FootballMatch::create([
+            'competition_id' => $cupComp->id,
+            'season_id'      => $cupSeason->id,
+            'home_team_id'   => $this->teamA->id,
+            'away_team_id'   => $this->teamB->id,
+            'kickoff_at'     => Carbon::parse(self::TARGET)->subDays(7),
+            'status'         => 'finished',
+            'home_score_ft'  => 2,
+            'away_score_ft'  => 0,
+        ]);
+
+        $networkRatings = TeamEloCalculator::calculateRatingsBefore(Carbon::parse(self::TARGET), [$this->comp->id]);
+        $onlyDomesticWinRatings = TeamEloCalculator::calculateRatingsBefore(Carbon::parse(self::TARGET)->subDays(8));
+
+        // The network-scoped result (cup excluded) must equal the "domestic win only" baseline —
+        // i.e. the cup match contributed nothing to the network-scoped rating.
+        $this->assertEqualsWithDelta(
+            $onlyDomesticWinRatings[$this->teamA->id],
+            $networkRatings[$this->teamA->id],
+            self::DELTA
+        );
+
+        // And it must differ from the unscoped (legacy) result, which DOES include the cup win.
+        $unscoped = TeamEloCalculator::calculateRatingsBefore(Carbon::parse(self::TARGET));
+        $this->assertGreaterThan(
+            self::DELTA,
+            abs($unscoped[$this->teamA->id] - $networkRatings[$this->teamA->id]),
+            'network scope must differ from unscoped legacy when a cup match is excluded.'
+        );
+    }
+
+    // [W] No-leakage still holds when a competition filter is applied: a match
+    // at/after the cutoff is excluded regardless of $allowedCompetitionIds.
+    public function test_allowed_competition_ids_still_respects_cutoff(): void
+    {
+        $this->makeMatch(Carbon::parse(self::TARGET)->subDays(7), $this->teamA, $this->teamB, 1, 0);
+        // Future match (after cutoff) in the SAME allowed competition — must never leak in.
+        $this->makeMatch(Carbon::parse(self::TARGET)->addDays(7), $this->teamA, $this->teamB, 5, 0);
+
+        $ratings = TeamEloCalculator::calculateRatingsBefore(Carbon::parse(self::TARGET), [$this->comp->id]);
+
+        $expHome = 1.0 / (1.0 + 10.0 ** (-60.0 / 400.0));
+        $expectedA = TeamEloCalculator::INITIAL_ELO + TeamEloCalculator::K_FACTOR * (1.0 - $expHome);
+
+        $this->assertEqualsWithDelta($expectedA, $ratings[$this->teamA->id], self::DELTA);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Step C-ELO-EXTENDED — PreMatchFeatureAggregator::resolveAllowedEloCompetitionIds()
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // [X] extended includes CORE + all configured UEFA + national cup slugs.
+    public function test_extended_mode_includes_core_and_all_configured_additional_competitions(): void
+    {
+        $uefaComp = Competition::create([
+            'country_id' => $this->comp->country_id,
+            'name'       => 'UEFA Champions League',
+            'slug'       => 'uefa-champions-league',
+            'format'     => 'cup',
+            'is_active'  => true,
+        ]);
+        $cupComp = Competition::create([
+            'country_id' => $this->comp->country_id,
+            'name'       => 'Coppa Italia',
+            'slug'       => 'coppa-italia',
+            'format'     => 'cup',
+            'is_active'  => true,
+        ]);
+
+        config([
+            'api-football.core_leagues'           => [135 => 'serie-a'],
+            'api-football.additional_competitions' => [2 => 'uefa-champions-league', 137 => 'coppa-italia'],
+        ]);
+
+        $ids = \App\Services\Analytics\PreMatchFeatureAggregator::resolveAllowedEloCompetitionIds('extended');
+
+        $this->assertContains($this->comp->id, $ids);
+        $this->assertContains($uefaComp->id, $ids);
+        $this->assertContains($cupComp->id, $ids);
+    }
+
+    // [Y] extended excludes a competition absent from both config lists.
+    public function test_extended_mode_excludes_unconfigured_competition(): void
+    {
+        $foreignComp = Competition::create([
+            'country_id' => $this->comp->country_id,
+            'name'       => 'Some Unconfigured League',
+            'slug'       => 'unconfigured-league',
+            'format'     => 'league',
+            'is_active'  => true,
+        ]);
+
+        config([
+            'api-football.core_leagues'           => [135 => 'serie-a'],
+            'api-football.additional_competitions' => [2 => 'uefa-champions-league', 137 => 'coppa-italia'],
+        ]);
+
+        $ids = \App\Services\Analytics\PreMatchFeatureAggregator::resolveAllowedEloCompetitionIds('extended');
+
+        $this->assertNotContains($foreignComp->id, $ids);
+    }
+
+    // [Z] legacy and network modes remain unchanged by the new 'extended' mode.
+    public function test_legacy_and_network_modes_unchanged_by_extended_addition(): void
+    {
+        $this->assertNull(\App\Services\Analytics\PreMatchFeatureAggregator::resolveAllowedEloCompetitionIds('legacy'));
+
+        config([
+            'api-football.core_leagues'           => [135 => 'serie-a'],
+            'api-football.additional_competitions' => [2 => 'uefa-champions-league', 137 => 'coppa-italia'],
+        ]);
+        $networkIds = \App\Services\Analytics\PreMatchFeatureAggregator::resolveAllowedEloCompetitionIds('network');
+        $this->assertContains($this->comp->id, $networkIds);
+        // Network must NOT include the national cup (coppa-italia) — only CORE + UEFA.
+        $cupComp = Competition::create([
+            'country_id' => $this->comp->country_id,
+            'name'       => 'Coppa Italia',
+            'slug'       => 'coppa-italia',
+            'format'     => 'cup',
+            'is_active'  => true,
+        ]);
+        $this->assertNotContains($cupComp->id, $networkIds);
+    }
 }

@@ -316,4 +316,32 @@ class MatchPagePublicPredictionTest extends TestCase
         }
         $this->assertStringContainsString('Quota equa', $block);
     }
+
+    // ── [I] ?debug_predict=1 opt-in diagnostic (new) ─────────────────────────────
+
+    public function test_I_debug_predict_opt_in_shows_fallback_diagnostics(): void
+    {
+        $match = $this->createMatch();
+        $this->mockBase($match->id);
+        $this->mockCompare(false);
+
+        $response = $this->get(route('matches.show', $match, absolute: false) . '?debug_predict=1');
+
+        $response->assertOk();
+        $block = $this->publicBlock($response->getContent());
+        $this->assertStringContainsString('data-testid="public-prediction-diagnostics"', $block);
+        $this->assertStringContainsString('FULL59', $block);
+    }
+
+    public function test_J_debug_predict_absent_by_default_matches_H_invariant(): void
+    {
+        $match = $this->createMatch();
+        $this->mockBase($match->id);
+        $this->mockCompare(false);
+
+        $response = $this->get(route('matches.show', $match));
+
+        $block = $this->publicBlock($response->getContent());
+        $this->assertStringNotContainsString('data-testid="public-prediction-diagnostics"', $block);
+    }
 }

@@ -84,10 +84,13 @@ class MatchPredictionService
      *   - 'timing_inf_ms'     float  Engine inference time in ms
      *   - 'timing_total_ms'   float  Total wall time in ms
      */
-    public function predictWithDebug(FootballMatch $match): array
-    {
+    public function predictWithDebug(
+        FootballMatch $match,
+        string $recentWindowMode = PreMatchFeatureAggregator::RECENT_WINDOW_LEGACY,
+        string $eloMode = PreMatchFeatureAggregator::ELO_MODE_LEGACY,
+    ): array {
         $t0  = microtime(true);
-        $flat = $this->buildFlatSnapshot($match);
+        $flat = $this->buildFlatSnapshot($match, $recentWindowMode, $eloMode);
         $tAgg = (microtime(true) - $t0) * 1000;
 
         $featureNames = PredictionEngineV1::featureNames();
@@ -124,9 +127,12 @@ class MatchPredictionService
      *
      * @return array<string, mixed>
      */
-    protected function buildFlatSnapshot(FootballMatch $match): array
-    {
-        $snapshot = PreMatchFeatureAggregator::aggregate($match);
+    protected function buildFlatSnapshot(
+        FootballMatch $match,
+        string $recentWindowMode = PreMatchFeatureAggregator::RECENT_WINDOW_LEGACY,
+        string $eloMode = PreMatchFeatureAggregator::ELO_MODE_LEGACY,
+    ): array {
+        $snapshot = PreMatchFeatureAggregator::aggregate($match, null, $recentWindowMode, $eloMode);
         return PreMatchFeatureAggregator::flatten($snapshot);
     }
 

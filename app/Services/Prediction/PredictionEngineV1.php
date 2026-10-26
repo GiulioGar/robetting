@@ -102,6 +102,13 @@ class PredictionEngineV1
         ];
     }
 
+    /** Absolute path of the artifact file actually used for inference (for hashing/audit). */
+    public static function artifactPath(): string
+    {
+        self::loadArtifact(); // ensure the configured path is valid before returning it
+        return self::$artifactPath ?? base_path('tools/models/prediction_engine_v1.json');
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Artifact loading (lazy, cached per process)
     // ─────────────────────────────────────────────────────────────────────────

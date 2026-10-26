@@ -3,6 +3,7 @@
 namespace App\Services\Prediction;
 
 use App\Models\FootballMatch;
+use App\Services\Analytics\PreMatchFeatureAggregator;
 use Throwable;
 
 /**
@@ -18,11 +19,25 @@ use Throwable;
  *
  * Returns null (no public block) for non pre-match fixtures or when not even
  * the FULL59 fallback can be computed. No DB writes.
+ *
+ * Step C-DEBUG-EXPERIMENTAL ($experimental=true, driven ONLY by MatchController's
+ * ?debug_predict=1): uses recentWindowMode=team_history + eloMode=extended on the
+ * SAME injected $predictionService (its PreMatchFeatureAggregator call takes the
+ * mode as a parameter — no duplicated aggregation logic), and a freshly
+ * constructed, request-local CandidateModelService pointed at the 3 experimental
+ * artifacts via its constructor overrides — the shared/injected $candidateService
+ * instance (used by every other caller: official predictions, Learning Loop,
+ * admin page) is NEVER touched or reconfigured. Normal (non-debug) requests never
+ * take this branch — identical behaviour to before this step.
  */
 class PublicMatchPredictionService
 {
     public const MODEL_CANDIDATE_V2 = 'candidate47_structural_log';
     public const MODEL_FULL59       = 'full59';
+
+    private const EXPERIMENTAL_CAND47_ARTIFACT     = 'prediction_engine_candidate47_team_history_recent.json';
+    private const EXPERIMENTAL_LATENT_SNAPSHOT     = 'latent_strength_champions_anchored.json';
+    private const EXPERIMENTAL_STRUCTURAL_SNAPSHOT = 'structural_strength_champions_extended.json';
 
     public function __construct(
         private readonly MatchPredictionService $predictionService,
@@ -44,16 +59,27 @@ class PublicMatchPredictionService
      *     fair_odds_away: float|null,
      * }|null
      */
-    public function predict(FootballMatch $match): ?array
+    public function predict(FootballMatch $match, bool $experimental = false): ?array
     {
         if (! $this->isPreMatch($match)) {
             return null;
         }
 
+        $recentWindowMode = $experimental
+            ? PreMatchFeatureAggregator::RECENT_WINDOW_TEAM_HISTORY
+            : PreMatchFeatureAggregator::RECENT_WINDOW_LEGACY;
+        $eloMode = $experimental
+            ? PreMatchFeatureAggregator::ELO_MODE_EXTENDED
+            : PreMatchFeatureAggregator::ELO_MODE_LEGACY;
+
         try {
-            $base = $this->predictionService->predictWithDebug($match);
+            $base = $this->predictionService->predictWithDebug($match, $recentWindowMode, $eloMode);
         } catch (Throwable) {
             return null;
+        }
+
+        if ($experimental) {
+            return $this->predictExperimental($match, $base, $recentWindowMode, $eloMode);
         }
 
         $comparison = null;
@@ -69,10 +95,86 @@ class PublicMatchPredictionService
         }
 
         if (($comparison['candidate47_structural_log_available'] ?? false) && $comparison['candidate47_structural_log'] !== null) {
-            return $this->format($comparison['candidate47_structural_log'], self::MODEL_CANDIDATE_V2, false);
+            return $this->format($comparison['candidate47_structural_log'], self::MODEL_CANDIDATE_V2, false, null, null);
         }
 
-        return $this->format($comparison['full59'] ?? $base, self::MODEL_FULL59, true);
+        // Diagnostic-only (never affects which model/probabilities are used above):
+        // explain WHY Candidate47 fell back, for display on the match page.
+        $fallbackReason = $this->candidateService->diagnoseLatentStructuralAvailability(
+            (int) $match->home_team_id,
+            (int) $match->away_team_id,
+            (string) $match->kickoff_at,
+        );
+
+        return $this->format($comparison['full59'] ?? $base, self::MODEL_FULL59, true, $fallbackReason, null);
+    }
+
+    /**
+     * Step C-DEBUG-EXPERIMENTAL — ?debug_predict=1 ONLY. Reuses compare()/
+     * diagnoseLatentStructuralAvailability() verbatim (no duplicated Candidate47
+     * logic) on a freshly-constructed CandidateModelService pointed at the 3
+     * experimental artifacts. Requirement: a missing/invalid experimental
+     * artifact must NEVER silently fall through to the production files —
+     * checked explicitly below BEFORE constructing/calling the experimental
+     * service, so the error surfaced in $fallback_reason always names exactly
+     * which experimental file(s) are missing, never a generic/ambiguous one.
+     */
+    private function predictExperimental(FootballMatch $match, array $base, string $recentWindowMode, string $eloMode): array
+    {
+        $profile = [
+            'recent_window_mode'  => $recentWindowMode,
+            'elo_mode'            => $eloMode,
+            'cand47_artifact'     => self::EXPERIMENTAL_CAND47_ARTIFACT,
+            'latent_snapshot'     => self::EXPERIMENTAL_LATENT_SNAPSHOT,
+            'structural_snapshot' => self::EXPERIMENTAL_STRUCTURAL_SNAPSHOT,
+        ];
+
+        $filenames = [
+            self::EXPERIMENTAL_CAND47_ARTIFACT,
+            self::EXPERIMENTAL_LATENT_SNAPSHOT,
+            self::EXPERIMENTAL_STRUCTURAL_SNAPSHOT,
+        ];
+        $missing = array_values(array_filter(
+            $filenames,
+            static fn (string $f): bool => ! file_exists(base_path('tools/models/' . $f))
+        ));
+
+        if ($missing !== []) {
+            return $this->format($base, self::MODEL_FULL59, true, [
+                'experimental_artifacts_missing' => $missing,
+            ], $profile);
+        }
+
+        // Request-local instance only — the shared/injected $this->candidateService
+        // (official predictions, Learning Loop, admin page) is never touched.
+        $experimentalCandidateService = new CandidateModelService(
+            base_path('tools/models/' . self::EXPERIMENTAL_CAND47_ARTIFACT),
+            base_path('tools/models/' . self::EXPERIMENTAL_LATENT_SNAPSHOT),
+            base_path('tools/models/' . self::EXPERIMENTAL_STRUCTURAL_SNAPSHOT),
+        );
+
+        $comparison = null;
+        try {
+            $comparison = $experimentalCandidateService->compare(
+                $base['features'],
+                (int) $match->home_team_id,
+                (int) $match->away_team_id,
+                (string) $match->kickoff_at,
+            );
+        } catch (Throwable) {
+        }
+
+        if (($comparison['candidate47_structural_log_available'] ?? false) && $comparison['candidate47_structural_log'] !== null) {
+            return $this->format($comparison['candidate47_structural_log'], self::MODEL_CANDIDATE_V2, false, null, $profile);
+        }
+
+        $fallbackReason = $experimentalCandidateService->diagnoseLatentStructuralAvailability(
+            (int) $match->home_team_id,
+            (int) $match->away_team_id,
+            (string) $match->kickoff_at,
+        );
+
+        return $this->format($comparison['full59'] ?? $base, self::MODEL_FULL59, true, $fallbackReason, $profile);
     }
 
     private function isPreMatch(FootballMatch $match): bool
@@ -82,13 +184,18 @@ class PublicMatchPredictionService
             && $match->kickoff_at->isFuture();
     }
 
-    private function format(array $p, string $modelUsed, bool $fallbackUsed): array
+    private function format(array $p, string $modelUsed, bool $fallbackUsed, ?array $fallbackReason, ?array $experimentalProfile): array
     {
         $odds = fn (float $prob): ?float => $prob > 0.0 ? 1.0 / $prob : null;
 
         return [
             'model_used'       => $modelUsed,
             'fallback_used'    => $fallbackUsed,
+            // Diagnostic only — never read by any inference/probability logic.
+            'fallback_reason'  => $fallbackReason,
+            // Diagnostic only, null outside ?debug_predict=1 — never affects
+            // which model/probabilities were computed above.
+            'experimental_profile' => $experimentalProfile,
             'lambda_home'      => (float) $p['lambda_home'],
             'lambda_away'      => (float) $p['lambda_away'],
             'lambda3'          => isset($p['lambda3']) ? (float) $p['lambda3'] : null,

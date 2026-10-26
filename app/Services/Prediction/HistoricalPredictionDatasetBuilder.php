@@ -47,6 +47,13 @@ class HistoricalPredictionDatasetBuilder
      *                                    target+mode. Default 'legacy' — identical to pre-C1
      *                                    behaviour; Candidate47/the current champion is
      *                                    unaffected unless this is passed explicitly.
+     * @param  string  $eloMode  Step C-ELO — OPT-IN only. Default 'legacy' — identical to
+     *                           pre-existing behaviour (unscoped Elo replay across every
+     *                           competition in the DB). 'network' restricts the bulk Elo
+     *                           context's historical replay to the 5 core leagues + UEFA
+     *                           Champions/Europa/Conference League (national cups excluded);
+     *                           'extended' additionally includes the 6 national cups — see
+     *                           PreMatchFeatureAggregator::resolveAllowedEloCompetitionIds().
      * @return array{
      *   rows: array<int, array>,
      *   coverage_report: array<string, array{non_null: int, null: int, coverage: float, class: string}>,
@@ -61,6 +68,7 @@ class HistoricalPredictionDatasetBuilder
         Collection $matches,
         string $mode = 'core_only',
         string $recentWindowMode = PreMatchFeatureAggregator::RECENT_WINDOW_LEGACY,
+        string $eloMode = PreMatchFeatureAggregator::ELO_MODE_LEGACY,
     ): array
     {
         if (! array_key_exists($mode, self::MODE_VERSION_MAP)) {
@@ -78,7 +86,7 @@ class HistoricalPredictionDatasetBuilder
         // OPT-1C: one Elo replay per (competition_id, season_id) group for the entire
         // batch, instead of one replay per match. Passed to aggregate() as external
         // context; the internal per-match replay is then skipped.
-        $bulkEloContext = $this->buildBulkEloContext($sorted);
+        $bulkEloContext = $this->buildBulkEloContext($sorted, $eloMode);
 
         foreach ($sorted as $match) {
             // ── Step 1: labels — skip row if match is not a valid finished result ──
@@ -90,7 +98,7 @@ class HistoricalPredictionDatasetBuilder
             }
 
             // ── Step 2: feature snapshot — unexpected exceptions propagate ────────
-            $snapshot = PreMatchFeatureAggregator::aggregate($match, $bulkEloContext, $recentWindowMode);
+            $snapshot = PreMatchFeatureAggregator::aggregate($match, $bulkEloContext, $recentWindowMode, $eloMode);
             $flat     = PreMatchFeatureAggregator::flatten($snapshot);
 
             // ── Step 3: warmup — read from snapshot, zero extra queries ──────────
@@ -174,14 +182,19 @@ class HistoricalPredictionDatasetBuilder
      *
      * Matches with null kickoff_at are excluded: they will either be skipped as invalid
      * labels or trigger an exception inside aggregate() — no Elo snapshot needed.
+     *
+     * @param  string  $eloMode  See build(). Resolved once here (not per-group) and passed
+     *                           into every group's Elo replay below.
      */
-    private function buildBulkEloContext(Collection $targetMatches): array
+    private function buildBulkEloContext(Collection $targetMatches, string $eloMode): array
     {
         $valid = $targetMatches->filter(fn (FootballMatch $m) => $m->kickoff_at !== null);
 
         if ($valid->isEmpty()) {
             return [];
         }
+
+        $allowedCompetitionIds = PreMatchFeatureAggregator::resolveAllowedEloCompetitionIds($eloMode);
 
         $groups  = $valid->groupBy(fn (FootballMatch $m) => $m->competition_id . '|' . $m->season_id);
         $context = [];
@@ -209,7 +222,8 @@ class HistoricalPredictionDatasetBuilder
             // Single Elo replay for this season group.
             $groupContext = TeamEloCalculator::calculateRatingsBeforeMatchesWithLeagueMean(
                 $all,
-                $leagueTeamIds
+                $leagueTeamIds,
+                $allowedCompetitionIds
             );
 
             // + preserves integer keys (match IDs); array_merge would re-index them.

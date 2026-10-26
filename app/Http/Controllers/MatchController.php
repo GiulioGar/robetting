@@ -159,11 +159,17 @@ class MatchController extends Controller
             ->keyBy('match_id');
     }
 
-    public function show(FootballMatch $match, PublicMatchPredictionService $publicPredictionService): View
+    public function show(Request $request, FootballMatch $match, PublicMatchPredictionService $publicPredictionService): View
     {
         $match->load(['competition.country', 'season', 'homeTeam', 'awayTeam']);
 
         $matchViewMode = $this->classifyViewMode($match->status);
+
+        // Opt-in only (?debug_predict=1) — never shown by default. Diagnostic-only
+        // display of model_used/fallback_reason for internal visual testing (e.g.
+        // UEFA Champions League fixtures); the public "Pronostico Robetting" box
+        // otherwise never leaks technical details (P17B invariant, unchanged).
+        $showPredictionDiagnostics = $request->boolean('debug_predict');
 
         $lineupDsSlug = config('imports.lineups_source_slug', 'api-football');
         $lineupDs     = DataSource::where('slug', $lineupDsSlug)->first();
@@ -185,6 +191,7 @@ class MatchController extends Controller
             'matchViewMode' => $matchViewMode,
             'matchEvents'   => $matchEvents,
             'lineups'       => $lineups,
+            'showPredictionDiagnostics' => $showPredictionDiagnostics,
         ];
 
         if ($matchViewMode === 'pre_match') {
@@ -193,7 +200,7 @@ class MatchController extends Controller
             // empty before kickoff), so this stays outside the mode branch
             // in spirit but is computed together with the rest below since
             // it needs $homePrevious/$awayPrevious either way.
-            $data = array_merge($data, $this->buildPreMatchData($match, $publicPredictionService));
+            $data = array_merge($data, $this->buildPreMatchData($match, $publicPredictionService, $showPredictionDiagnostics));
         } else {
             // 'finished' / 'other' — Step 1B.2: NOT merely hidden in the
             // view, genuinely never computed. No previousMatches()/
@@ -216,8 +223,11 @@ class MatchController extends Controller
      *
      * @return array<string, mixed>
      */
-    private function buildPreMatchData(FootballMatch $match, PublicMatchPredictionService $publicPredictionService): array
-    {
+    private function buildPreMatchData(
+        FootballMatch $match,
+        PublicMatchPredictionService $publicPredictionService,
+        bool $experimentalPrediction = false,
+    ): array {
         $homePrevious = $this->previousMatches($match, $match->home_team_id);
         $awayPrevious = $this->previousMatches($match, $match->away_team_id);
         $h2hMatches   = $this->headToHead($match);
@@ -373,7 +383,10 @@ class MatchController extends Controller
         );
 
         // P17B — public pre-match 1X2 (Candidate V2, FULL59 technical fallback).
-        $publicPrediction = $publicPredictionService->predict($match);
+        // Step C-DEBUG-EXPERIMENTAL: $experimentalPrediction (= ?debug_predict=1)
+        // switches ONLY this call's internals (Team History Recent + Elo Extended +
+        // the 3 experimental artifacts) — never the normal/default request path.
+        $publicPrediction = $publicPredictionService->predict($match, $experimentalPrediction);
 
         return [
             'matchStatistic'      => $matchStatistic,

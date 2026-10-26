@@ -2,6 +2,7 @@
 
 namespace App\Services\Analytics;
 
+use App\Models\Competition;
 use App\Models\DataSource;
 use App\Models\FootballMatch;
 use App\Services\Matches\PreferredMatchStatisticResolver;
@@ -66,6 +67,17 @@ class PreMatchFeatureAggregator
     public const RECENT_WINDOW_LEGACY       = 'legacy';
     public const RECENT_WINDOW_TEAM_HISTORY = 'team_history';
 
+    public const ELO_MODE_LEGACY   = 'legacy';
+    public const ELO_MODE_NETWORK  = 'network';
+    public const ELO_MODE_EXTENDED = 'extended';
+
+    /** UEFA club competitions eligible for "network" Elo scope — national cups never included. */
+    private const ELO_NETWORK_UEFA_SLUGS = [
+        'uefa-champions-league',
+        'uefa-europa-league',
+        'uefa-conference-league',
+    ];
+
     /**
      * Compute the full pre-match feature snapshot for $match.
      *
@@ -85,13 +97,32 @@ class PreMatchFeatureAggregator
      *                                    Elo (E6), opponent quality (E9), opponent-adjusted (E10),
      *                                    time-decay (E12) and H2H are NEVER affected by this parameter
      *                                    — they keep using the legacy windows regardless (see Step C1 §3/§5).
-     * @throws InvalidArgumentException when kickoff_at is null, or $recentWindowMode is unknown.
+     * @param  string  $eloMode  Step C-ELO — OPT-IN only. Controls the historical replay
+     *                           scope for E6 Elo (core_elo_home/away_pre_match_elo and the
+     *                           derived elo_gap_signed_square) EXCLUSIVELY:
+     *                             - 'legacy' (default): IDENTICAL to current behaviour —
+     *                               unscoped replay across every competition in the DB.
+     *                               Champion/Candidate47 inference is unaffected unless
+     *                               this is changed explicitly.
+     *                             - 'network': replay restricted to the 5 core leagues +
+     *                               UEFA Champions/Europa/Conference League only — national
+     *                               cups excluded.
+     *                             - 'extended': replay restricted to the 5 core leagues +
+     *                               ALL of config('api-football.additional_competitions')
+     *                               (3 UEFA cups + 6 national cups) — i.e. every competition
+     *                               currently configured/imported, explicit and independent
+     *                               of whatever competitions get added to the DB in future.
+     *                           Only meaningful on the single-match path (no precomputed Elo
+     *                           context) — when a bulk context is supplied, the mode must
+     *                           already have been applied by the caller when building it.
+     * @throws InvalidArgumentException when kickoff_at is null, or $recentWindowMode/$eloMode is unknown.
      * @return array{identity: array, core: array, experimental: array, metadata: array}
      */
     public static function aggregate(
         FootballMatch $match,
         ?array $precomputedEloContext = null,
         string $recentWindowMode = self::RECENT_WINDOW_LEGACY,
+        string $eloMode = self::ELO_MODE_LEGACY,
     ): array {
         if ($match->kickoff_at === null) {
             throw new InvalidArgumentException(
@@ -102,6 +133,12 @@ class PreMatchFeatureAggregator
         if (!in_array($recentWindowMode, [self::RECENT_WINDOW_LEGACY, self::RECENT_WINDOW_TEAM_HISTORY], true)) {
             throw new InvalidArgumentException(
                 "Unknown recentWindowMode '{$recentWindowMode}'. Valid: legacy, team_history."
+            );
+        }
+
+        if (!in_array($eloMode, [self::ELO_MODE_LEGACY, self::ELO_MODE_NETWORK, self::ELO_MODE_EXTENDED], true)) {
+            throw new InvalidArgumentException(
+                "Unknown eloMode '{$eloMode}'. Valid: legacy, network, extended."
             );
         }
 
@@ -178,7 +215,8 @@ class PreMatchFeatureAggregator
                 ->unique('id');
             $sharedEloContext = TeamEloCalculator::calculateRatingsBeforeMatchesWithLeagueMean(
                 $allRelevantMatches,
-                $leagueTeamIds
+                $leagueTeamIds,
+                self::resolveAllowedEloCompetitionIds($eloMode)
             );
         }
 
@@ -371,6 +409,63 @@ class PreMatchFeatureAggregator
         $flat = [];
         self::flattenRecursive($snapshot, '', $flat);
         return $flat;
+    }
+
+    /**
+     * Competition IDs eligible for "network" Elo scope: the 5 core leagues
+     * (config('api-football.core_leagues')) + the 3 UEFA club competitions —
+     * national cups (also in config('api-football.additional_competitions'))
+     * are deliberately excluded. Resolved via Competition.slug (never a
+     * hardcoded internal ID), same resolution idiom used throughout the
+     * api-football sync services (e.g. MatchDataScope::competitionIdsForSlugs()).
+     *
+     * @return array<int, int>
+     */
+    public static function resolveEloNetworkCompetitionIds(): array
+    {
+        $slugs = array_merge(
+            array_values((array) config('api-football.core_leagues', [])),
+            self::ELO_NETWORK_UEFA_SLUGS,
+        );
+
+        return Competition::whereIn('slug', $slugs)->pluck('id')->map(fn ($id) => (int) $id)->all();
+    }
+
+    /**
+     * Competition IDs eligible for "extended" Elo scope: the 5 core leagues +
+     * EVERY competition in config('api-football.additional_competitions') (the
+     * 3 UEFA club competitions AND the 6 national cups) — i.e. every
+     * competition this project currently imports at all. Resolved entirely
+     * from these two existing config lists (no separate hardcoded slug list,
+     * no internal DB ID) — any competition imported in the future that is
+     * NOT added to either config list is excluded automatically.
+     *
+     * @return array<int, int>
+     */
+    public static function resolveEloExtendedCompetitionIds(): array
+    {
+        $slugs = array_merge(
+            array_values((array) config('api-football.core_leagues', [])),
+            array_values((array) config('api-football.additional_competitions', [])),
+        );
+
+        return Competition::whereIn('slug', $slugs)->pluck('id')->map(fn ($id) => (int) $id)->all();
+    }
+
+    /**
+     * Resolve the $allowedCompetitionIds argument for TeamEloCalculator from an
+     * eloMode string — single source of truth shared by the single-match path
+     * here and HistoricalPredictionDatasetBuilder's bulk path.
+     *
+     * @return ?array<int, int>  null for 'legacy' (unscoped, current behaviour).
+     */
+    public static function resolveAllowedEloCompetitionIds(string $eloMode): ?array
+    {
+        return match ($eloMode) {
+            self::ELO_MODE_NETWORK  => self::resolveEloNetworkCompetitionIds(),
+            self::ELO_MODE_EXTENDED => self::resolveEloExtendedCompetitionIds(),
+            default                 => null,
+        };
     }
 
     // ── Private ───────────────────────────────────────────────────────────────

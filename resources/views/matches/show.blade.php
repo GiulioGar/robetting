@@ -107,6 +107,42 @@
                 </div>
                 @endforeach
             </div>
+            @if($showPredictionDiagnostics ?? false)
+            <div class="small text-muted mt-2" data-testid="public-prediction-diagnostics">
+                Modello: {{ strtoupper($pp['model_used']) }}
+                @if($pp['fallback_used'])
+                    · fallback Candidate47:
+                    @php
+                        $fr = $pp['fallback_reason'] ?? null;
+                        $missingParts = [];
+                        if ($fr && array_key_exists('experimental_artifacts_missing', $fr)) {
+                            $missingParts[] = 'artifact sperimentali mancanti: ' . implode(', ', $fr['experimental_artifacts_missing']);
+                        } elseif ($fr && array_key_exists('latent_missing_home', $fr)) {
+                            $missingHome = $fr['latent_missing_home'] || $fr['structural_missing_home'];
+                            $missingAway = $fr['latent_missing_away'] || $fr['structural_missing_away'];
+                            $what = [];
+                            if ($fr['latent_missing_home'] || $fr['latent_missing_away']) $what[] = 'Latent';
+                            if ($fr['structural_missing_home'] || $fr['structural_missing_away']) $what[] = 'Structural';
+                            $teams = [];
+                            if ($missingHome) $teams[] = $match->homeTeam->name;
+                            if ($missingAway) $teams[] = $match->awayTeam->name;
+                            if ($what) {
+                                $missingParts[] = implode(' + ', $what) . ' mancanti per ' . implode(', ', array_unique($teams));
+                            }
+                        }
+                    @endphp
+                    {{ $missingParts ? implode('; ', $missingParts) : 'motivo non disponibile' }}
+                @endif
+                @if(!empty($pp['experimental_profile']))
+                    @php $ep = $pp['experimental_profile']; @endphp
+                    <div data-testid="public-prediction-experimental-profile">
+                        Profilo sperimentale: Recent={{ $ep['recent_window_mode'] }} · Elo={{ $ep['elo_mode'] }} ·
+                        Candidate47={{ $ep['cand47_artifact'] }} · Latent={{ $ep['latent_snapshot'] }} ·
+                        Structural={{ $ep['structural_snapshot'] }}
+                    </div>
+                @endif
+            </div>
+            @endif
         </div>
     </div>
 </div>

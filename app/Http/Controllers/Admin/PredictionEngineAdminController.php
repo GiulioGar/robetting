@@ -239,15 +239,81 @@ class PredictionEngineAdminController extends Controller
                 ->orWhere('away_team_id', $match->away_team_id))
             ->count());
 
+        $homeElo        = $features59['core_elo_home_pre_match_elo'] ?? null;
+        $awayElo        = $features59['core_elo_away_pre_match_elo'] ?? null;
+        $homeStructural = $homeStruct ? round((float) $homeStruct['structural_rating'], 1) : null;
+        $awayStructural = $awayStruct ? round((float) $awayStruct['structural_rating'], 1) : null;
+        $homeMarketValue = $homeStruct ? (int) $homeStruct['market_value'] : null;
+        $awayMarketValue = $awayStruct ? (int) $awayStruct['market_value'] : null;
+
         return [
-            'home_elo'          => $features59['core_elo_home_pre_match_elo'] ?? null,
-            'away_elo'          => $features59['core_elo_away_pre_match_elo'] ?? null,
-            'home_structural'   => $homeStruct ? round((float) $homeStruct['structural_rating'], 1) : null,
-            'home_market_value' => $homeStruct ? (int) $homeStruct['market_value'] : null,
-            'away_structural'   => $awayStruct ? round((float) $awayStruct['structural_rating'], 1) : null,
-            'away_market_value' => $awayStruct ? (int) $awayStruct['market_value'] : null,
+            'home_elo'          => $homeElo,
+            'away_elo'          => $awayElo,
+            'home_structural'   => $homeStructural,
+            'home_market_value' => $homeMarketValue,
+            'away_structural'   => $awayStructural,
+            'away_market_value' => $awayMarketValue,
             'home_recent_n'     => $homeRecentN,
             'away_recent_n'     => $awayRecentN,
+            'structural_alignment' => $this->buildStructuralAlignment(
+                $homeElo,
+                $awayElo,
+                $homeStructural,
+                $awayStructural,
+                $homeMarketValue,
+                $awayMarketValue,
+            ),
+        ];
+    }
+
+    /**
+     * Pure diagnostic comparison between Elo gap and Structural Strength gap.
+     * Not used by any model/prediction — display only.
+     *
+     * @return array{
+     *     elo_gap: float|null,
+     *     structural_gap: float|null,
+     *     market_value_ratio: float|null,
+     *     direction_agreement: 'SAME'|'OPPOSITE'|'NEUTRAL'|'MISSING',
+     *     structural_to_elo_gap_ratio: float|null,
+     * }
+     */
+    private function buildStructuralAlignment(
+        ?float $homeElo,
+        ?float $awayElo,
+        ?float $homeStructural,
+        ?float $awayStructural,
+        ?int $homeMarketValue,
+        ?int $awayMarketValue,
+    ): array {
+        $eloGap        = ($homeElo !== null && $awayElo !== null) ? $homeElo - $awayElo : null;
+        $structuralGap = ($homeStructural !== null && $awayStructural !== null) ? $homeStructural - $awayStructural : null;
+
+        $marketValueRatio = ($homeMarketValue !== null && $awayMarketValue !== null && $awayMarketValue > 0)
+            ? $homeMarketValue / $awayMarketValue
+            : null;
+
+        if ($eloGap === null || $structuralGap === null) {
+            $directionAgreement = 'MISSING';
+        } elseif ($eloGap === 0.0 || $structuralGap === 0.0) {
+            $directionAgreement = 'NEUTRAL';
+        } elseif (($eloGap > 0) === ($structuralGap > 0)) {
+            $directionAgreement = 'SAME';
+        } else {
+            $directionAgreement = 'OPPOSITE';
+        }
+
+        $structuralToEloGapRatio = null;
+        if ($directionAgreement === 'SAME') {
+            $structuralToEloGapRatio = abs($structuralGap) / abs($eloGap);
+        }
+
+        return [
+            'elo_gap'                     => $eloGap,
+            'structural_gap'              => $structuralGap,
+            'market_value_ratio'          => $marketValueRatio,
+            'direction_agreement'         => $directionAgreement,
+            'structural_to_elo_gap_ratio' => $structuralToEloGapRatio,
         ];
     }
 }

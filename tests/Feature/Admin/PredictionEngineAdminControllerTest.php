@@ -4,10 +4,12 @@ namespace Tests\Feature\Admin;
 
 use App\Models\Competition;
 use App\Models\Country;
+use App\Models\DataSource;
 use App\Models\FootballMatch;
 use App\Models\Prediction;
 use App\Models\Season;
 use App\Models\Team;
+use App\Models\TeamMarketValueSnapshot;
 use App\Services\Prediction\CandidateModelService;
 use App\Services\Prediction\MatchPredictionService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -111,6 +113,58 @@ class PredictionEngineAdminControllerTest extends TestCase
             'match'               => null, // will be set by controller
         ]);
         $this->app->instance(MatchPredictionService::class, $mock);
+    }
+
+    /**
+     * Same as mockPredictionService() but with real Elo feature keys so
+     * Structural Alignment (elo_gap) can be driven deterministically.
+     */
+    private function mockPredictionServiceWithElo(int $matchId, float $homeElo, float $awayElo): void
+    {
+        $features = array_fill_keys(
+            array_map(fn ($i) => "core_feature_{$i}", range(1, 57)),
+            1.234
+        );
+        $features['core_elo_home_pre_match_elo'] = $homeElo;
+        $features['core_elo_away_pre_match_elo'] = $awayElo;
+
+        $mock = $this->createMock(MatchPredictionService::class);
+        $mock->method('predictWithDebug')->willReturn([
+            'match_id'            => $matchId,
+            'model_version'       => '1.0.0',
+            'feature_set_version' => 'core_v1',
+            'feature_count'       => 59,
+            'null_count'          => 2,
+            'lambda_home'         => 1.4532,
+            'lambda_away'         => 1.1087,
+            'probability_home'    => 0.4312,
+            'probability_draw'    => 0.2691,
+            'probability_away'    => 0.2997,
+            'features'            => $features,
+            'timing_agg_ms'       => 412.5,
+            'timing_inf_ms'       => 0.031,
+            'timing_total_ms'     => 412.5,
+            'match'               => null,
+        ]);
+        $this->app->instance(MatchPredictionService::class, $mock);
+    }
+
+    private function seedTransfermarktSnapshots(FootballMatch $match, int $homeMarketValue, int $awayMarketValue): void
+    {
+        $ds = DataSource::create(['slug' => 'transfermarkt', 'name' => 'Transfermarkt', 'source_type' => 'manual_import']);
+
+        TeamMarketValueSnapshot::create([
+            'team_id'        => $match->home_team_id,
+            'data_source_id' => $ds->id,
+            'snapshot_date'  => now()->subDay(),
+            'market_value'   => $homeMarketValue,
+        ]);
+        TeamMarketValueSnapshot::create([
+            'team_id'        => $match->away_team_id,
+            'data_source_id' => $ds->id,
+            'snapshot_date'  => now()->subDay(),
+            'market_value'   => $awayMarketValue,
+        ]);
     }
 
     /** @test */
@@ -314,5 +368,83 @@ class PredictionEngineAdminControllerTest extends TestCase
         $response->assertSee('—');
         // No previous matches in test DB → recent count = 0
         $response->assertSee('0 / 10');
+    }
+
+    // ── K–N. Structural Alignment states ──────────────────────────────────────
+
+    /**
+     * @test
+     * Elo and Structural both available, non-zero, same direction (home stronger
+     * on both) → SAME. structural_to_elo_gap_ratio row must be shown.
+     */
+    public function test_K_structural_alignment_same(): void
+    {
+        $match = $this->createMinimalMatch();
+        $this->mockPredictionServiceWithElo($match->id, 1600, 1500); // elo_gap = +100
+        $this->seedTransfermarktSnapshots($match, 200_000_000, 50_000_000); // structural_gap > 0
+
+        $response = $this->get(route('admin.prediction-engine.index', ['match_id' => $match->id]));
+
+        $response->assertStatus(200);
+        $response->assertSee('Structural Alignment');
+        $response->assertSee('SAME');
+        $response->assertDontSee('MISSING');
+        $response->assertSee('structural_to_elo_gap_ratio');
+    }
+
+    /**
+     * @test
+     * Elo and Structural both available, non-zero, opposite direction (home
+     * stronger on Elo, away stronger structurally) → OPPOSITE. No ratio shown.
+     */
+    public function test_L_structural_alignment_opposite(): void
+    {
+        $match = $this->createMinimalMatch();
+        $this->mockPredictionServiceWithElo($match->id, 1600, 1500); // elo_gap = +100
+        $this->seedTransfermarktSnapshots($match, 50_000_000, 200_000_000); // structural_gap < 0
+
+        $response = $this->get(route('admin.prediction-engine.index', ['match_id' => $match->id]));
+
+        $response->assertStatus(200);
+        $response->assertSee('OPPOSITE');
+        $response->assertDontSee('structural_to_elo_gap_ratio');
+    }
+
+    /**
+     * @test
+     * Elo and Structural both available, but structural_gap is exactly 0
+     * (identical market value for home/away) → NEUTRAL, not MISSING.
+     */
+    public function test_M_structural_alignment_neutral(): void
+    {
+        $match = $this->createMinimalMatch();
+        $this->mockPredictionServiceWithElo($match->id, 1600, 1500); // elo_gap = +100
+        $this->seedTransfermarktSnapshots($match, 100_000_000, 100_000_000); // structural_gap = 0
+
+        $response = $this->get(route('admin.prediction-engine.index', ['match_id' => $match->id]));
+
+        $response->assertStatus(200);
+        $response->assertSee('NEUTRAL');
+        $response->assertDontSee('MISSING');
+        $response->assertDontSee('structural_to_elo_gap_ratio');
+    }
+
+    /**
+     * @test
+     * No Transfermarkt data source/snapshot seeded → structural rating null
+     * → MISSING (not NEUTRAL). Market Value ratio must show N/A, not 0.
+     */
+    public function test_N_structural_alignment_missing(): void
+    {
+        $match = $this->createMinimalMatch();
+        $this->mockPredictionServiceWithElo($match->id, 1600, 1500);
+        // No seedTransfermarktSnapshots() call — structural/market value stay null.
+
+        $response = $this->get(route('admin.prediction-engine.index', ['match_id' => $match->id]));
+
+        $response->assertStatus(200);
+        $response->assertSee('MISSING');
+        $response->assertSee('N/A');
+        $response->assertDontSee('structural_to_elo_gap_ratio');
     }
 }

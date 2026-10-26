@@ -19,6 +19,7 @@ class CandidateModelService
     private const NO_E10_FILE         = 'prediction_engine_no_e9_no_e10.json';
     private const CAND40_FILE         = 'prediction_engine_candidate40.json';
     private const CAND40_ROBUST_BP_FILE = 'prediction_engine_candidate40_robust_bp.json';
+    private const CAND44_BP_FILE      = 'prediction_engine_candidate44_bp.json';
     private const CAND48_STRUCTURAL_FILE = 'prediction_engine_candidate48_structural.json';
     private const CAND47_STRUCTURAL_LOG_FILE = 'prediction_engine_candidate47_structural_log.json';
     private const LATENT_SNAPSHOT_FILE = 'latent_strength_current.json';
@@ -26,6 +27,29 @@ class CandidateModelService
 
     private static ?string $artifactDir = null;
     private static array   $factorials  = [];
+
+    // Step C-DEBUG-EXPERIMENTAL — per-INSTANCE absolute-path overrides for the
+    // Champions visual-test profile (?debug_predict=1). null (default, every
+    // existing call site — officialPredictionData(), OfficialPredictionCaptureService,
+    // admin prediction-engine page) = bit-identical production behaviour, reading
+    // the 3 production filenames from the shared static $artifactDir exactly as
+    // today. Set ONLY on a freshly-constructed instance local to
+    // PublicMatchPredictionService's experimental branch — NEVER on the
+    // container-injected instance other services share, so official
+    // predictions/Learning Loop/admin page are structurally unaffected.
+    private readonly ?string $cand47ArtifactOverride;
+    private readonly ?string $latentSnapshotOverride;
+    private readonly ?string $structuralSnapshotOverride;
+
+    public function __construct(
+        ?string $cand47ArtifactOverride = null,
+        ?string $latentSnapshotOverride = null,
+        ?string $structuralSnapshotOverride = null,
+    ) {
+        $this->cand47ArtifactOverride = $cand47ArtifactOverride;
+        $this->latentSnapshotOverride = $latentSnapshotOverride;
+        $this->structuralSnapshotOverride = $structuralSnapshotOverride;
+    }
 
     /** Override artifact directory (for unit tests without Laravel container). */
     public static function setArtifactDir(string $dir): void
@@ -53,7 +77,7 @@ class CandidateModelService
      * Run all candidate models on the given 59-feature snapshot.
      *
      * @param  array<string, float|null>  $features59  Output of PredictionEngineV1 extraction
-     * @param  int|null     $homeTeamId  Required (with $awayTeamId/$kickoffAt) to attempt Candidate48 Structural.
+     * @param  int|null     $homeTeamId  Required (with $awayTeamId/$kickoffAt) to attempt Candidate44 BP.
      * @param  int|null     $awayTeamId
      * @param  string|null  $kickoffAt   ISO8601/parseable match kickoff, for the anti-leakage check.
      * @return array{
@@ -62,6 +86,7 @@ class CandidateModelService
      *     no_e9_no_e10: array|null,
      *     candidate40: array|null,
      *     candidate40_robust_bp: array|null,
+     *     candidate44_bp: array|null,
      *     candidate48_structural: array|null,
      *     candidate48_structural_inputs: array{structural_home: float, structural_away: float, structural_gap: float}|null,
      *     candidate47_structural_log: array|null,
@@ -70,6 +95,7 @@ class CandidateModelService
      *     no_e10_available: bool,
      *     candidate40_available: bool,
      *     candidate40_robust_bp_available: bool,
+     *     candidate44_bp_available: bool,
      *     candidate48_structural_available: bool,
      *     candidate47_structural_log_available: bool,
      * }
@@ -121,6 +147,22 @@ class CandidateModelService
         } catch (RuntimeException) {
         }
 
+        $cand44Bp = null;
+        $cand44BpAvailable = false;
+        if ($homeTeamId !== null && $awayTeamId !== null && $kickoffAt !== null) {
+            try {
+                $snapshot = $this->loadLatentSnapshot();
+                $latent   = $this->resolveLatentFeatures($snapshot, $homeTeamId, $awayTeamId, $kickoffAt);
+                if ($latent !== null) {
+                    $ext44 = array_merge($extFeatures, $latent);
+                    $artCand44 = $this->loadArtifact(self::CAND44_BP_FILE);
+                    $cand44Bp = $this->inferRobustBP($artCand44, $ext44);
+                    $cand44BpAvailable = true;
+                }
+            } catch (RuntimeException) {
+            }
+        }
+
         // Latent + Structural snapshots are resolved once and shared by
         // Candidate48 (RAW, kept for rollback/debug) and Candidate47 (LOG).
         $latent = null;
@@ -161,7 +203,7 @@ class CandidateModelService
             if ($logFeatures !== null) {
                 try {
                     $ext47 = array_merge($extFeatures, $latent, $logFeatures);
-                    $artCand47 = $this->loadArtifact(self::CAND47_STRUCTURAL_LOG_FILE);
+                    $artCand47 = $this->loadCand47Artifact();
                     $cand47Log = $this->inferRobustBP($artCand47, $ext47);
                     $cand47LogAvailable = true;
                     $cand47LogInputs = $structuralInputs;
@@ -176,6 +218,7 @@ class CandidateModelService
             'no_e9_no_e10'                    => $noE10,
             'candidate40'                     => $cand40,
             'candidate40_robust_bp'           => $cand40RobustBp,
+            'candidate44_bp'                  => $cand44Bp,
             'candidate48_structural'          => $cand48Structural,
             'candidate48_structural_inputs'   => $cand48StructuralInputs,
             'candidate47_structural_log'        => $cand47Log,
@@ -184,6 +227,7 @@ class CandidateModelService
             'no_e10_available'                => $noE10Available,
             'candidate40_available'           => $cand40Available,
             'candidate40_robust_bp_available' => $cand40RobustBpAvailable,
+            'candidate44_bp_available'        => $cand44BpAvailable,
             'candidate48_structural_available' => $cand48StructuralAvailable,
             'candidate47_structural_log_available' => $cand47LogAvailable,
         ];
@@ -253,7 +297,7 @@ class CandidateModelService
         $ext47 = array_merge($extFeatures, $latent, $logFeatures);
 
         try {
-            $artifact = $this->loadArtifact(self::CAND47_STRUCTURAL_LOG_FILE);
+            $artifact = $this->loadCand47Artifact();
         } catch (RuntimeException) {
             return null;
         }
@@ -282,6 +326,45 @@ class CandidateModelService
             'features_json'                     => $usedFeatures,
             'structural_snapshot_generated_at'  => (string) $structuralSnapshot['generated_at'],
             'latent_snapshot_generated_at'      => (string) $latentSnapshot['generated_at'],
+        ];
+    }
+
+    /**
+     * Diagnostic-only read of per-team Latent/Structural snapshot availability —
+     * for display purposes (match-page fallback explanation), never for inference.
+     * Reuses resolveLatentFeatures()/resolveStructuralFeatures() verbatim (same
+     * team id passed as both home and away probes a single team's own presence
+     * without re-deriving the membership/staleness logic). No model math here.
+     *
+     * @return array{
+     *   latent_missing_home: bool, latent_missing_away: bool, latent_snapshot_stale: bool,
+     *   structural_missing_home: bool, structural_missing_away: bool, structural_snapshot_stale: bool,
+     * }|null  null only if a snapshot file itself cannot be loaded at all.
+     */
+    public function diagnoseLatentStructuralAvailability(int $homeTeamId, int $awayTeamId, string $kickoffAt): ?array
+    {
+        try {
+            $latentSnapshot     = $this->loadLatentSnapshot();
+            $structuralSnapshot = $this->loadStructuralSnapshot();
+        } catch (RuntimeException) {
+            return null;
+        }
+
+        $latentHomeOk = $this->resolveLatentFeatures($latentSnapshot, $homeTeamId, $homeTeamId, $kickoffAt) !== null;
+        $latentAwayOk = $this->resolveLatentFeatures($latentSnapshot, $awayTeamId, $awayTeamId, $kickoffAt) !== null;
+        $latentStale  = ! Carbon::parse($latentSnapshot['generated_at'])->lt(Carbon::parse($kickoffAt));
+
+        $structuralHomeOk = $this->resolveStructuralFeatures($structuralSnapshot, $homeTeamId, $homeTeamId, $kickoffAt) !== null;
+        $structuralAwayOk = $this->resolveStructuralFeatures($structuralSnapshot, $awayTeamId, $awayTeamId, $kickoffAt) !== null;
+        $structuralStale  = ! Carbon::parse($structuralSnapshot['generated_at'])->lt(Carbon::parse($kickoffAt));
+
+        return [
+            'latent_missing_home'      => $latentStale || ! $latentHomeOk,
+            'latent_missing_away'      => $latentStale || ! $latentAwayOk,
+            'latent_snapshot_stale'    => $latentStale,
+            'structural_missing_home'  => $structuralStale || ! $structuralHomeOk,
+            'structural_missing_away'  => $structuralStale || ! $structuralAwayOk,
+            'structural_snapshot_stale' => $structuralStale,
         ];
     }
 
@@ -522,20 +605,22 @@ class CandidateModelService
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Latent strength snapshot (input of Candidate48 Structural)
+    // Latent strength snapshot (Candidate44 BP)
     // ─────────────────────────────────────────────────────────────────────────
 
     /** @return array{generated_at: string, last_match_included_at: string, teams: array} */
     private function loadLatentSnapshot(): array
     {
-        return $this->loadArtifact(self::LATENT_SNAPSHOT_FILE);
+        return $this->latentSnapshotOverride !== null
+            ? $this->loadArtifactFromAbsolutePath($this->latentSnapshotOverride)
+            : $this->loadArtifact(self::LATENT_SNAPSHOT_FILE);
     }
 
     /**
      * Resolve the 4 latent attack/defence features for a match, enforcing
      * anti-leakage: the snapshot must have been generated strictly BEFORE
      * the match kickoff, and both teams must be present in it. Returns null
-     * (Candidate48 unavailable) otherwise — never a stale/wrong value.
+     * (Candidate44 unavailable) otherwise — never a stale/wrong value.
      *
      * @return array{latent_attack_home: float, latent_defence_home: float, latent_attack_away: float, latent_defence_away: float}|null
      */
@@ -582,7 +667,9 @@ class CandidateModelService
      */
     private function loadStructuralSnapshot(): array
     {
-        return $this->loadArtifact(self::STRUCTURAL_SNAPSHOT_FILE);
+        return $this->structuralSnapshotOverride !== null
+            ? $this->loadArtifactFromAbsolutePath($this->structuralSnapshotOverride)
+            : $this->loadArtifact(self::STRUCTURAL_SNAPSHOT_FILE);
     }
 
     /**
@@ -653,11 +740,34 @@ class CandidateModelService
 
     private function loadArtifact(string $filename): array
     {
-        if (isset(self::$cache[$filename])) {
-            return self::$cache[$filename];
-        }
+        return $this->loadArtifactFromAbsolutePath($this->artifactPathFor($filename));
+    }
 
-        $path = $this->artifactPathFor($filename);
+    /**
+     * Candidate47 LOG model artifact — override-aware (Step C-DEBUG-EXPERIMENTAL).
+     * Default (no override, every existing call site): identical to
+     * $this->loadArtifact(self::CAND47_STRUCTURAL_LOG_FILE) as before.
+     */
+    private function loadCand47Artifact(): array
+    {
+        return $this->cand47ArtifactOverride !== null
+            ? $this->loadArtifactFromAbsolutePath($this->cand47ArtifactOverride)
+            : $this->loadArtifact(self::CAND47_STRUCTURAL_LOG_FILE);
+    }
+
+    /**
+     * Shared cache+read+decode for any artifact, keyed by its resolved
+     * absolute path — loadArtifact() resolves the production filename to a
+     * path first, the three *Override properties already ARE absolute
+     * paths. Same cache, same error semantics either way: a missing/corrupt
+     * override file throws exactly like a missing production file — NEVER
+     * silently falls through to the production filename.
+     */
+    private function loadArtifactFromAbsolutePath(string $path): array
+    {
+        if (isset(self::$cache[$path])) {
+            return self::$cache[$path];
+        }
 
         if (! file_exists($path)) {
             throw new RuntimeException("Candidate artifact not found: {$path}");
@@ -670,7 +780,7 @@ class CandidateModelService
 
         $art = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
 
-        self::$cache[$filename] = $art;
+        self::$cache[$path] = $art;
         return $art;
     }
 }

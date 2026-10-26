@@ -227,6 +227,58 @@
         </table>
     </div>
 </div>
+
+{{-- Structural alignment diagnostic --}}
+@if($ctx['structural_alignment'])
+@php
+    $align = $ctx['structural_alignment'];
+    $fmtGap = fn(?float $v) => $v !== null ? number_format($v, 1) : '—';
+    $fmtRatio = fn(?float $v) => $v !== null ? number_format($v, 2) : '—';
+    $fmtMvRatio = fn(?float $v) => $v !== null ? number_format($v, 2) : 'N/A';
+    $directionBadge = [
+        'SAME'     => 'bg-success',
+        'OPPOSITE' => 'bg-danger',
+        'NEUTRAL'  => 'bg-secondary',
+        'MISSING'  => 'bg-light text-dark border',
+    ][$align['direction_agreement']] ?? 'bg-secondary';
+@endphp
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-header bg-warning bg-opacity-10 py-2 px-3">
+        <span class="fw-semibold small">Structural Alignment</span>
+        <span class="text-muted small ms-2">diagnostico — non usato dal modello</span>
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-sm table-bordered mb-0 small font-monospace">
+            <tbody>
+                <tr>
+                    <td class="text-muted" style="width:35%">Elo gap (home - away)</td>
+                    <td class="text-center">{{ $fmtGap($align['elo_gap']) }}</td>
+                </tr>
+                <tr>
+                    <td class="text-muted">Structural gap (home - away)</td>
+                    <td class="text-center">{{ $fmtGap($align['structural_gap']) }}</td>
+                </tr>
+                <tr>
+                    <td class="text-muted">Market Value ratio (home/away)</td>
+                    <td class="text-center">{{ $fmtMvRatio($align['market_value_ratio']) }}</td>
+                </tr>
+                <tr>
+                    <td class="text-muted">Direction agreement</td>
+                    <td class="text-center">
+                        <span class="badge {{ $directionBadge }}">{{ $align['direction_agreement'] }}</span>
+                    </td>
+                </tr>
+                @if($align['structural_to_elo_gap_ratio'] !== null)
+                <tr>
+                    <td class="text-muted">structural_to_elo_gap_ratio</td>
+                    <td class="text-center">{{ $fmtRatio($align['structural_to_elo_gap_ratio']) }}</td>
+                </tr>
+                @endif
+            </tbody>
+        </table>
+    </div>
+</div>
+@endif
 @endif
 @endif
 

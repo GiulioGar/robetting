@@ -15,7 +15,8 @@ use InvalidArgumentException;
  * Selection mirrors the prediction dataset policy (BuildPredictionDataset):
  *   - status 'finished' only (awarded/walkover excluded, as in ML labels V1)
  *   - FT score present and accepted by MatchOutcomeLabelBuilder
- *   - core leagues only (config api-football.core_leagues)
+ *   - competition population per --latent-mode (legacy: core leagues only;
+ *     extended: core leagues + UEFA Champions/Europa/Conference League)
  *   - seasons with year_start >= --from-season (history starts 2024/25)
  *   - kickoff_at strictly before --before (anti-leakage cutoff = snapshot generated_at)
  */
@@ -24,24 +25,31 @@ class ExportLatentFitMatches extends Command
     protected $signature = 'robetting:export-latent-fit-matches
         {--before=          : Cutoff, ISO8601 UTC. Only matches with kickoff_at strictly before it are exported.}
         {--from-season=2024 : First season year_start included}
+        {--latent-mode=legacy : Competition population (legacy|extended)}
         {--output=          : Output CSV path}';
 
-    protected $description = 'Export finished core-league results (before a cutoff) for the Latent Attack/Defence snapshot fit.';
+    protected $description = 'Export finished results (before a cutoff) for the Latent Attack/Defence snapshot fit.';
 
     public function handle(): int
     {
-        $before = (string) $this->option('before');
-        $output = (string) $this->option('output');
+        $before    = (string) $this->option('before');
+        $output    = (string) $this->option('output');
+        $latentMode = (string) $this->option('latent-mode');
 
         if ($before === '' || $output === '') {
             $this->error('--before and --output are required.');
             return Command::FAILURE;
         }
 
+        if (! in_array($latentMode, [LatentFitMatchEligibility::LATENT_MODE_LEGACY, LatentFitMatchEligibility::LATENT_MODE_EXTENDED], true)) {
+            $this->error("Invalid latent-mode '{$latentMode}'. Accepted: legacy, extended.");
+            return Command::FAILURE;
+        }
+
         $cutoff     = CarbonImmutable::parse($before)->utc();
         $fromSeason = (int) $this->option('from-season');
 
-        $matches = LatentFitMatchEligibility::query($cutoff, $fromSeason)
+        $matches = LatentFitMatchEligibility::query($cutoff, $fromSeason, $latentMode)
             ->with(['homeTeam:id,name', 'awayTeam:id,name'])
             ->orderBy('kickoff_at')
             ->orderBy('id')
@@ -85,7 +93,7 @@ class ExportLatentFitMatches extends Command
         }
         fclose($handle);
 
-        $this->info("Exported {$written} matches (skipped {$skipped} invalid) before {$cutoff->toIso8601String()} to {$output}");
+        $this->info("Exported {$written} matches (skipped {$skipped} invalid, latent-mode={$latentMode}) before {$cutoff->toIso8601String()} to {$output}");
 
         return Command::SUCCESS;
     }

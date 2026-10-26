@@ -83,9 +83,17 @@ class TeamEloCalculator
      * Teams with no prior history are implicitly at INITIAL_ELO (use
      * `$ratings[$teamId] ?? self::INITIAL_ELO` when reading).
      *
+     * @param  ?array<int, int>  $allowedCompetitionIds  Step C-ELO — OPT-IN only.
+     *                                                    null (default) = replay EVERY
+     *                                                    competition in the DB, bit-for-bit
+     *                                                    identical to pre-existing behaviour
+     *                                                    ("legacy"/global Elo). Non-null
+     *                                                    restricts the historical replay to
+     *                                                    these competition_ids only ("network"
+     *                                                    Elo — e.g. core leagues + UEFA cups).
      * @return array<int, float>  [team_id => elo_rating]
      */
-    public static function calculateRatingsBefore(Carbon $cutoff): array
+    public static function calculateRatingsBefore(Carbon $cutoff, ?array $allowedCompetitionIds = null): array
     {
         $cutoffTs = $cutoff->getTimestamp();
 
@@ -93,6 +101,7 @@ class TeamEloCalculator
             ->whereNotNull('home_score_ft')
             ->whereNotNull('away_score_ft')
             ->where('kickoff_at', '<', $cutoff)
+            ->when($allowedCompetitionIds !== null, fn ($q) => $q->whereIn('competition_id', $allowedCompetitionIds))
             ->orderBy('kickoff_at')
             ->orderBy('id')
             ->get(['id', 'kickoff_at', 'home_team_id', 'away_team_id', 'home_score_ft', 'away_score_ft']);
@@ -144,9 +153,10 @@ class TeamEloCalculator
      *
      * Returns INITIAL_ELO for any team with no prior history.
      *
+     * @param  ?array<int, int>  $allowedCompetitionIds  See calculateRatingsBefore().
      * @return array{home_elo: float, away_elo: float, elo_difference: float}
      */
-    public static function calculateForMatch(FootballMatch $match): array
+    public static function calculateForMatch(FootballMatch $match, ?array $allowedCompetitionIds = null): array
     {
         if ($match->kickoff_at === null) {
             return [
@@ -156,7 +166,7 @@ class TeamEloCalculator
             ];
         }
 
-        $ratings = self::calculateRatingsBefore($match->kickoff_at);
+        $ratings = self::calculateRatingsBefore($match->kickoff_at, $allowedCompetitionIds);
 
         $homeElo = $ratings[$match->home_team_id] ?? self::INITIAL_ELO;
         $awayElo = $ratings[$match->away_team_id] ?? self::INITIAL_ELO;
@@ -185,11 +195,12 @@ class TeamEloCalculator
      *
      * @param  Collection  $matches  FootballMatch instances with kickoff_at,
      *                               home_team_id, away_team_id populated.
+     * @param  ?array<int, int>  $allowedCompetitionIds  See calculateRatingsBefore().
      * @return array<int, array{home_elo: float, away_elo: float}>  keyed by match id
      */
-    public static function calculateRatingsBeforeMatches(Collection $matches): array
+    public static function calculateRatingsBeforeMatches(Collection $matches, ?array $allowedCompetitionIds = null): array
     {
-        return self::replayAndCapture($matches, null);
+        return self::replayAndCapture($matches, null, $allowedCompetitionIds);
     }
 
     /**
@@ -210,13 +221,15 @@ class TeamEloCalculator
      * @param  Collection  $matches        FootballMatch instances.
      * @param  Collection  $leagueTeamIds  Collection<int> of team IDs in the season
      *                                     (e.g. $season->teams()->pluck('id')).
+     * @param  ?array<int, int>  $allowedCompetitionIds  See calculateRatingsBefore().
      * @return array<int, array{home_elo: float, away_elo: float, league_mean_elo: float}>
      */
     public static function calculateRatingsBeforeMatchesWithLeagueMean(
         Collection $matches,
-        Collection $leagueTeamIds
+        Collection $leagueTeamIds,
+        ?array $allowedCompetitionIds = null
     ): array {
-        return self::replayAndCapture($matches, $leagueTeamIds);
+        return self::replayAndCapture($matches, $leagueTeamIds, $allowedCompetitionIds);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -233,10 +246,13 @@ class TeamEloCalculator
      *
      * The Elo formula, constants, and capture semantics live here ONLY.
      * Neither public method duplicates any part of the update logic.
+     *
+     * @param  ?array<int, int>  $allowedCompetitionIds  See calculateRatingsBefore().
      */
     private static function replayAndCapture(
         Collection  $matches,
-        ?Collection $leagueTeamIds
+        ?Collection $leagueTeamIds,
+        ?array      $allowedCompetitionIds = null
     ): array {
         if ($matches->isEmpty()) {
             return [];
@@ -275,6 +291,7 @@ class TeamEloCalculator
             ->whereNotNull('home_score_ft')
             ->whereNotNull('away_score_ft')
             ->where('kickoff_at', '<=', $maxKickoff)
+            ->when($allowedCompetitionIds !== null, fn ($q) => $q->whereIn('competition_id', $allowedCompetitionIds))
             ->orderBy('kickoff_at')
             ->orderBy('id')
             ->get(['id', 'kickoff_at', 'home_team_id', 'away_team_id', 'home_score_ft', 'away_score_ft']);
