@@ -29,6 +29,7 @@ class Prediction extends Model
         'probability_draw',
         'probability_away',
         'features_json',
+        'availability_snapshot_json',
         'structural_snapshot_version',
         'latent_snapshot_generated_at',
         'home_goals',
@@ -52,6 +53,7 @@ class Prediction extends Model
             'probability_draw'              => 'float',
             'probability_away'              => 'float',
             'features_json'                 => 'array',
+            'availability_snapshot_json'    => 'array',
             'home_goals'                    => 'integer',
             'away_goals'                    => 'integer',
         ];

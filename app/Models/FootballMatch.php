@@ -56,6 +56,39 @@ class FootballMatch extends Model
         ];
     }
 
+    /**
+     * Availability anti-leakage: the injury snapshot is certified PRE-MATCH only
+     * when it was confirmed strictly before kickoff (injuries_fetched_at <
+     * kickoff_at). Prospective fetches only run for future kickoffs, so they
+     * always satisfy this; any snapshot acquired later (e.g. a historical
+     * backfill) has injuries_fetched_at >= kickoff_at and is NOT valid for
+     * pre-match prediction/evaluation. No new column: provenance is derived
+     * from the two existing timestamps.
+     */
+    public function scopeWithPreMatchInjurySnapshot($query)
+    {
+        return $query->whereNotNull('injuries_fetched_at')
+            ->whereNotNull('kickoff_at')
+            ->whereColumn('injuries_fetched_at', '<', 'kickoff_at');
+    }
+
+    /** Injury snapshot taken (any time) but NOT certifiably pre-match. */
+    public function scopeWithNonPreMatchInjurySnapshot($query)
+    {
+        return $query->whereNotNull('injuries_fetched_at')
+            ->where(function ($q) {
+                $q->whereNull('kickoff_at')
+                  ->orWhereColumn('injuries_fetched_at', '>=', 'kickoff_at');
+            });
+    }
+
+    public function hasPreMatchInjurySnapshot(): bool
+    {
+        return $this->injuries_fetched_at !== null
+            && $this->kickoff_at !== null
+            && $this->injuries_fetched_at->lt($this->kickoff_at);
+    }
+
     public function competition(): BelongsTo
     {
         return $this->belongsTo(Competition::class);

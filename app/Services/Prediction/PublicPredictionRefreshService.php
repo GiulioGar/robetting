@@ -96,6 +96,7 @@ class PublicPredictionRefreshService
                 'probability_draw'             => $official['probability_draw'],
                 'probability_away'             => $official['probability_away'],
                 'features_json'                => $official['features_json'],
+                'availability_snapshot_json'   => AvailabilitySnapshotBuilder::buildOrNull($match, $now),
                 'structural_snapshot_version'  => $official['structural_snapshot_generated_at'],
                 'latent_snapshot_generated_at' => $official['latent_snapshot_generated_at'],
             ], $now);

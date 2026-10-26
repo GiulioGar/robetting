@@ -38,17 +38,27 @@ class AvailabilityStatus extends Command
     {
         $coreSlugs = array_values(config('api-football.core_leagues', []));
 
-        $collectionStart = FootballMatch::whereNotNull('injuries_fetched_at')
+        // Only snapshots certified PRE-MATCH (injuries_fetched_at < kickoff_at) are
+        // valid coverage for prediction/evaluation; anything else is reported apart.
+        $collectionStart = FootballMatch::withPreMatchInjurySnapshot()
             ->whereHas('competition', fn ($q) => $q->whereIn('slug', $coreSlugs))
             ->min('injuries_fetched_at');
 
+        $invalidCount = FootballMatch::withNonPreMatchInjurySnapshot()
+            ->whereHas('competition', fn ($q) => $q->whereIn('slug', $coreSlugs))
+            ->count();
+
         if ($collectionStart === null) {
             $this->warn('No injuries_fetched_at data found yet for the 5 core leagues — nothing to report.');
+            if ($invalidCount > 0) {
+                $this->warn("historical/post-kickoff snapshots (NOT valid for prediction/evaluation): {$invalidCount}");
+            }
             return Command::SUCCESS;
         }
 
         $collectionStart = CarbonImmutable::parse($collectionStart);
-        $this->info('Prospective collection start (earliest injuries_fetched_at): ' . $collectionStart->toIso8601String());
+        $this->info('Prospective collection start (earliest pre-match injuries_fetched_at): ' . $collectionStart->toIso8601String());
+        $this->line("historical/post-kickoff snapshots (NOT valid for prediction/evaluation): {$invalidCount}");
         $this->newLine();
 
         $totalReadyTeams = 0;
@@ -80,10 +90,12 @@ class AvailabilityStatus extends Command
             ->where('kickoff_at', '>=', $collectionStart);
 
         $finishedSinceStart = (clone $finishedQuery)->count();
-        $finishedCovered = (clone $finishedQuery)->whereNotNull('injuries_fetched_at')->count();
+        $finishedCovered = (clone $finishedQuery)->withPreMatchInjurySnapshot()->count();
+        $finishedInvalid = (clone $finishedQuery)->withNonPreMatchInjurySnapshot()->count();
 
         $this->line("finished since collection start: {$finishedSinceStart}");
         $this->line("finished injury-covered:         {$finishedCovered}");
+        $this->line("finished historical/post-kickoff (not valid): {$finishedInvalid}");
 
         $perTeam = $this->coveredMatchesPerTeam($competition->id, $collectionStart);
         $teamCount = count($perTeam);
@@ -111,7 +123,7 @@ class AvailabilityStatus extends Command
         $matches = FootballMatch::where('competition_id', $competitionId)
             ->where('status', 'finished')
             ->where('kickoff_at', '>=', $collectionStart)
-            ->whereNotNull('injuries_fetched_at')
+            ->withPreMatchInjurySnapshot()
             ->with(['homeTeam:id,name', 'awayTeam:id,name'])
             ->get(['id', 'home_team_id', 'away_team_id']);
 
@@ -132,8 +144,11 @@ class AvailabilityStatus extends Command
     {
         $this->info('=== TeamAvailabilityCalculator on future injury-covered fixtures ===');
 
+        // Genuinely future fixtures: kickoff still ahead (a past-kickoff abandoned/
+        // postponed row is not a future fixture just because status != finished).
         $futureMatches = FootballMatch::where('status', '!=', 'finished')
-            ->whereNotNull('injuries_fetched_at')
+            ->where('kickoff_at', '>', now())
+            ->withPreMatchInjurySnapshot()
             ->whereHas('competition', fn ($q) => $q->whereIn('slug', $coreSlugs))
             ->with(['homeTeam:id,name', 'awayTeam:id,name'])
             ->get(['id', 'home_team_id', 'away_team_id', 'kickoff_at', 'injuries_fetched_at']);

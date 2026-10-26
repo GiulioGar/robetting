@@ -38,6 +38,39 @@ class TeamHistoryMatchEligibility
      *
      * @return Collection<int, FootballMatch>
      */
+    /**
+     * Batch variant for offline exports: every eligible match (same filters as
+     * matchesBefore(), no kickoff bound) involving ANY of $teamIds, ordered
+     * chronologically ascending. Callers apply the strict as-of cut per target.
+     *
+     * @param  array<int, int>  $teamIds
+     * @return Collection<int, FootballMatch>
+     */
+    public static function eligibleForTeams(array $teamIds): Collection
+    {
+        if ($teamIds === []) {
+            return collect();
+        }
+
+        $candidates = FootballMatch::query()
+            ->where('status', 'finished')
+            ->whereNotNull('home_score_ft')
+            ->whereNotNull('away_score_ft')
+            ->where(function ($q) use ($teamIds): void {
+                $q->whereIn('home_team_id', $teamIds)->orWhereIn('away_team_id', $teamIds);
+            })
+            ->orderBy('kickoff_at')
+            ->get([
+                'id', 'competition_id', 'season_id', 'home_team_id', 'away_team_id',
+                'kickoff_at', 'status', 'home_score_ft', 'away_score_ft',
+            ]);
+
+        return MatchDataScope::filterByScope(
+            $candidates,
+            [MatchDataScope::CORE, MatchDataScope::TEAM_HISTORY],
+        )->values();
+    }
+
     public static function matchesBefore(int $teamId, CarbonInterface $targetKickoff): Collection
     {
         $candidates = FootballMatch::with(['homeTeam:id,name', 'awayTeam:id,name'])

@@ -106,7 +106,11 @@ class TeamAvailabilityCalculator
      */
     public static function calculateForMatch(FootballMatch $targetMatch, int $teamId): array
     {
-        if ($targetMatch->injuries_fetched_at === null || $targetMatch->kickoff_at === null) {
+        // Fail-closed anti-leakage: only a snapshot certified PRE-MATCH
+        // (injuries_fetched_at strictly before kickoff_at) counts as coverage.
+        // A snapshot acquired at/after kickoff (e.g. historical backfill) is
+        // treated exactly like "not covered" for prediction/evaluation.
+        if (! $targetMatch->hasPreMatchInjurySnapshot()) {
             return self::notCoveredResult();
         }
 

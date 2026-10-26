@@ -78,6 +78,7 @@ class OfficialPredictionRecorder
             'probability_draw'             => $data['probability_draw'],
             'probability_away'             => $data['probability_away'],
             'features_json'                => $data['features_json'],
+            'availability_snapshot_json'   => $data['availability_snapshot_json'] ?? null,
             'structural_snapshot_version'  => $data['structural_snapshot_version'] ?? null,
             'latent_snapshot_generated_at' => $data['latent_snapshot_generated_at'] ?? null,
         ]);

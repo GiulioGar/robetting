@@ -12,6 +12,7 @@ use App\Services\Analytics\TeamAgeProfileCalculator;
 use App\Services\Analytics\TeamAnalyticsCalculator;
 use App\Services\Analytics\TeamScheduleLoadCalculator;
 use App\Services\Analytics\TeamAbsenceImpactCalculator;
+use App\Services\Analytics\TeamAvailabilityCalculator;
 use App\Services\Analytics\TeamStarterContinuityCalculator;
 use App\Services\Analytics\CompetitionStatisticsCalculator;
 use App\Services\Analytics\TeamOpponentAdjustedPerformanceCalculator;
@@ -315,6 +316,15 @@ class MatchController extends Controller
         $homeStarterContinuity = TeamStarterContinuityCalculator::calculateForMatch($match, $match->home_team_id);
         $awayStarterContinuity = TeamStarterContinuityCalculator::calculateForMatch($match, $match->away_team_id);
 
+        // Availability V1 (display only — never feeds the prediction). Fail-closed:
+        // injuries_covered is false unless a PRE-MATCH-certified snapshot exists.
+        $homeAvailability = TeamAvailabilityCalculator::calculateForMatch($match, (int) $match->home_team_id);
+        $awayAvailability = TeamAvailabilityCalculator::calculateForMatch($match, (int) $match->away_team_id);
+        $availabilityPlayerIds = collect($homeAvailability['absentees'])->merge($awayAvailability['absentees'])->pluck('player_id')->unique()->values();
+        $availabilityPlayerNames = $availabilityPlayerIds->isEmpty()
+            ? collect()
+            : Player::whereIn('id', $availabilityPlayerIds)->pluck('name', 'id');
+
         $homeAbsenceImpact = TeamAbsenceImpactCalculator::calculateForMatch($match, $match->home_team_id);
         $awayAbsenceImpact = TeamAbsenceImpactCalculator::calculateForMatch($match, $match->away_team_id);
 
@@ -431,6 +441,9 @@ class MatchController extends Controller
             'awayAgeProfile'           => $awayAgeProfile,
             'homeStarterContinuity'    => $homeStarterContinuity,
             'awayStarterContinuity'    => $awayStarterContinuity,
+            'homeAvailability'         => $homeAvailability,
+            'awayAvailability'         => $awayAvailability,
+            'availabilityPlayerNames'  => $availabilityPlayerNames,
             'homeAbsenceImpact'        => $homeAbsenceImpact,
             'awayAbsenceImpact'        => $awayAbsenceImpact,
             'homeRecentHomeAnalytics'  => $homeRecentHomeAnalytics,

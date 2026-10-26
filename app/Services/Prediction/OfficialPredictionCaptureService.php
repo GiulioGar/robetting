@@ -155,6 +155,10 @@ class OfficialPredictionCaptureService
 
         $official = $resolved['data'];
 
+        // Availability frozen with this prediction, at the same instant (display/audit only).
+        $capturedAt = now();
+        $availabilitySnapshot = AvailabilitySnapshotBuilder::buildOrNull($match, $capturedAt);
+
         try {
             OfficialPredictionRecorder::record([
                 'match_id'             => $match->id,
@@ -162,7 +166,7 @@ class OfficialPredictionCaptureService
                 'model_version'        => $official['model_version'],
                 'feature_set_version'  => $official['feature_set_version'],
                 'artifact_path'        => $official['artifact_path'],
-                'generated_at'         => now(),
+                'generated_at'         => $capturedAt,
                 'kickoff_at'           => $match->kickoff_at,
                 'lambda_home'          => $official['lambda_home'],
                 'lambda_away'          => $official['lambda_away'],
@@ -171,6 +175,7 @@ class OfficialPredictionCaptureService
                 'probability_draw'     => $official['probability_draw'],
                 'probability_away'     => $official['probability_away'],
                 'features_json'        => $official['features_json'],
+                'availability_snapshot_json' => $availabilitySnapshot,
                 'structural_snapshot_version'  => $official['structural_snapshot_generated_at'],
                 'latent_snapshot_generated_at' => $official['latent_snapshot_generated_at'],
             ]);

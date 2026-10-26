@@ -421,6 +421,67 @@
      outside this block. --}}
 @if($matchViewMode === 'pre_match')
 
+{{-- Disponibilità rosa (Availability V1) — display only, does not affect the prediction.
+     Data only from a PRE-MATCH-certified injuries snapshot (TeamAvailabilityCalculator). --}}
+<div class="mt-4" id="disponibilita-rosa">
+    <h2 class="fs-5 fw-semibold mb-3">Disponibilità rosa</h2>
+    @php
+        $avFmt = fn(?float $v) => $v === null ? 'n/d' : number_format($v, 4);
+    @endphp
+    <div class="row g-3">
+        @foreach([['label' => $match->homeTeam->name, 'av' => $homeAvailability, 'side' => 'home'], ['label' => $match->awayTeam->name, 'av' => $awayAvailability, 'side' => 'away']] as $blk)
+        @php $av = $blk['av']; @endphp
+        <div class="col-12 col-lg-6" data-availability="{{ $blk['side'] }}">
+            <div class="card h-100">
+                <div class="card-header fw-semibold">{{ $blk['label'] }}</div>
+                <div class="card-body small">
+                    @if(! $av['injuries_covered'])
+                        <p class="text-muted mb-0">Dato non ancora disponibile.</p>
+                    @elseif($av['forced_absent_count'] === 0)
+                        <p class="mb-0">Nessuna assenza forzata rilevata.</p>
+                    @else
+                        <div class="mb-2">
+                            <div>Assenti forzati: <strong>{{ $av['forced_absent_count'] }}</strong></div>
+                            <div>Assenza pesata: <strong>{{ $avFmt($av['weighted_absence']) }}</strong>
+                                @if($av['is_complete'])
+                                    <span class="text-muted">(calcolo completo)</span>
+                                @else
+                                    <span class="text-muted">(calcolo incompleto: {{ $av['weighted_player_count'] }} su {{ $av['forced_absent_count'] }} assenti pesabili; parziale noto {{ $avFmt($av['known_weighted_absence']) }})</span>
+                                @endif
+                            </div>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Giocatore</th>
+                                        <th>Motivo</th>
+                                        <th class="text-end">Quota minuti</th>
+                                        <th class="text-end">Quota valore</th>
+                                        <th class="text-end">Peso assenza</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach($av['absentees'] as $a)
+                                    <tr>
+                                        <td>{{ $availabilityPlayerNames[$a['player_id']] ?? ('Player #' . $a['player_id']) }}</td>
+                                        <td>{{ $a['reason'] ?? '–' }}</td>
+                                        <td class="text-end">{{ $avFmt($a['available_minutes_share']) }}@if($a['u_null_cause'])<div class="text-muted">{{ $a['u_null_cause'] }}</div>@endif</td>
+                                        <td class="text-end">{{ $avFmt($a['market_value_share_top25']) }}@if($a['v_null_cause'])<div class="text-muted">{{ $a['v_null_cause'] }}</div>@endif</td>
+                                        <td class="text-end">{{ $avFmt($a['player_absence_weight']) }}</td>
+                                    </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    @endif
+                </div>
+            </div>
+        </div>
+        @endforeach
+    </div>
+</div>
+
 {{-- D. Confronto pre-match --}}
 <div class="mt-4">
     <h2 class="fs-5 fw-semibold mb-3">Confronto pre-match <span class="text-muted small fw-normal">(stagione, prima del match)</span></h2>

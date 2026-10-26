@@ -9,6 +9,7 @@ use App\Models\Prediction;
 use App\Services\Analytics\TeamStructuralRatingCalculator;
 use App\Services\Prediction\CandidateModelService;
 use App\Services\Prediction\MatchPredictionService;
+use App\Services\Prediction\AvailabilitySnapshotBuilder;
 use App\Services\Prediction\OfficialPredictionRecorder;
 use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
@@ -166,13 +167,16 @@ class PredictionEngineAdminController extends Controller
                 );
             }
 
+            // Availability frozen with this prediction, at the same instant (display/audit only).
+            $capturedAt = now();
+
             OfficialPredictionRecorder::record([
                 'match_id'             => $match->id,
                 'model_key'            => $official['model_key'],
                 'model_version'        => $official['model_version'],
                 'feature_set_version'  => $official['feature_set_version'],
                 'artifact_path'        => $official['artifact_path'],
-                'generated_at'         => now(),
+                'generated_at'         => $capturedAt,
                 'kickoff_at'           => $match->kickoff_at,
                 'lambda_home'          => $official['lambda_home'],
                 'lambda_away'          => $official['lambda_away'],
@@ -181,6 +185,7 @@ class PredictionEngineAdminController extends Controller
                 'probability_draw'     => $official['probability_draw'],
                 'probability_away'     => $official['probability_away'],
                 'features_json'        => $official['features_json'],
+                'availability_snapshot_json' => AvailabilitySnapshotBuilder::buildOrNull($match, $capturedAt),
                 'structural_snapshot_version'  => $official['structural_snapshot_generated_at'],
                 'latent_snapshot_generated_at' => $official['latent_snapshot_generated_at'],
             ]);

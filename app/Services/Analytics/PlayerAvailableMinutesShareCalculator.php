@@ -167,9 +167,11 @@ class PlayerAvailableMinutesShareCalculator
 
         // ── Covered matches: START <= kickoff_at < cutoff (and < END, if any)
         // AND injuries_fetched_at set ──
+        // Only PRE-MATCH-certified snapshots (injuries_fetched_at < kickoff_at)
+        // count as coverage; post-kickoff/historical snapshots never enter the denominator.
         $matchesQuery = FootballMatch::where('kickoff_at', '<', $cutoff)
             ->where('kickoff_at', '>=', $membershipFloor)
-            ->whereNotNull('injuries_fetched_at')
+            ->withPreMatchInjurySnapshot()
             ->where(function ($q) use ($teamId) {
                 $q->where('home_team_id', $teamId)->orWhere('away_team_id', $teamId);
             });
