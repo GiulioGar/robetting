@@ -92,9 +92,37 @@ def print_table(title, stats, labels, gap_name, total):
     print(f'  ECE = {ece(stats, total):.4f}   (N total = {total})')
 
 
+def export_test_csv(out_path, dataset_path, raw_rows, idx, lam_h, lam_a, probs):
+    """Per-match TEST export (out-of-sample: lambdas come from the TRAIN-only fit)."""
+    import csv
+
+    with open(dataset_path, newline='', encoding='utf-8') as f:
+        competition_by_match = {r['match_id']: r['competition_id'] for r in csv.DictReader(f)}
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(out_path, 'w', newline='', encoding='utf-8') as f:
+        w = csv.writer(f)
+        w.writerow(['match_id', 'competition_id', 'season_id', 'kickoff_at', 'home_goals', 'away_goals',
+                    'lambda_home', 'lambda_away', 'lambda3', 'p_home', 'p_draw', 'p_away'])
+        for k, i in enumerate(idx):
+            r = raw_rows[i]
+            lh = max(float(lam_h[i]), 1e-6)
+            la = max(float(lam_a[i]), 1e-6)
+            l3_effective = min(cmp.LAMBDA3, min(lh, la) * 0.9999)   # same cap applied inside bp_1x2
+            w.writerow([r['match_id'], competition_by_match.get(r['match_id'], ''), r['season_id'], r['kickoff_at'],
+                        int(r['label_home_goals']), int(r['label_away_goals']),
+                        repr(float(lam_h[i])), repr(float(lam_a[i])), repr(l3_effective),
+                        repr(float(probs[k, 0])), repr(float(probs[k, 1])), repr(float(probs[k, 2]))])
+    print(f'Exported {len(idx)} TEST rows to {out_path}')
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', default=str(DEFAULT_DATASET), help='Team History dataset CSV.')
+    parser.add_argument('--export-test-csv', default=None,
+                        help='Optional: write the per-match TEST out-of-sample lambdas/probabilities to this CSV '
+                             '(match_id, competition_id, season_id, kickoff_at, observed goals, lambda_home, '
+                             'lambda_away, effective lambda3, 1X2 probabilities). Diagnostic export only.')
     args = parser.parse_args()
 
     raw_rows = cmp.load_dataset(Path(args.dataset), 'CANDIDATE47_TEAM_HISTORY')
@@ -114,6 +142,9 @@ def main():
     hg, ag = y_h[idx], y_a[idx]
     outcome = np.where(hg > ag, 0, np.where(hg == ag, 1, 2))                  # 0=H 1=D 2=A
     total = len(idx)
+
+    if args.export_test_csv:
+        export_test_csv(Path(args.export_test_csv), Path(args.dataset), raw_rows, idx, lam_h, lam_a, probs)
 
     print('\n=== 1X2 CALIBRATION (TEST) — gap = observed frequency - predicted probability ===')
     labels = [prob_label(PROB_EDGES[i], PROB_EDGES[i + 1], i == len(PROB_EDGES) - 2) for i in range(len(PROB_EDGES) - 1)]
