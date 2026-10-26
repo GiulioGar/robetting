@@ -7,6 +7,16 @@
 #   Frosinone, Coventry, Hull City, Deportivo La Coruna, Malaga, Racing Santander,
 #   FC Schalke 04, SV Elversberg, Estac Troyes, Le Mans.
 # No fuzzy matching, no guessed rows.
+#
+# +15 rows (Step C-STRUCTURAL-CHAMPIONS): non-core UEFA Champions League
+# 2026/27 league-phase clubs — appended additively below, core 96 rows above
+# untouched. 12 automated (tools/scripts/p16_champions_2026_club_mapping.py,
+# proposal approved as-is: Club Brugge KV, Lask Linz, FC Porto, Viking,
+# Feyenoord, Sporting CP, Galatasaray, PSV Eindhoven, Shakhtar Donetsk,
+# Fenerbahçe, Bodo/Glimt, Slavia Praha) + 3 manually verified on Transfermarkt
+# (AEK Athens FC, Slovan Bratislava, Sabah FA — club_id 63993, TM name
+# "Sabah FK"). These 15 feed ONLY the Structural TOP25 snapshot — unrelated
+# to the 5-core-league population used by the Latent fitter/eligibility.
 274	Lazio	398
 275	Sassuolo	6574
 276	AC Milan	5
@@ -103,3 +113,18 @@
 367	Paris FC	10004
 368	Lens	826
 369	Le Mans	1164
+424	Club Brugge KV	2282
+444	Lask Linz	413
+409	FC Porto	720
+442	Viking	239
+408	Feyenoord	234
+410	Sporting CP	336
+433	Galatasaray	141
+407	PSV Eindhoven	383
+420	Shakhtar Donetsk	660
+428	Fenerbahce	36
+414	Bodo/Glimt	501
+422	Slavia Praha	62
+426	AEK Athens FC	2441
+436	Slovan Bratislava	540
+463	Sabah FA	63993

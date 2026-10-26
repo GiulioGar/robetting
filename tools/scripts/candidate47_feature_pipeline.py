@@ -120,22 +120,77 @@ def _fit_latent(matches, n_teams, prior_n=LATENT_PRIOR_N, x0=None, maxiter=MAXIT
     return bh, ba, att, def_
 
 
-def compute_latent_features(rows, verbose=False):
+def load_latent_history_csv(csv_path, exclude_match_ids):
+    """
+    Load extra Latent-fit history rows from an ExportLatentFitMatches CSV
+    (robetting:export-latent-fit-matches --latent-mode=extended), for use as
+    compute_latent_features()'s extra_history_rows.
+
+    EXCLUDES any match_id already in exclude_match_ids: the --latent-mode=extended
+    export necessarily re-includes every core-league match too (same population
+    as the training targets), so this guard is mandatory — without it a core
+    match would be double-counted in the walk-forward fit (once as a target
+    row, once as "extra" history).
+
+    Field types match the dataset CSV rows exactly (raw strings, same as
+    csv.DictReader gives load_historical_rows()) — no int() casts here, so
+    team_idx lookups stay consistent with the existing string-keyed convention.
+
+    @return list of dicts: home_team_id, away_team_id, kickoff_at,
+            label_home_goals, label_away_goals (never used as targets —
+            these rows never receive an output index).
+    """
+    out = []
+    with open(csv_path, newline='', encoding='utf-8') as f:
+        for r in csv.DictReader(f):
+            if r['match_id'] in exclude_match_ids:
+                continue
+            out.append({
+                'home_team_id': r['home_team_id'],
+                'away_team_id': r['away_team_id'],
+                'kickoff_at': r['kickoff_at'],
+                'label_home_goals': r['home_goals'],
+                'label_away_goals': r['away_goals'],
+            })
+    return out
+
+
+def compute_latent_features(rows, extra_history_rows=None, verbose=False):
     """
     Walk-forward Latent Attack/Defence, date-grouped, chronological — the
     fit used to produce row i's features only ever saw matches strictly
     before row i's date group (no leakage).
 
+    extra_history_rows (opt-in, default None/empty): additional matches that
+    feed the walk-forward fit's input population ONLY — they are never
+    assigned an output index and never become benchmark targets. Used for
+    Latent 'extended' mode (core + UEFA history) while the target population
+    (rows) stays exactly the same core-league matches either way. When
+    extra_history_rows is None/empty this function is byte-identical to the
+    pre-extended-mode behaviour (same team population, same date groups, same
+    fit calls) — 'legacy' mode is unaffected by this parameter's existence.
+
     @return dict row_index -> (attack_home, defence_home, attack_away, defence_away)
+            — indices refer to `rows` only, never to extra_history_rows.
     """
-    team_ids = sorted(set(r['home_team_id'] for r in rows) | set(r['away_team_id'] for r in rows))
+    extra_history_rows = extra_history_rows or []
+
+    team_ids = sorted(
+        set(r['home_team_id'] for r in rows) | set(r['away_team_id'] for r in rows)
+        | set(r['home_team_id'] for r in extra_history_rows) | set(r['away_team_id'] for r in extra_history_rows)
+    )
     team_idx = {t: i for i, t in enumerate(team_ids)}
     n_teams = len(team_ids)
 
-    date_groups = defaultdict(list)
+    target_date_groups = defaultdict(list)
     for idx, r in enumerate(rows):
-        date_groups[r['kickoff_at'][:10]].append((idx, r))
-    sorted_dates = sorted(date_groups.keys())
+        target_date_groups[r['kickoff_at'][:10]].append((idx, r))
+
+    history_only_date_groups = defaultdict(list)
+    for r in extra_history_rows:
+        history_only_date_groups[r['kickoff_at'][:10]].append(r)
+
+    sorted_dates = sorted(set(target_date_groups.keys()) | set(history_only_date_groups.keys()))
 
     prior_matches_list = []
     latent_feats = {}
@@ -143,7 +198,9 @@ def compute_latent_features(rows, verbose=False):
     fits_done = 0
     t0 = time.perf_counter()
     for date in sorted_dates:
-        group = date_groups[date]
+        target_group = target_date_groups.get(date, [])
+        history_group = history_only_date_groups.get(date, [])
+
         if len(prior_matches_list) == 0:
             bh, ba, att, def_ = _fit_latent([], n_teams, x0=current_params)
         else:
@@ -151,11 +208,20 @@ def compute_latent_features(rows, verbose=False):
             bh, ba, att, def_ = _fit_latent(m_arr, n_teams, x0=current_params)
             fits_done += 1
         current_params = (bh, ba, att, def_)
-        for idx, r in group:
+
+        for idx, r in target_group:
             hi, ai = team_idx.get(r['home_team_id']), team_idx.get(r['away_team_id'])
             latent_feats[idx] = (0.0, 0.0, 0.0, 0.0) if hi is None or ai is None else \
                 (float(att[hi]), float(def_[hi]), float(att[ai]), float(def_[ai]))
-        for idx, r in group:
+
+        # Accumulate BOTH target-group and history-only-group matches of this
+        # date into prior_matches_list — future dates' fits will see them,
+        # strictly-before semantics unchanged (accumulation happens AFTER the
+        # fit for this date, same as the legacy single-source loop).
+        for idx, r in target_group:
+            prior_matches_list.append((r['home_team_id'], r['away_team_id'],
+                                        int(float(r['label_home_goals'])), int(float(r['label_away_goals']))))
+        for r in history_group:
             prior_matches_list.append((r['home_team_id'], r['away_team_id'],
                                         int(float(r['label_home_goals'])), int(float(r['label_away_goals']))))
 
@@ -191,7 +257,7 @@ def _derive_label_1x2(home_goals, away_goals):
     return 'H' if hg > ag else ('D' if hg == ag else 'A')
 
 
-def build_raw_feature_rows(rows, verbose=False):
+def build_raw_feature_rows(rows, latent_history_csv=None, verbose=False):
     """
     One dict per historical row: match_id, kickoff_at, season_id,
     label_home_goals, label_away_goals, label_result_1x2 (H/D/A — reused
@@ -200,8 +266,19 @@ def build_raw_feature_rows(rows, verbose=False):
     missing/unavailable — NOT MISSING30-gated, NOT imputed, NOT scaled;
     that stays the training-time caller's job, applied uniformly regardless
     of row source).
+
+    latent_history_csv (opt-in, default None): path to an
+    ExportLatentFitMatches CSV (robetting:export-latent-fit-matches
+    --latent-mode=extended) supplying EXTRA Latent walk-forward history
+    (core + UEFA) beyond `rows` itself. `rows` (the target/benchmark
+    population) is never changed by this — only the input population feeding
+    the Latent fit grows. None (default) = legacy behaviour, byte-identical.
     """
-    latent_by_idx = compute_latent_features(rows, verbose=verbose)
+    extra_history_rows = (
+        load_latent_history_csv(latent_history_csv, exclude_match_ids={r['match_id'] for r in rows})
+        if latent_history_csv else None
+    )
+    latent_by_idx = compute_latent_features(rows, extra_history_rows=extra_history_rows, verbose=verbose)
     structural_by_match = compute_structural_log_features(rows)
 
     out = []

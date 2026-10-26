@@ -1,0 +1,15 @@
+# PROPOSED mapping for UEFA Champions League 2026/27 league-phase clubs — Step C-STRUCTURAL-CHAMPIONS.
+# NOT the canonical p16_team_club_mapping.tsv — proposal only, not yet verified/committed.
+# team_id (Robetting) -> team_name -> Transfermarkt club_id.
+424	Club Brugge KV	2282
+444	Lask Linz	413
+409	FC Porto	720
+442	Viking	239
+408	Feyenoord	234
+410	Sporting CP	336
+433	Galatasaray	141
+407	PSV Eindhoven	383
+420	Shakhtar Donetsk	660
+428	Fenerbahçe	36
+414	Bodo/Glimt	501
+422	Slavia Praha	62

@@ -64,7 +64,16 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', default=None,
                      help='Optional pre-built combined dataset CSV (P27E2/F-A, '
                           'build_candidate47_learning_dataset.py output). If omitted, '
-                          'recomputes from tools/datasets/dataset_core_v1_2024_2025.csv as before.')
+                          'recomputes from --historical (default: '
+                          'tools/datasets/dataset_core_v1_2024_2025.csv) as before.')
+parser.add_argument('--historical', default=None,
+                     help='Step C-TEAM-HISTORY-ARTIFACT — override the raw historical CSV path for '
+                          'the (non --dataset) default path below. Must be the SAME '
+                          'dataset_core_v1_*.csv raw shape (39 core features + labels), just with a '
+                          'different Recent-window population (e.g. '
+                          'dataset_core_v1_team_history_2024_2025.csv). Ignored when --dataset is given. '
+                          'Default (omitted): the production path, unchanged — '
+                          'tools/datasets/dataset_core_v1_2024_2025.csv.')
 parser.add_argument('--output-artifact', default=None,
                      help='Override the artifact output path (for tests only — default is the real '
                           'production path, tools/models/prediction_engine_candidate47_structural_log.json).')
@@ -80,9 +89,10 @@ if args.dataset:
         by_source[r['source_kind']] = by_source.get(r['source_kind'], 0) + 1
     print(f"By source: {by_source}")
 else:
-    hist_rows = pipe.load_historical_rows(ROOT / 'tools/datasets/dataset_core_v1_2024_2025.csv')
+    historical_path = Path(args.historical) if args.historical else ROOT / 'tools/datasets/dataset_core_v1_2024_2025.csv'
+    hist_rows = pipe.load_historical_rows(historical_path)
     assert len(hist_rows) == 3511, f"Expected 3511 rows, got {len(hist_rows)}"
-    print(f"Training rows: {len(hist_rows)}")
+    print(f"Training rows (from {historical_path}): {len(hist_rows)}")
     raw_rows = pipe.build_raw_feature_rows(hist_rows, verbose=True)
 
     n_missing_struct = sum(1 for r in raw_rows if r['structural_log_home'] is None)

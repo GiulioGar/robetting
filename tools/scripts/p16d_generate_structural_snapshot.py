@@ -72,26 +72,73 @@ def main() -> int:
             f'{PLAYERS_OUT_PATH.name} — {OUT_PATH.name} is left untouched.'
         ),
     )
+    arg_parser.add_argument(
+        '--team-ids', default=None,
+        help=(
+            'Step C-STRUCTURAL-CHAMPIONS — comma-separated Robetting team_ids to '
+            'fetch/update INCREMENTALLY (e.g. the 15 non-core UEFA Champions League '
+            '2026/27 league-phase clubs). Every id MUST already have a row in '
+            'p16_team_club_mapping.tsv — abort before any fetch otherwise. Omit for '
+            'the original full-population (96 core teams) behaviour, unchanged.'
+        ),
+    )
+    arg_parser.add_argument(
+        '--base-snapshot', default=None,
+        help=(
+            'Existing structural_strength_*.json to start from — its "teams" entries '
+            'are carried over byte-for-byte for every team NOT in --team-ids. Typically '
+            f'{OUT_PATH.name} (the approved champion snapshot). Requires --team-ids and '
+            '--output (which must differ from --base-snapshot, to never overwrite it).'
+        ),
+    )
+    arg_parser.add_argument(
+        '--output', default=None,
+        help=(
+            f'Override the Structural output path (default: {OUT_PATH.name}). '
+            'Use a separate path (e.g. structural_strength_champions_extended.json) '
+            'for any --team-ids/--base-snapshot run — never the champion file.'
+        ),
+    )
     args = arg_parser.parse_args()
 
+    out_path = Path(args.output) if args.output else OUT_PATH
+    incremental = args.team_ids is not None
+
+    if args.base_snapshot and out_path == Path(args.base_snapshot):
+        print("ABORTING: --output must differ from --base-snapshot — refusing to overwrite the base in place.")
+        return 1
+
     # ─── Load the committed team_id -> club_id mapping (P16A automated +
-    # P16E manually-verified additions), consolidated into a single durable
-    # file — see tools/scripts/p16_team_club_mapping.tsv for provenance.
-    # This file IS the current-season (96) team list: there is no separate
-    # "current teams" query here, so a future roster change (promotion/
-    # relegation) requires updating this file by hand before re-running.
+    # P16E manually-verified additions, + the 15 non-core UEFA Champions
+    # League 2026/27 rows appended in Step C-STRUCTURAL-CHAMPIONS),
+    # consolidated into a single durable file — see
+    # tools/scripts/p16_team_club_mapping.tsv for provenance. This file IS
+    # the team list: there is no separate "current teams" query here, so a
+    # future roster change requires updating this file by hand first.
     mapping_path = ROOT / 'tools/scripts/p16_team_club_mapping.tsv'
-    to_fetch = []  # (team_id, name, comp, club_id) — comp left empty, unused
+    all_mapped = []  # (team_id, name, comp, club_id) — comp left empty, unused
     with open(mapping_path, encoding='utf-8') as f:
         for line in f:
             if not line.strip() or line.startswith('#'):
                 continue
             tid, name, club_id = line.rstrip('\n').split('\t')
-            to_fetch.append((tid, name, '', club_id))
+            all_mapped.append((tid, name, '', club_id))
+
+    if incremental:
+        wanted_ids = [t.strip() for t in args.team_ids.split(',') if t.strip()]
+        mapped_ids = {row[0] for row in all_mapped}
+        missing = [t for t in wanted_ids if t not in mapped_ids]
+        if missing:
+            print(f"ABORTING: team_id(s) without a mapping row in {mapping_path.name}: {missing}. "
+                  "No fetch attempted.")
+            return 1
+        to_fetch = [row for row in all_mapped if row[0] in set(wanted_ids)]
+    else:
+        to_fetch = all_mapped
 
     unmapped = []  # kept for the report below; always empty for this committed file
 
-    print(f"Current 2026/27 teams requested: {len(to_fetch)}")
+    print(f"Teams requested this run: {len(to_fetch)}" + (" (incremental)" if incremental else ""))
     print(f"With safe P16A/P16E mapping: {len(to_fetch)}")
     print(f"UNMAPPED (reported, not guessed, skipped): {len(unmapped)}")
     for tid, name, comp in unmapped:
@@ -99,10 +146,21 @@ def main() -> int:
     print()
 
     generated_at = datetime.now(timezone.utc).isoformat()
+
     teams_out = {}
     players_out = {}
+    if args.base_snapshot:
+        base = json.loads(Path(args.base_snapshot).read_text(encoding='utf-8'))
+        # Byte/numerically-preserved carry-over — these entries are never
+        # touched below unless the SAME team_id is also in to_fetch (fresh
+        # fetch result then takes precedence, same "update" semantics as a
+        # full re-run would have for that one team).
+        teams_out = dict(base.get('teams', {}))
+        print(f"Base snapshot loaded: {args.base_snapshot} ({len(teams_out)} existing teams, generated_at={base.get('generated_at')})")
+
     consecutive_failures = 0
     aborted = False
+    fetched_this_run = set()
 
     for i, (tid, name, comp, club_id) in enumerate(to_fetch):
         if i > 0:
@@ -135,6 +193,7 @@ def main() -> int:
                     'players_count': len(players),
                     'top25_market_value': top25_sum,
                 }
+                fetched_this_run.add(tid)
                 # Full squad (not just TOP25) kept separately \u2014 never consumed
                 # by the Structural TOP25 output above, which is unchanged.
                 players_out[tid] = {
@@ -161,12 +220,17 @@ def main() -> int:
         return 1
 
     # ─── Validation before writing ───────────────────────────────────────────
-    coverage = len(teams_out)
+    # Coverage/positivity are checked against THIS RUN's own fetch batch only
+    # — in incremental mode teams_out also holds the untouched base-snapshot
+    # entries, which were already validated when that base was generated and
+    # must not be re-validated/re-counted here.
+    coverage = len(fetched_this_run)
     total = len(to_fetch)
     print(f"\nCoverage: {coverage}/{total} requested teams ({coverage/total:.1%})")
 
-    values = [t['top25_market_value'] for t in teams_out.values()]
-    non_positive = [tid for tid, t in teams_out.items() if t['top25_market_value'] <= 0]
+    fetched_values = {tid: teams_out[tid] for tid in fetched_this_run}
+    values = [t['top25_market_value'] for t in fetched_values.values()]
+    non_positive = [tid for tid, t in fetched_values.items() if t['top25_market_value'] <= 0]
     if non_positive:
         print(f"ABORTING: {len(non_positive)} teams with TOP25 <= 0 — refusing to write a suspect snapshot.")
         return 1
@@ -188,14 +252,24 @@ def main() -> int:
     structural_snapshot, players_snapshot = build_snapshots(teams_out, players_out, generated_at)
 
     if args.players_only:
-        print(f"\n--players-only: {OUT_PATH} left untouched (not written)")
+        print(f"\n--players-only: {out_path} left untouched (not written)")
     else:
-        _write_json_atomic(OUT_PATH, structural_snapshot)
-        print(f"\nSnapshot written atomically -> {OUT_PATH}")
+        _write_json_atomic(out_path, structural_snapshot)
+        print(f"\nSnapshot written atomically -> {out_path}")
         print(f"generated_at: {generated_at}")
 
-    _write_json_atomic(PLAYERS_OUT_PATH, players_snapshot)
-    print(f"Player-level snapshot written atomically -> {PLAYERS_OUT_PATH}")
+    if incremental:
+        # players_out here only holds THIS RUN's fetch batch (never merged
+        # with a base players file above) — writing it to the shared
+        # PLAYERS_OUT_PATH would silently truncate the full-population
+        # player-level file down to just these teams. Skip it; the
+        # Structural TOP25 output above is the only deliverable this mode
+        # produces (same scope requested — never the player-level file).
+        print(f"Incremental mode: {PLAYERS_OUT_PATH.name} intentionally NOT written "
+              "(would truncate it to only this run's teams).")
+    else:
+        _write_json_atomic(PLAYERS_OUT_PATH, players_snapshot)
+        print(f"Player-level snapshot written atomically -> {PLAYERS_OUT_PATH}")
 
     return 0
 
