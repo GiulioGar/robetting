@@ -84,6 +84,7 @@ class ServeLocal extends Command
             $this->runPendingStats($statsService);
             $this->runPendingEvents($eventsService);
             $this->runPendingInjuries($injuriesService);
+            $this->runOddsSync();
         }
 
         return self::SUCCESS;
@@ -115,6 +116,9 @@ class ServeLocal extends Command
 
         $this->info('[startup] Syncing pending injuries (72h window)...');
         $this->runPendingInjuries($injuriesService);
+
+        $this->info('[startup] Syncing pre-match odds...');
+        $this->runOddsSync();
 
         $this->info('[startup] Capturing learning data...');
         $this->runOfficialResultsCapture();
@@ -216,6 +220,24 @@ class ServeLocal extends Command
             $msg .= "  [rem:{$result['daily_remaining']}]";
         }
         $this->line($msg);
+    }
+
+    /**
+     * Odds V1 — pre-match 1X2 prospective collection. The service enforces its own
+     * per-competition ~3h throttle and only queries competitions with upcoming
+     * fixtures, so calling it on every loop tick costs nothing when nothing is due.
+     * Fail-safe: an Odds failure must never stop the rest of the serve loop.
+     */
+    private function runOddsSync(): void
+    {
+        try {
+            $r = app(\App\Services\DataSources\ApiFootball\ApiFootballOddsSyncService::class)->syncPending();
+            if ($r['api_calls'] > 0) {
+                $this->line("[odds] competitions={$r['competitions']}  api_calls={$r['api_calls']}  created={$r['created']}  duplicates={$r['duplicates']}  skipped={$r['skipped']}  errors={$r['errors']}");
+            }
+        } catch (\Throwable $e) {
+            $this->error('[odds] sync failed: ' . $e->getMessage());
+        }
     }
 
     private function runPendingStats(ApiFootballMatchStatisticsSyncService $service): void

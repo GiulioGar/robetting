@@ -148,6 +148,123 @@
 </div>
 @endif
 
+{{-- Mercato 1X2 (Odds V1) — raw market information only. Certified pre-match snapshots,
+     latest per bookmaker. NOT a value signal: no edge/ROI/stake/recommendation here. --}}
+<div class="mt-4" data-testid="market-1x2">
+    <h2 class="fs-5 fw-semibold mb-3">Mercato 1X2
+        @if($matchViewMode !== 'pre_match')<span class="text-muted small fw-normal">(ultimo snapshot pre-match, dato storico)</span>@endif
+    </h2>
+    @if(empty($marketOdds['bookmakers']))
+        <p class="text-muted">Quote di mercato non ancora disponibili.</p>
+    @else
+        @php
+            $mk = $marketOdds;
+            $fmtOdd = fn(float $o) => number_format($o, 2);
+            $bestLabels = ['home' => '1', 'draw' => 'X', 'away' => '2'];
+        @endphp
+        <div class="card">
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="ps-3">Bookmaker</th>
+                            <th class="text-end">1</th>
+                            <th class="text-end">X</th>
+                            <th class="text-end">2</th>
+                            <th class="text-end pe-3">Aggiornamento</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach($mk['bookmakers'] as $b)
+                        <tr data-bookmaker="{{ $b['bookmaker_id'] }}">
+                            <td class="ps-3">{{ $b['name'] }}
+                                <span class="text-muted small" title="Overround grezzo: somma(1/quota) - 1">· overround {{ number_format($b['overround'] * 100, 1) }}%</span>
+                            </td>
+                            <td class="text-end">{{ $fmtOdd($b['home']) }}</td>
+                            <td class="text-end">{{ $fmtOdd($b['draw']) }}</td>
+                            <td class="text-end">{{ $fmtOdd($b['away']) }}</td>
+                            <td class="text-end pe-3 text-muted small">
+                                {{ ($b['provider_updated_at'] ?? $b['fetched_at'])->copy()->setTimezone('Europe/Rome')->format('d/m H:i') }}
+                                @if($b['provider_updated_at'] !== null)<span title="rilevato {{ $b['fetched_at']->copy()->setTimezone('Europe/Rome')->format('d/m H:i') }}">(provider)</span>@endif
+                            </td>
+                        </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+            <div class="card-body border-top small" data-testid="market-best">
+                <div class="fw-semibold mb-1">Migliore quota disponibile <span class="text-muted fw-normal">(informazione di mercato, non un segnale value)</span></div>
+                <div class="row g-2">
+                    @foreach($bestLabels as $key => $label)
+                    <div class="col-4" data-best="{{ $key }}">
+                        {{ $label }}:
+                        @if($mk['best'][$key] !== null)
+                            <strong>{{ $fmtOdd($mk['best'][$key]['odd']) }}</strong>
+                            <span class="text-muted">{{ implode(', ', $mk['best'][$key]['bookmakers']) }}</span>
+                        @else
+                            –
+                        @endif
+                    </div>
+                    @endforeach
+                </div>
+                @if($publicPrediction !== null)
+                <div class="fw-semibold mt-3 mb-1">Robetting <span class="text-muted fw-normal">(Candidate47, probabilità e quota equa)</span></div>
+                <div class="row g-2" data-testid="market-robetting">
+                    @foreach([['1', $publicPrediction['probability_home'], $publicPrediction['fair_odds_home']], ['X', $publicPrediction['probability_draw'], $publicPrediction['fair_odds_draw']], ['2', $publicPrediction['probability_away'], $publicPrediction['fair_odds_away']]] as [$lbl, $prob, $fair])
+                    <div class="col-4">{{ $lbl }}: <strong>{{ number_format($prob * 100, 1) }}%</strong> <span class="text-muted">quota equa {{ $fair !== null ? number_format($fair, 2) : '–' }}</span></div>
+                    @endforeach
+                </div>
+                @endif
+            </div>
+            @if(!empty($marketComparison))
+            @php $mc = $marketComparison; @endphp
+            <div class="card-body border-top small" data-testid="market-comparison">
+                <div class="fw-semibold mb-1">Confronto Robetting vs mercato
+                    <span class="badge text-bg-secondary fw-normal">diagnostica</span>
+                </div>
+                <div class="text-muted mb-2">
+                    @if($mc['source'] === 'official')
+                        Prediction ufficiale del {{ $mc['generated_at']->copy()->setTimezone('Europe/Rome')->format('d/m/Y H:i') }}; mercato al momento della prediction
+                    @else
+                        Mercato attuale
+                    @endif
+                    · consenso fair (mediana su {{ $mc['bookmaker_count'] }} bookmaker, ultima quota {{ $mc['latest_fetched_at']->copy()->setTimezone('Europe/Rome')->format('d/m H:i') }})
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-2">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Esito</th>
+                                <th class="text-end">P Robetting</th>
+                                <th class="text-end">P mercato fair</th>
+                                <th class="text-end">Differenza</th>
+                                <th class="text-end">Miglior quota</th>
+                                <th class="text-end">EV teorico</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach(['home' => '1', 'draw' => 'X', 'away' => '2'] as $key => $lbl)
+                            @php $r = $mc['rows'][$key]; @endphp
+                            <tr data-outcome="{{ $key }}">
+                                <td>{{ $lbl }}</td>
+                                <td class="text-end">{{ number_format($r['model_probability'] * 100, 1) }}%</td>
+                                <td class="text-end">{{ number_format($r['market_fair_probability'] * 100, 1) }}%</td>
+                                <td class="text-end">{{ sprintf('%+.1f', $r['probability_edge'] * 100) }} pp</td>
+                                <td class="text-end">{{ $r['best_odd'] !== null ? number_format($r['best_odd'], 2) : '–' }}
+                                    <span class="text-muted">{{ implode(', ', $r['best_bookmakers']) }}</span></td>
+                                <td class="text-end">{{ $r['theoretical_ev'] !== null ? sprintf('%+.1f', $r['theoretical_ev'] * 100) . '%' : '–' }}</td>
+                            </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+                <div class="text-muted">Dati diagnostici, non raccomandazione di scommessa.</div>
+            </div>
+            @endif
+        </div>
+    @endif
+</div>
+
 {{-- Step 1C.1 — B/C/D (real match data: statistics/events/lineups) belong
      semantically to the played match, never to a pre-match preview. Data/
      queries unchanged — only not rendered for 'pre_match'. --}}

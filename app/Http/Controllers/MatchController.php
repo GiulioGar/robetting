@@ -20,6 +20,9 @@ use App\Services\Analytics\TeamOpponentQualityCalculator;
 use App\Services\Analytics\TeamStrengthComparisonCalculator;
 use App\Services\Analytics\TeamTimeDecayedPerformanceCalculator;
 use App\Models\Prediction;
+use App\Services\Matches\MatchMarketOddsBuilder;
+use App\Services\Odds\MarketConsensusService;
+use App\Services\Odds\ModelMarketDiagnostics;
 use App\Services\Matches\PreferredMatchStatisticResolver;
 use App\Services\Prediction\TeamHistoryMatchEligibility;
 use App\Services\Prediction\PublicMatchPredictionService;
@@ -194,6 +197,8 @@ class MatchController extends Controller
             'matchEvents'   => $matchEvents,
             'lineups'       => $lineups,
             'showPredictionDiagnostics' => $showPredictionDiagnostics,
+            // Raw 1X2 market (Odds V1, certified pre-match snapshots only) — information only, no value logic.
+            'marketOdds'    => MatchMarketOddsBuilder::forMatch((int) $match->id),
         ];
 
         if ($matchViewMode === 'pre_match') {
@@ -213,7 +218,77 @@ class MatchController extends Controller
             $data['publicPrediction'] = null;
         }
 
+        // Value Engine V1 — diagnostic only (no value/threshold/stake/recommendation).
+        $data['marketComparison'] = $this->marketComparison($match, $matchViewMode, $data['publicPrediction'] ?? null);
+
         return view('matches.show', $data);
+    }
+
+    /**
+     * "Confronto Robetting vs mercato" (diagnostic). Candidate47 only.
+     *  - pre_match: live Candidate47 prediction vs the market as of now();
+     *  - finished: ONLY if an official Candidate47 prediction exists, vs the
+     *    market as of that prediction's generated_at (never today's/closing odds);
+     *  - otherwise: no comparison.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function marketComparison(FootballMatch $match, string $mode, ?array $publicPrediction): ?array
+    {
+        $model = null;
+        $asOf  = null;
+        $source = null;
+        $generatedAt = null;
+
+        if ($mode === 'pre_match') {
+            if ($publicPrediction !== null
+                && ($publicPrediction['model_used'] ?? null) === PublicMatchPredictionService::MODEL_CANDIDATE_V2
+                && ! ($publicPrediction['fallback_used'] ?? true)) {
+                $model  = [
+                    'home' => (float) $publicPrediction['probability_home'],
+                    'draw' => (float) $publicPrediction['probability_draw'],
+                    'away' => (float) $publicPrediction['probability_away'],
+                ];
+                $asOf   = now();
+                $source = 'live';
+            }
+        } elseif ($match->status === 'finished') {
+            $prediction = Prediction::where('match_id', $match->id)
+                ->where('purpose', Prediction::PURPOSE_OFFICIAL)
+                ->where('model_key', PublicMatchPredictionService::MODEL_CANDIDATE_V2)
+                ->orderByDesc('generated_at')
+                ->orderByDesc('id')
+                ->first();
+
+            if ($prediction !== null) {
+                $model = [
+                    'home' => (float) $prediction->probability_home,
+                    'draw' => (float) $prediction->probability_draw,
+                    'away' => (float) $prediction->probability_away,
+                ];
+                $asOf        = $prediction->generated_at;
+                $generatedAt = $prediction->generated_at;
+                $source      = 'official';
+            }
+        }
+
+        if ($model === null) {
+            return null;
+        }
+
+        $market = MarketConsensusService::asOf((int) $match->id, $asOf);
+        if ($market === null) {
+            return null;
+        }
+
+        return [
+            'source'            => $source,
+            'as_of'             => $asOf,
+            'generated_at'      => $generatedAt,
+            'bookmaker_count'   => $market['bookmaker_count'],
+            'latest_fetched_at' => $market['latest_fetched_at'],
+            'rows'              => ModelMarketDiagnostics::compare($model, $market),
+        ];
     }
 
     /**

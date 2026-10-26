@@ -14,6 +14,26 @@ return [
     'late_stats_retry_days'         => (int) env('API_FOOTBALL_LATE_STATS_RETRY_DAYS', 7),
     'late_stats_max_age_days'       => (int) env('API_FOOTBALL_LATE_STATS_MAX_AGE_DAYS', 180),
 
+    // Odds V1 — PRE-MATCH 1X2 (Match Winner) prospective collection, append-only.
+    // Scope = core_leagues + the 3 UEFA club competitions (additional_competitions).
+    //   match_winner_bet_id   : API-Football bet id of "Match Winner" (1 per the provider's
+    //                           /odds/bets reference; verify with GET /odds/bets?search=Match Winner).
+    //                           A bet is also accepted when its name equals match_winner_bet_name.
+    //   throttle_minutes      : min interval between successful syncs of the same competition
+    //                           (pre-match odds refresh ~every 3h at the provider).
+    //   error_retry_minutes   : min interval after a failed attempt.
+    //   horizon_days          : only competitions with a scheduled fixture within this window are queried.
+    //   max_pages             : hard cap on /odds pages per (league, season) per run.
+    'odds' => [
+        'enabled'              => (bool) env('API_FOOTBALL_ODDS_ENABLED', true),
+        'match_winner_bet_id'  => (int) env('API_FOOTBALL_ODDS_MATCH_WINNER_BET_ID', 1),
+        'match_winner_bet_name' => 'Match Winner',
+        'throttle_minutes'     => (int) env('API_FOOTBALL_ODDS_THROTTLE_MINUTES', 180),
+        'error_retry_minutes'  => (int) env('API_FOOTBALL_ODDS_ERROR_RETRY_MINUTES', 60),
+        'horizon_days'         => (int) env('API_FOOTBALL_ODDS_HORIZON_DAYS', 14),
+        'max_pages'            => (int) env('API_FOOTBALL_ODDS_MAX_PAGES', 20),
+    ],
+
     // Canonical slug for each core league ID. Used by the league importer to
     // map API-Football's numeric ID to the project's canonical competition slug.
     // core_leagues = competitions Robetting predicts on. Never mix with
