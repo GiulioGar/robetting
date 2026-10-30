@@ -228,6 +228,19 @@ class ApiFootballResultRefreshServiceTest extends TestCase
         $this->assertSame('finished', $match->fresh()->status);
     }
 
+    public function test_catch_up_reports_failed_batches(): void
+    {
+        $this->makeMatchWithExtId(now()->subDays(3), 'scheduled', 9007);
+
+        Http::fake(['v3.football.api-sports.io/fixtures*' => Http::response(['message' => 'error'], 500)]);
+
+        $result = app(ApiFootballResultRefreshService::class)->catchUp();
+
+        $this->assertSame(1, $result['candidates']);
+        $this->assertSame(0, $result['updated']);
+        $this->assertSame(1, $result['failed_batches']);
+    }
+
     // -------------------------------------------------------------------------
     // DataSyncRun recorded correctly
     // -------------------------------------------------------------------------

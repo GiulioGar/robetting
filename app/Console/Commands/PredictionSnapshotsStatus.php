@@ -21,7 +21,7 @@ class PredictionSnapshotsStatus extends Command
 
     protected $description = 'Report the current freshness/validity of the Structural and Latent CURRENT snapshots used by Candidate V2 LOG.';
 
-    private const LATENT_FROM_SEASON = 2024;
+    public const LATENT_FROM_SEASON = 2024;
 
     private static ?string $snapshotsDir = null;
 
@@ -35,6 +35,12 @@ class PredictionSnapshotsStatus extends Command
     public static function resetSnapshotsDir(): void
     {
         self::$snapshotsDir = null;
+    }
+
+    /** Path of the CURRENT latent snapshot (honours setSnapshotsDir) — shared with robetting:serve's freshness check. */
+    public static function latentSnapshotPath(): string
+    {
+        return (self::$snapshotsDir ?? base_path('tools/models')) . '/latent_strength_current.json';
     }
 
     private function snapshotsDir(): string

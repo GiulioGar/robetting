@@ -99,6 +99,7 @@ class ApiFootballResultRefreshService
         $unchanged     = 0;
         $skipped       = 0;
         $warnings      = [];
+        $failedBatches = 0;
         $lastRemaining = null;
 
         foreach ($batches as $batch) {
@@ -121,6 +122,7 @@ class ApiFootballResultRefreshService
             } catch (ApiFootballException $e) {
                 Log::error("api-football-{$syncType}: batch failed — {$e->getMessage()}");
                 $warnings[] = "batch failed: {$e->getMessage()}";
+                $failedBatches++;
             }
         }
 
@@ -136,6 +138,7 @@ class ApiFootballResultRefreshService
             'candidates'      => $candidateCount,
             'updated'         => $updated,
             'unchanged'       => $unchanged,
+            'failed_batches'  => $failedBatches,
             'api_calls'       => $apiCalls,
             'daily_remaining' => $lastRemaining,
         ];

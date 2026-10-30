@@ -10,6 +10,8 @@ use App\Services\DataSources\ApiFootball\ApiFootballMatchEventSyncService;
 use App\Services\DataSources\ApiFootball\ApiFootballMatchLineupSyncService;
 use App\Services\DataSources\ApiFootball\ApiFootballMatchStatisticsSyncService;
 use App\Services\DataSources\ApiFootball\ApiFootballResultRefreshService;
+use App\Services\Prediction\LatentFitMatchEligibility;
+use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use Symfony\Component\Process\Process;
 
@@ -98,12 +100,30 @@ class ServeLocal extends Command
         ApiFootballMatchLineupSyncService     $lineupsService,
         ApiFootballInjurySyncService          $injuriesService,
     ): void {
+        // false as soon as a result/calendar sync actually FAILED (not when it
+        // was legitimately skipped because the data is already fresh).
+        $syncOk = true;
+
         $this->info('[startup] Running catch-up...');
-        $catchUp = $refreshService->catchUp();
-        $this->line("  candidates={$catchUp['candidates']}  updated={$catchUp['updated']}  api_calls={$catchUp['api_calls']}");
+        try {
+            $catchUp = $refreshService->catchUp();
+            $this->line("  candidates={$catchUp['candidates']}  updated={$catchUp['updated']}  api_calls={$catchUp['api_calls']}");
+            if (($catchUp['failed_batches'] ?? 0) > 0) {
+                $this->error("  [sync] catch-up: {$catchUp['failed_batches']} API batch(es) FAILED");
+                $syncOk = false;
+            }
+        } catch (\Throwable $e) {
+            $this->error('  [sync] catch-up failed: ' . $e->getMessage());
+            $syncOk = false;
+        }
 
         $this->info('[startup] Checking calendar staleness...');
-        $this->maybeRefreshCalendar($fixtureService);
+        try {
+            $syncOk = $this->maybeRefreshCalendar($fixtureService) && $syncOk;
+        } catch (\Throwable $e) {
+            $this->error('  [sync] calendar refresh failed: ' . $e->getMessage());
+            $syncOk = false;
+        }
 
         $this->info('[startup] Syncing pending lineups...');
         $this->runPendingLineups($lineupsService);
@@ -122,7 +142,66 @@ class ServeLocal extends Command
 
         $this->info('[startup] Capturing learning data...');
         $this->runOfficialResultsCapture();
-        $this->runOfficialPredictionsCapture();
+
+        // Official predictions are append-only: never capture them against
+        // results that failed to sync, or a latent snapshot that is known to be
+        // stale (or whose refresh failed). A failed sync also skips the latent
+        // refresh, which would otherwise be fitted on incomplete data.
+        if (! $syncOk) {
+            $this->error('[sync] result/calendar sync FAILED — latent refresh and official predictions capture SKIPPED.');
+        } elseif ($this->ensureLatentSnapshotCurrent()) {
+            $this->runOfficialPredictionsCapture();
+        } else {
+            $this->error('[latent] official predictions capture SKIPPED — latent snapshot is not current.');
+        }
+    }
+
+    /**
+     * Refresh the Latent snapshot only when the DB holds finished matches that
+     * the snapshot does not include. "Eligible" is exactly the export/fit
+     * policy (LatentFitMatchEligibility, same as robetting:prediction-snapshots-status).
+     * Runs after the result sync and before the official predictions capture.
+     * Returns true when the snapshot is current (or was just refreshed),
+     * false when it is stale and could not be refreshed.
+     */
+    private function ensureLatentSnapshotCurrent(): bool
+    {
+        try {
+            $path     = PredictionSnapshotsStatus::latentSnapshotPath();
+            $snapshot = is_file($path) ? json_decode((string) file_get_contents($path), true) : null;
+            $db       = LatentFitMatchEligibility::countAndLatestKickoff(
+                CarbonImmutable::now('UTC'),
+                PredictionSnapshotsStatus::LATENT_FROM_SEASON,
+            );
+
+            $reason = null;
+            if (! is_array($snapshot) || ! isset($snapshot['match_count'], $snapshot['last_match_included_at'])) {
+                $reason = 'snapshot missing or invalid';
+            } elseif ($db['count'] > (int) $snapshot['match_count']) {
+                $reason = ($db['count'] - (int) $snapshot['match_count']) . ' new eligible match(es)';
+            } elseif ($db['latest_kickoff_at'] !== null
+                && CarbonImmutable::parse($db['latest_kickoff_at'])->gt(CarbonImmutable::parse($snapshot['last_match_included_at']))) {
+                $reason = 'newer eligible kickoff than the snapshot';
+            }
+
+            if ($reason === null) {
+                $this->line('[latent] snapshot current — refresh skipped');
+                return true;
+            }
+
+            $this->info("[latent] {$reason} — refreshing latent snapshot...");
+            $exit = $this->callSilently('robetting:refresh-prediction-snapshots', ['--only' => 'latent', '--python' => 'py']);
+            if ($exit !== self::SUCCESS) {
+                $this->error('[latent] latent snapshot refresh FAILED (exit ' . $exit . ')');
+                return false;
+            }
+
+            $this->line('[latent] latent snapshot refresh completed');
+            return true;
+        } catch (\Throwable $e) {
+            $this->error('[latent] latent snapshot check/refresh failed: ' . $e->getMessage());
+            return false;
+        }
     }
 
     /**
@@ -181,12 +260,13 @@ class ServeLocal extends Command
         }
     }
 
-    private function maybeRefreshCalendar(ApiFootballFixtureSyncService $fixtureService): void
+    /** @return bool false only when the calendar sync actually ran and a competition FAILED. */
+    private function maybeRefreshCalendar(ApiFootballFixtureSyncService $fixtureService): bool
     {
         $ds = DataSource::where('slug', 'api-football')->first();
         if (!$ds) {
             $this->warn('  API-Football data source not found — skipping.');
-            return;
+            return true;
         }
 
         $lastSync = DataSyncRun::where('data_source_id', $ds->id)
@@ -198,7 +278,7 @@ class ServeLocal extends Command
 
         if (!$isStale) {
             $this->line("  Calendar fresh (last: {$lastSync->started_at->format('d/m/Y H:i')}) — skipping.");
-            return;
+            return true;
         }
 
         $reason = $lastSync === null ? 'never synced' : 'last sync > 36h ago';
@@ -210,6 +290,14 @@ class ServeLocal extends Command
         $updated = array_sum(array_column($result['results'], 'updated'));
         $calls   = array_sum(array_column($result['results'], 'api_calls'));
         $this->line("  Done: {$updated} updated, {$calls} API calls.");
+
+        $failed = count(array_filter($result['results'], fn ($r) => ($r['status'] ?? '') === 'failed'));
+        if ($failed > 0) {
+            $this->error("  [sync] calendar refresh: {$failed} competition(s) FAILED");
+            return false;
+        }
+
+        return true;
     }
 
     private function runRefresh(ApiFootballResultRefreshService $service): void
