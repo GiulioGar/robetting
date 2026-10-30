@@ -1,0 +1,18 @@
+{
+  "protocol": "B-P1 (knowledge/GOAL_RESEARCH_PROTOCOL.md section 12)",
+  "t_freeze_utc": "2026-10-30T15:35:28Z",
+  "t_freeze_note": "Effective UTC timestamp taken when this manifest was written; not backdated.",
+  "base_commit": "fc604cde95627a1c1ff06f59000445774864e8e1",
+  "hash_algorithm": "SHA-256 of the file content (LF line endings, as committed)",
+  "frozen_files": [
+    { "role": "protocol", "path": "knowledge/GOAL_RESEARCH_PROTOCOL.md", "sha256": "763d369c63c07bee99a0bb06faf4ec14e57633aa673f7066f7c623a842e48205" },
+    { "role": "analysis_script", "path": "tools/scripts/goal_bp1_prospective_analysis.py", "sha256": "e9b32460c8db11b8e3a0a5b8ef70b458b4c89d319f9bd8022e87601aba7a2eec" },
+    { "role": "exporter", "path": "app/Console/Commands/ExportBp1Sample.php", "sha256": "8131d1ba44635888cce51c4e717208af23f7328f642399d87c16a9841661f6d0" },
+    { "role": "exporter_test", "path": "tests/Feature/Console/ExportBp1SampleCommandTest.php", "sha256": "5f0b82f5c2397b765985e51d7df8b643bfd75cd3270f1abbe0430b9e14a3f1a8" }
+  ],
+  "notes": [
+    "No frozen file contains a hash of itself or of another frozen file; this manifest is not hashed by any file.",
+    "The freeze is identified by the commit that introduces this manifest.",
+    "Verify: git show <commit>:<path> | sha256sum must equal the listed value."
+  ]
+}
