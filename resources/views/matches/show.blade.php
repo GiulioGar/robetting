@@ -78,6 +78,11 @@
     </div>
 </div>
 
+{{-- Two-column layout (lg+): main column ~2/3, sidebar ~1/3 (pre-match only). Single column on mobile and for
+     finished/other matches (no sidebar content exists there). --}}
+<div class="row gx-4">
+<div class="col-12 {{ $matchViewMode === 'pre_match' ? 'col-lg-8' : '' }}" data-testid="match-main">
+
 {{-- A2. Pronostico Robetting (pre-match only) --}}
 @if($publicPrediction !== null)
 @php
@@ -143,6 +148,79 @@
                 @endif
             </div>
             @endif
+        </div>
+    </div>
+</div>
+@endif
+
+{{-- Probabilità GOAL Robetting — Bivariate Poisson from the same Candidate47 lambdas as the box above. Derived, not stored. --}}
+@if(!empty($goalMarkets))
+@php $gm = $goalMarkets; @endphp
+<div class="mt-4" data-testid="goal-markets">
+    <h2 class="fs-5 fw-semibold mb-3">Probabilità GOAL Robetting</h2>
+    <div class="row g-3">
+        <div class="col-12 col-xl-6" data-testid="goal-over-under">
+            <div class="card h-100">
+                <div class="card-header py-2 small fw-semibold">Over/Under gol totali</div>
+                <table class="table table-sm align-middle mb-0 text-center">
+                    <thead class="table-light"><tr><th class="text-start ps-3">Linea</th><th>Over</th><th class="pe-3">Under</th></tr></thead>
+                    <tbody>
+                    @foreach($gm['total_goals'] as $line => $p)
+                        <tr data-line="{{ $line }}"><td class="text-start ps-3">{{ $line }}</td><td>{{ $pct($p['over'] * 100) }}</td><td class="pe-3">{{ $pct($p['under'] * 100) }}</td></tr>
+                    @endforeach
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="col-12 col-xl-6">
+            <div class="row g-3">
+                <div class="col-12" data-testid="goal-btts">
+                    <div class="card">
+                        <div class="card-header py-2 small fw-semibold">Entrambe segnano (BTTS)</div>
+                        <div class="card-body p-2">
+                            <div class="row text-center g-2">
+                                <div class="col-6"><div class="text-muted small">Sì</div><div class="fs-5 fw-semibold" data-btts="yes">{{ $pct($gm['btts']['yes'] * 100) }}</div></div>
+                                <div class="col-6"><div class="text-muted small">No</div><div class="fs-5 fw-semibold" data-btts="no">{{ $pct($gm['btts']['no'] * 100) }}</div></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-12" data-testid="goal-multigol">
+                    <div class="card">
+                        <div class="card-header py-2 small fw-semibold">Multigol</div>
+                        <div class="card-body p-2">
+                            <div class="row text-center g-2">
+                                @foreach($gm['multigol'] as $range => $p)
+                                <div class="col-3" data-multigol="{{ $range }}"><div class="text-muted small">{{ str_replace('-', '–', $range) }}</div><div class="fw-semibold">{{ $pct($p * 100) }}</div></div>
+                                @endforeach
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12" data-testid="goal-team-goals">
+            <div class="card">
+                <div class="card-header py-2 small fw-semibold">Team Goals</div>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0 text-center">
+                        <thead class="table-light">
+                            <tr><th class="text-start ps-3" rowspan="2">Linea</th><th colspan="2" class="border-bottom-0">{{ $match->homeTeam->name }}</th><th colspan="2" class="pe-3 border-bottom-0">{{ $match->awayTeam->name }}</th></tr>
+                            <tr><th>Over</th><th>Under</th><th>Over</th><th class="pe-3">Under</th></tr>
+                        </thead>
+                        <tbody>
+                        @foreach($gm['team_goals']['home'] as $line => $h)
+                            @php $a = $gm['team_goals']['away'][$line]; @endphp
+                            <tr data-line="{{ $line }}">
+                                <td class="text-start ps-3">{{ $line }}</td>
+                                <td>{{ $pct($h['over'] * 100) }}</td><td>{{ $pct($h['under'] * 100) }}</td>
+                                <td>{{ $pct($a['over'] * 100) }}</td><td class="pe-3">{{ $pct($a['under'] * 100) }}</td>
+                            </tr>
+                        @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -538,67 +616,6 @@
      outside this block. --}}
 @if($matchViewMode === 'pre_match')
 
-{{-- Disponibilità rosa (Availability V1) — display only, does not affect the prediction.
-     Data only from a PRE-MATCH-certified injuries snapshot (TeamAvailabilityCalculator). --}}
-<div class="mt-4" id="disponibilita-rosa">
-    <h2 class="fs-5 fw-semibold mb-3">Disponibilità rosa</h2>
-    @php
-        $avFmt = fn(?float $v) => $v === null ? 'n/d' : number_format($v, 4);
-    @endphp
-    <div class="row g-3">
-        @foreach([['label' => $match->homeTeam->name, 'av' => $homeAvailability, 'side' => 'home'], ['label' => $match->awayTeam->name, 'av' => $awayAvailability, 'side' => 'away']] as $blk)
-        @php $av = $blk['av']; @endphp
-        <div class="col-12 col-lg-6" data-availability="{{ $blk['side'] }}">
-            <div class="card h-100">
-                <div class="card-header fw-semibold">{{ $blk['label'] }}</div>
-                <div class="card-body small">
-                    @if(! $av['injuries_covered'])
-                        <p class="text-muted mb-0">Dato non ancora disponibile.</p>
-                    @elseif($av['forced_absent_count'] === 0)
-                        <p class="mb-0">Nessuna assenza forzata rilevata.</p>
-                    @else
-                        <div class="mb-2">
-                            <div>Assenti forzati: <strong>{{ $av['forced_absent_count'] }}</strong></div>
-                            <div>Assenza pesata: <strong>{{ $avFmt($av['weighted_absence']) }}</strong>
-                                @if($av['is_complete'])
-                                    <span class="text-muted">(calcolo completo)</span>
-                                @else
-                                    <span class="text-muted">(calcolo incompleto: {{ $av['weighted_player_count'] }} su {{ $av['forced_absent_count'] }} assenti pesabili; parziale noto {{ $avFmt($av['known_weighted_absence']) }})</span>
-                                @endif
-                            </div>
-                        </div>
-                        <div class="table-responsive">
-                            <table class="table table-sm align-middle mb-0">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th>Giocatore</th>
-                                        <th>Motivo</th>
-                                        <th class="text-end">Quota minuti</th>
-                                        <th class="text-end">Quota valore</th>
-                                        <th class="text-end">Peso assenza</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach($av['absentees'] as $a)
-                                    <tr>
-                                        <td>{{ $availabilityPlayerNames[$a['player_id']] ?? ('Player #' . $a['player_id']) }}</td>
-                                        <td>{{ $a['reason'] ?? '–' }}</td>
-                                        <td class="text-end">{{ $avFmt($a['available_minutes_share']) }}@if($a['u_null_cause'])<div class="text-muted">{{ $a['u_null_cause'] }}</div>@endif</td>
-                                        <td class="text-end">{{ $avFmt($a['market_value_share_top25']) }}@if($a['v_null_cause'])<div class="text-muted">{{ $a['v_null_cause'] }}</div>@endif</td>
-                                        <td class="text-end">{{ $avFmt($a['player_absence_weight']) }}</td>
-                                    </tr>
-                                    @endforeach
-                                </tbody>
-                            </table>
-                        </div>
-                    @endif
-                </div>
-            </div>
-        </div>
-        @endforeach
-    </div>
-</div>
-
 {{-- D. Confronto pre-match --}}
 <div class="mt-4">
     <h2 class="fs-5 fw-semibold mb-3">Confronto pre-match <span class="text-muted small fw-normal">(stagione, prima del match)</span></h2>
@@ -779,8 +796,75 @@
     </div>
 </div>
 
+@endif
+</div>{{-- /match-main --}}
+
+@if($matchViewMode === 'pre_match')
+<aside class="col-12 col-lg-4" data-testid="match-sidebar">
+
+{{-- Disponibilità rosa (Availability V1) — display only, does not affect the prediction.
+     Data only from a PRE-MATCH-certified injuries snapshot (TeamAvailabilityCalculator). --}}
+<div class="mt-4" id="disponibilita-rosa">
+    <h2 class="fs-5 fw-semibold mb-3">Disponibilità rosa</h2>
+    @php
+        $avFmt = fn(?float $v) => $v === null ? 'n/d' : number_format($v, 4);
+    @endphp
+    <div class="row g-3">
+        @foreach([['label' => $match->homeTeam->name, 'av' => $homeAvailability, 'side' => 'home'], ['label' => $match->awayTeam->name, 'av' => $awayAvailability, 'side' => 'away']] as $blk)
+        @php $av = $blk['av']; @endphp
+        <div class="col-12" data-availability="{{ $blk['side'] }}">
+            <div class="card h-100">
+                <div class="card-header fw-semibold">{{ $blk['label'] }}</div>
+                <div class="card-body small">
+                    @if(! $av['injuries_covered'])
+                        <p class="text-muted mb-0">Dato non ancora disponibile.</p>
+                    @elseif($av['forced_absent_count'] === 0)
+                        <p class="mb-0">Nessuna assenza forzata rilevata.</p>
+                    @else
+                        <div class="mb-2">
+                            <div>Assenti forzati: <strong>{{ $av['forced_absent_count'] }}</strong></div>
+                            <div>Assenza pesata: <strong>{{ $avFmt($av['weighted_absence']) }}</strong>
+                                @if($av['is_complete'])
+                                    <span class="text-muted">(calcolo completo)</span>
+                                @else
+                                    <span class="text-muted">(calcolo incompleto: {{ $av['weighted_player_count'] }} su {{ $av['forced_absent_count'] }} assenti pesabili; parziale noto {{ $avFmt($av['known_weighted_absence']) }})</span>
+                                @endif
+                            </div>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Giocatore</th>
+                                        <th>Motivo</th>
+                                        <th class="text-end">Quota minuti</th>
+                                        <th class="text-end">Quota valore</th>
+                                        <th class="text-end">Peso assenza</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach($av['absentees'] as $a)
+                                    <tr>
+                                        <td>{{ $availabilityPlayerNames[$a['player_id']] ?? ('Player #' . $a['player_id']) }}</td>
+                                        <td>{{ $a['reason'] ?? '–' }}</td>
+                                        <td class="text-end">{{ $avFmt($a['available_minutes_share']) }}@if($a['u_null_cause'])<div class="text-muted">{{ $a['u_null_cause'] }}</div>@endif</td>
+                                        <td class="text-end">{{ $avFmt($a['market_value_share_top25']) }}@if($a['v_null_cause'])<div class="text-muted">{{ $a['v_null_cause'] }}</div>@endif</td>
+                                        <td class="text-end">{{ $avFmt($a['player_absence_weight']) }}</td>
+                                    </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    @endif
+                </div>
+            </div>
+        </div>
+        @endforeach
+    </div>
+</div>
+
 {{-- G. H2H --}}
-<div class="mt-4 mb-4">
+<div class="mt-4">
     <h2 class="fs-5 fw-semibold mb-3">Precedenti <span class="text-muted small fw-normal">(stessa competition, prima del match)</span></h2>
     @if($headToHead['total_h2h'] === 0)
     <p class="text-muted">Nessun precedente disponibile.</p>
@@ -850,6 +934,12 @@
     </div>
     @endif
 </div>
+
+</aside>
+@endif
+</div>{{-- /row --}}
+
+@if($matchViewMode === 'pre_match')
 
 {{-- Step 1C — DATI ANALISI / VERIFICA: blocchi tecnici/diagnostici (E1-E12),
      stessi dati/calculator di prima, solo spostati sotto la parte Portale.

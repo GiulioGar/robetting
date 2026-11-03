@@ -25,6 +25,7 @@ use App\Services\Odds\MarketConsensusService;
 use App\Services\Odds\ModelMarketDiagnostics;
 use App\Services\Matches\PreferredMatchStatisticResolver;
 use App\Services\Prediction\TeamHistoryMatchEligibility;
+use App\Services\Prediction\GoalMarketProbabilityCalculator;
 use App\Services\Prediction\PublicMatchPredictionService;
 use App\Services\Prediction\PublicPredictionRefreshService;
 use Carbon\Carbon;
@@ -221,7 +222,40 @@ class MatchController extends Controller
         // Value Engine V1 — diagnostic only (no value/threshold/stake/recommendation).
         $data['marketComparison'] = $this->marketComparison($match, $matchViewMode, $data['publicPrediction'] ?? null);
 
+        // GOAL markets derived from the lambdas of the SAME public prediction (no second prediction call, nothing stored).
+        $data['goalMarkets'] = $this->goalMarkets($data['publicPrediction'] ?? null);
+
         return view('matches.show', $data);
+    }
+
+    /**
+     * "Probabilità GOAL Robetting": Bivariate Poisson markets from the Candidate47 lambdas already used by the page.
+     * Null (section hidden) when the prediction is missing, is the FULL59 fallback, or the lambdas are not valid.
+     *
+     * @param array<string, mixed>|null $publicPrediction
+     * @return array<string, mixed>|null
+     */
+    private function goalMarkets(?array $publicPrediction): ?array
+    {
+        if ($publicPrediction === null
+            || ($publicPrediction['fallback_used'] ?? true)
+            || ($publicPrediction['model_used'] ?? null) !== PublicMatchPredictionService::MODEL_CANDIDATE_V2
+            || ($publicPrediction['lambda3'] ?? null) === null) {
+            return null;
+        }
+
+        $lh = (float) $publicPrediction['lambda_home'];
+        $la = (float) $publicPrediction['lambda_away'];
+
+        try {
+            return GoalMarketProbabilityCalculator::calculate(
+                $lh,
+                $la,
+                GoalMarketProbabilityCalculator::effectiveLambda3($lh, $la, (float) $publicPrediction['lambda3'])
+            );
+        } catch (\InvalidArgumentException) {
+            return null;
+        }
     }
 
     /**
