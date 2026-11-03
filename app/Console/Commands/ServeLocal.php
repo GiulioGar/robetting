@@ -140,6 +140,9 @@ class ServeLocal extends Command
         $this->info('[startup] Syncing pre-match odds...');
         $this->runOddsSync();
 
+        $this->info('[startup] Syncing pre-match GOAL odds...');
+        $this->runGoalOddsSync();
+
         $this->info('[startup] Capturing learning data...');
         $this->runOfficialResultsCapture();
 
@@ -325,6 +328,27 @@ class ServeLocal extends Command
             }
         } catch (\Throwable $e) {
             $this->error('[odds] sync failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Odds GOAL — pre-match goal-market collection (core leagues), STARTUP ONLY (not in the periodic loop).
+     * The service enforces its own per-competition ~3h throttle. Fail-safe and non-blocking: a GOAL-odds
+     * failure is reported but never stops the startup, the portal or the official predictions capture
+     * (it does not affect the result/calendar sync gate).
+     */
+    private function runGoalOddsSync(): void
+    {
+        try {
+            $r = app(\App\Services\DataSources\ApiFootball\ApiFootballGoalOddsSyncService::class)->syncPending();
+            if ($r['api_calls'] > 0) {
+                $this->line("[goal-odds] competitions={$r['competitions']}  api_calls={$r['api_calls']}  created={$r['created']}  duplicates={$r['duplicates']}  skipped={$r['skipped']}  errors={$r['errors']}");
+            }
+            if ($r['errors'] > 0) {
+                $this->error("[goal-odds] {$r['errors']} competition(s) FAILED (startup continues)");
+            }
+        } catch (\Throwable $e) {
+            $this->error('[goal-odds] sync failed: ' . $e->getMessage() . ' (startup continues)');
         }
     }
 

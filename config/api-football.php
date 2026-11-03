@@ -34,6 +34,26 @@ return [
         'max_pages'            => (int) env('API_FOOTBALL_ODDS_MAX_PAGES', 20),
     ],
 
+    // Odds GOAL — PRE-MATCH goal-market quotes (append-only goal_odds_snapshots), core leagues only.
+    // Acquisition (Step 45 probe): ONE unfiltered `/odds?league=&season=&page=N` family per competition
+    // (10 fixtures/page, every market) instead of one filtered family per bet; the bets below are
+    // filtered explicitly at parse time. Bet ids: 5 Goals Over/Under, 8 Both Teams Score,
+    // 16 Total - Home, 17 Total - Away. Throttle/horizon/max_pages mirror the 1X2 collection
+    // but are tracked separately (sync_type goal_odds_sync).
+    'goal_odds' => [
+        'enabled'             => (bool) env('API_FOOTBALL_GOAL_ODDS_ENABLED', true),
+        'bets'                => [
+            5  => 'total_goals',
+            8  => 'btts',
+            16 => 'team_goals_home',
+            17 => 'team_goals_away',
+        ],
+        'throttle_minutes'    => (int) env('API_FOOTBALL_GOAL_ODDS_THROTTLE_MINUTES', 180),
+        'error_retry_minutes' => (int) env('API_FOOTBALL_GOAL_ODDS_ERROR_RETRY_MINUTES', 60),
+        'horizon_days'        => (int) env('API_FOOTBALL_GOAL_ODDS_HORIZON_DAYS', 14),
+        'max_pages'           => (int) env('API_FOOTBALL_GOAL_ODDS_MAX_PAGES', 20),
+    ],
+
     // Canonical slug for each core league ID. Used by the league importer to
     // map API-Football's numeric ID to the project's canonical competition slug.
     // core_leagues = competitions Robetting predicts on. Never mix with
