@@ -238,7 +238,13 @@
 <div class="mt-4" data-testid="goal-comparison">
     <h2 class="fs-5 fw-semibold mb-3">Confronto GOAL con bookmaker</h2>
     @if(count($gcRows) === 0)
-        <p class="text-muted small mb-0" data-testid="goal-comparison-empty">Quote GOAL dei bookmaker non ancora disponibili per questa partita.</p>
+        <p class="text-muted small mb-0" data-testid="goal-comparison-empty">
+            @if($goalOddsInScope ?? true)
+                Quote GOAL dei bookmaker non ancora disponibili per questa partita.
+            @else
+                Le quote GOAL dei bookmaker non sono raccolte per questa competizione.
+            @endif
+        </p>
     @else
     @php
         $gcAllSections = [

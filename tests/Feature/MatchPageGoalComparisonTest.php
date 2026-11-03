@@ -56,7 +56,7 @@ class MatchPageGoalComparisonTest extends TestCase
     private function createMatch(string $status = 'scheduled', bool $future = true): FootballMatch
     {
         $country = Country::create(['name' => 'Germany', 'code' => 'DE']);
-        $c = Competition::create(['name' => 'Bundesliga', 'slug' => 'bundesliga-goal-cmp', 'country_id' => $country->id]);
+        $c = Competition::create(['name' => 'Bundesliga', 'slug' => 'bundesliga', 'country_id' => $country->id]);
         $s = Season::create(['competition_id' => $c->id, 'name' => '2026/27', 'year_start' => 2026, 'year_end' => 2027]);
         $h = Team::create(['name' => 'Bayern', 'country_id' => $country->id]);
         $a = Team::create(['name' => 'Dortmund', 'country_id' => $country->id]);
@@ -215,6 +215,18 @@ class MatchPageGoalComparisonTest extends TestCase
         $this->assertStringContainsString('non ancora disponibili', $html);
         $this->assertStringNotContainsString('<table', $html);
         $this->assertStringNotContainsString('EV teorico', $html);
+    }
+
+    public function test_B2_competition_outside_the_goal_odds_scope_says_quotes_are_not_collected(): void
+    {
+        $this->mockPipeline(self::V2);
+        $this->match->competition->update(['slug' => 'coppa-italia']);
+
+        $response = $this->get(route('matches.show', $this->match));
+        $html = $this->section($response->getContent());
+
+        $this->assertStringContainsString('non sono raccolte per questa competizione', $html);
+        $this->assertStringNotContainsString('non ancora disponibili', $html);
     }
 
     public function test_C_section_absent_without_candidate47_prediction_or_for_finished_matches(): void

@@ -34,7 +34,8 @@ return [
         'max_pages'            => (int) env('API_FOOTBALL_ODDS_MAX_PAGES', 20),
     ],
 
-    // Odds GOAL — PRE-MATCH goal-market quotes (append-only goal_odds_snapshots), core leagues only.
+    // Odds GOAL — PRE-MATCH goal-market quotes (append-only goal_odds_snapshots). Scope = same perimeter as the
+    // 1X2 collection: core_leagues + the 3 UEFA club competitions (additional_competitions).
     // Acquisition (Step 45 probe): ONE unfiltered `/odds?league=&season=&page=N` family per competition
     // (10 fixtures/page, every market) instead of one filtered family per bet; the bets below are
     // filtered explicitly at parse time. Bet ids: 5 Goals Over/Under, 8 Both Teams Score,

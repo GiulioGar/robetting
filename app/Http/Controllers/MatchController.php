@@ -25,6 +25,7 @@ use App\Services\Odds\MarketConsensusService;
 use App\Services\Odds\ModelMarketDiagnostics;
 use App\Services\Matches\PreferredMatchStatisticResolver;
 use App\Services\Prediction\TeamHistoryMatchEligibility;
+use App\Services\DataSources\ApiFootball\ApiFootballGoalOddsSyncService;
 use App\Services\Odds\GoalMarketComparator;
 use App\Services\Prediction\GoalMarketProbabilityCalculator;
 use App\Services\Prediction\PublicMatchPredictionService;
@@ -231,6 +232,8 @@ class MatchController extends Controller
         $data['goalComparison'] = $data['goalMarkets'] === null
             ? null
             : $this->goalComparison($match, $data['publicPrediction']);
+        // Distinguishes "not yet collected" from "never collected for this competition" in the empty-state message.
+        $data['goalOddsInScope'] = ApiFootballGoalOddsSyncService::inScope($match->competition?->slug);
 
         return view('matches.show', $data);
     }

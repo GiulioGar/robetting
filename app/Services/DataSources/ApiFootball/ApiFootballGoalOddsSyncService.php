@@ -17,7 +17,7 @@ use Illuminate\Support\Str;
 
 /**
  * Odds GOAL — prospective, append-only collection of PRE-MATCH goal-market quotes
- * (Over/Under totale 0.5-4.5, BTTS, Team Goals casa/trasferta 0.5-2.5) for the core leagues.
+ * (Over/Under totale 0.5-4.5, BTTS, Team Goals casa/trasferta 0.5-2.5) for the core leagues and the 3 UEFA club competitions.
  * Raw quotes only: no fair probability, edge, EV or recommendation, and nothing in the
  * Prediction Engine reads goal_odds_snapshots. The 1X2 collection (ApiFootballOddsSyncService)
  * is independent and untouched.
@@ -71,8 +71,7 @@ class ApiFootballGoalOddsSyncService
             return $summary;
         }
 
-        // Core leagues only (api league id => slug).
-        foreach ((array) config('api-football.core_leagues', []) as $leagueId => $slug) {
+        foreach (self::scopeLeagues() as $slug => $leagueId) {
             if ($onlySlug !== null && $slug !== $onlySlug) {
                 continue;
             }
@@ -101,6 +100,26 @@ class ApiFootballGoalOddsSyncService
         }
 
         return $summary;
+    }
+
+    /**
+     * Same perimeter as the 1X2 collection: core leagues + the 3 UEFA club competitions.
+     *
+     * @return array<string,int> slug => API-Football league id
+     */
+    public static function scopeLeagues(): array
+    {
+        $core       = array_flip((array) config('api-football.core_leagues', []));
+        $additional = array_flip((array) config('api-football.additional_competitions', []));
+        $uefa       = array_intersect_key($additional, array_flip(MatchStatisticsSyncPolicy::UEFA_SLUGS));
+
+        return $core + $uefa;
+    }
+
+    /** Whether GOAL quotes are collected for this competition slug at all (used for the page message). */
+    public static function inScope(?string $slug): bool
+    {
+        return $slug !== null && array_key_exists($slug, self::scopeLeagues());
     }
 
     /** @return Collection<string, FootballMatch>  external fixture id => scheduled, still-future match within the horizon */

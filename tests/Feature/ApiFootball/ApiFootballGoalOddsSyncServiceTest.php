@@ -162,12 +162,10 @@ class ApiFootballGoalOddsSyncServiceTest extends TestCase
         $this->assertSame(4, GoalOddsSnapshot::distinct('observation_id')->count('observation_id'));
     }
 
-    public function test_request_is_unfiltered_per_league_season_and_follows_paging_for_core_leagues_only(): void
+    public function test_request_is_unfiltered_per_league_season_and_follows_paging(): void
     {
         [$c, $s] = $this->competition('serie-a');
         $this->fixture($c, $s, '5001');
-        [$cl, $sl] = $this->competition('uefa-champions-league');
-        $this->fixture($cl, $sl, '6001');
 
         Http::fake(['*odds*' => Http::sequence()
             ->push($this->page([$this->item('5001', [['id' => 8, 'name' => 'Bet365', 'bets' => $this->goalBets()]])], 1, 2))
@@ -183,7 +181,50 @@ class ApiFootballGoalOddsSyncServiceTest extends TestCase
 
             return (int) $q['league'] === 135 && (int) $q['season'] === 2026 && ! array_key_exists('bet', $q);
         });
-        Http::assertNotSent(fn (Request $req) => str_contains($req->url(), 'league=2&'));
+    }
+
+    public function test_scope_is_core_leagues_plus_uefa_club_competitions_only(): void
+    {
+        config(['api-football.additional_competitions' => [2 => 'uefa-champions-league', 3 => 'uefa-europa-league', 848 => 'uefa-conference-league', 137 => 'coppa-italia']]);
+
+        $this->assertSame(
+            ['serie-a' => 135, 'uefa-champions-league' => 2, 'uefa-europa-league' => 3, 'uefa-conference-league' => 848],
+            ApiFootballGoalOddsSyncService::scopeLeagues()
+        );
+        $this->assertTrue(ApiFootballGoalOddsSyncService::inScope('uefa-europa-league'));
+        $this->assertFalse(ApiFootballGoalOddsSyncService::inScope('coppa-italia'));
+        $this->assertFalse(ApiFootballGoalOddsSyncService::inScope(null));
+    }
+
+    public function test_uefa_competition_is_synced_while_other_additional_competitions_are_not(): void
+    {
+        config(['api-football.additional_competitions' => [2 => 'uefa-champions-league', 137 => 'coppa-italia']]);
+        [$cl, $sl] = $this->competition('uefa-champions-league');
+        $this->fixture($cl, $sl, '6001');
+        [$ci, $si] = $this->competition('coppa-italia');
+        $this->fixture($ci, $si, '7001');
+
+        $item = $this->item('6001', [['id' => 8, 'name' => 'Bet365', 'bets' => $this->goalBets()]]);
+        $item['league']['id'] = 2;
+        Http::fake(['*odds*' => Http::response($this->page([$item]), 200)]);
+
+        $r = $this->sync();
+
+        $this->assertSame(1, $r['competitions']);
+        $this->assertSame(1, $r['api_calls']);
+        $this->assertSame(4, $r['created']);
+        Http::assertSent(function (Request $req) {
+            parse_str((string) parse_url($req->url(), PHP_URL_QUERY), $q);
+
+            return (int) $q['league'] === 2 && ! array_key_exists('bet', $q);
+        });
+        Http::assertNotSent(function (Request $req) {
+            parse_str((string) parse_url($req->url(), PHP_URL_QUERY), $q);
+
+            return (int) ($q['league'] ?? 0) === 137;
+        });
+        $this->assertSame(['uefa-champions-league'], DataSyncRun::where('sync_type', 'goal_odds_sync')
+            ->join('competitions', 'competitions.id', '=', 'data_sync_runs.competition_id')->pluck('competitions.slug')->all());
     }
 
     public function test_identical_observation_is_a_duplicate_and_changes_append_history(): void
