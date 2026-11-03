@@ -25,6 +25,7 @@ use App\Services\Odds\MarketConsensusService;
 use App\Services\Odds\ModelMarketDiagnostics;
 use App\Services\Matches\PreferredMatchStatisticResolver;
 use App\Services\Prediction\TeamHistoryMatchEligibility;
+use App\Services\Odds\GoalMarketComparator;
 use App\Services\Prediction\GoalMarketProbabilityCalculator;
 use App\Services\Prediction\PublicMatchPredictionService;
 use App\Services\Prediction\PublicPredictionRefreshService;
@@ -225,6 +226,12 @@ class MatchController extends Controller
         // GOAL markets derived from the lambdas of the SAME public prediction (no second prediction call, nothing stored).
         $data['goalMarkets'] = $this->goalMarkets($data['publicPrediction'] ?? null);
 
+        // Robetting vs bookmaker GOAL quotes (diagnostic, no recommendation): the SAME current prediction as above,
+        // evaluated as of now(). forMatch() (official predictions, historical evaluation) is deliberately not used here.
+        $data['goalComparison'] = $data['goalMarkets'] === null
+            ? null
+            : $this->goalComparison($match, $data['publicPrediction']);
+
         return view('matches.show', $data);
     }
 
@@ -256,6 +263,23 @@ class MatchController extends Controller
         } catch (\InvalidArgumentException) {
             return null;
         }
+    }
+
+    /**
+     * @param array<string, mixed> $publicPrediction  eligible Candidate47 prediction (see goalMarkets())
+     * @return array<string, mixed>
+     */
+    private function goalComparison(FootballMatch $match, array $publicPrediction): array
+    {
+        $asOf = now();
+
+        return GoalMarketComparator::compare([
+            'id'           => null,
+            'generated_at' => $asOf,
+            'lambda_home'  => (float) $publicPrediction['lambda_home'],
+            'lambda_away'  => (float) $publicPrediction['lambda_away'],
+            'lambda3'      => (float) $publicPrediction['lambda3'],
+        ], GoalMarketComparator::quoteRows((int) $match->id, $asOf), $asOf);
     }
 
     /**

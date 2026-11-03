@@ -58,7 +58,24 @@ final class GoalMarketComparator
             ->orderByDesc('id')
             ->first();
 
-        $rows = GoalOddsSnapshot::where('match_id', $matchId)
+        return self::compare($prediction === null ? null : [
+            'id'           => $prediction->id,
+            'generated_at' => $prediction->generated_at,
+            'lambda_home'  => $prediction->lambda_home,
+            'lambda_away'  => $prediction->lambda_away,
+            'lambda3'      => $prediction->lambda3,
+        ], self::quoteRows($matchId, $asOf), $asOf);
+    }
+
+    /**
+     * Stored GOAL quote rows for a match available at $asOf (fetched_at <= $asOf, certified pre-match), in the row
+     * shape compare() expects. Shared by forMatch() and by callers that already hold the prediction (match page).
+     *
+     * @return list<array<string,mixed>>
+     */
+    public static function quoteRows(int $matchId, CarbonInterface $asOf): array
+    {
+        return GoalOddsSnapshot::where('match_id', $matchId)
             ->where('fetched_at', '<=', $asOf)
             ->whereColumn('fetched_at', '<', 'kickoff_at')
             ->orderBy('id')
@@ -77,14 +94,6 @@ final class GoalMarketComparator
                 'kickoff_at'          => $r->kickoff_at,
             ])
             ->all();
-
-        return self::compare($prediction === null ? null : [
-            'id'           => $prediction->id,
-            'generated_at' => $prediction->generated_at,
-            'lambda_home'  => $prediction->lambda_home,
-            'lambda_away'  => $prediction->lambda_away,
-            'lambda3'      => $prediction->lambda3,
-        ], $rows, $asOf);
     }
 
     /**

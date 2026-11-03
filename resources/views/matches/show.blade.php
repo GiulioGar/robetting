@@ -226,6 +226,71 @@
 </div>
 @endif
 
+{{-- Confronto GOAL Robetting vs bookmaker — diagnostic only (GoalMarketComparator::compare, as of now()).
+     Summary (Over/Under 2.5 and 3.5, BTTS) first, every other quoted market in "Tutti i mercati".
+     No recommendation, stake or EV threshold: quotes are stored observations, not live prices. --}}
+@if(!empty($goalComparison))
+@php
+    $gc = $goalComparison;
+    $gcRows = array_values(array_filter($gc['markets'], fn($e) => $e['status'] === 'ok'));
+    $gcRome = fn($t) => $t->copy()->setTimezone('Europe/Rome');
+@endphp
+<div class="mt-4" data-testid="goal-comparison">
+    <h2 class="fs-5 fw-semibold mb-3">Confronto GOAL con bookmaker</h2>
+    @if(count($gcRows) === 0)
+        <p class="text-muted small mb-0" data-testid="goal-comparison-empty">Quote GOAL dei bookmaker non ancora disponibili per questa partita.</p>
+    @else
+    @php
+        $gcAllSections = [
+            'total_goals'     => 'Gol totali',
+            'btts'            => 'Entrambe segnano (BTTS)',
+            'team_goals_home' => 'Team Goals · ' . $match->homeTeam->name,
+            'team_goals_away' => 'Team Goals · ' . $match->awayTeam->name,
+        ];
+        $gcSummarySections = array_intersect_key($gcAllSections, ['total_goals' => 1, 'btts' => 1]);
+        $gcSummary = array_values(array_filter($gcRows, fn($e) =>
+            ($e['market'] === 'btts')
+            || ($e['market'] === 'total_goals' && in_array(number_format($e['line'], 1), ['2.5', '3.5'], true))));
+        $gcLabel = fn($e) => match ($e['selection']) {
+            'over'  => 'Over ' . number_format($e['line'], 1),
+            'under' => 'Under ' . number_format($e['line'], 1),
+            'yes'   => 'Sì',
+            'no'    => 'No',
+        };
+        $gcLatest = collect($gcRows)->map(fn($e) => $e['latest_fetched_at'])->max();
+        $gcOldest = collect($gcRows)->map(fn($e) => $e['oldest_fetched_at'])->min();
+        $gcMinBm  = collect($gcRows)->min('bookmaker_count');
+        $gcMaxBm  = collect($gcRows)->max('bookmaker_count');
+    @endphp
+    <div class="card">
+        <div data-testid="goal-comparison-summary">
+            @if(count($gcSummary) > 0)
+            @include('matches.partials.goal-comparison-table', ['rows' => $gcSummary, 'sections' => $gcSummarySections, 'detail' => false, 'label' => $gcLabel, 'pct' => $pct, 'rome' => $gcRome])
+            @else
+            <p class="text-muted small p-3 mb-0">Nessuna quota per Over/Under 2.5, 3.5 e BTTS: gli altri mercati quotati sono in «Tutti i mercati».</p>
+            @endif
+        </div>
+        <details class="border-top" data-testid="goal-comparison-all">
+            <summary class="px-3 py-2 small fw-semibold">Tutti i mercati <span class="text-muted fw-normal">({{ count($gcRows) }} selezioni quotate: consenso, quota equa, bookmaker e orario)</span></summary>
+            @include('matches.partials.goal-comparison-table', ['rows' => $gcRows, 'sections' => $gcAllSections, 'detail' => true, 'label' => $gcLabel, 'pct' => $pct, 'rome' => $gcRome])
+        </details>
+        <div class="card-body border-top small text-muted" data-testid="goal-comparison-meta">
+            Bookmaker per mercato: {{ $gcMinBm === $gcMaxBm ? $gcMaxBm : $gcMinBm . '–' . $gcMaxBm }}.
+            Quote rilevate
+            @if($gcLatest->eq($gcOldest))
+                il {{ $gcRome($gcLatest)->format('d/m H:i') }}
+            @else
+                tra il {{ $gcRome($gcOldest)->format('d/m H:i') }} e il {{ $gcRome($gcLatest)->format('d/m H:i') }}
+            @endif
+            (ora di Roma; ultima rilevazione {{ $gcRome($gcLatest)->locale('it')->diffForHumans() }}).
+            Sono osservazioni salvate, non quote in tempo reale: potrebbero essere cambiate o non più disponibili.
+            Confronto diagnostico, non un consiglio di scommessa.
+        </div>
+    </div>
+    @endif
+</div>
+@endif
+
 {{-- Mercato 1X2 (Odds V1) — raw market information only. Certified pre-match snapshots,
      latest per bookmaker. NOT a value signal: no edge/ROI/stake/recommendation here. --}}
 <div class="mt-4" data-testid="market-1x2">
