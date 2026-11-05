@@ -720,66 +720,22 @@
      outside this block. --}}
 @if($matchViewMode === 'pre_match')
 
-<div class="mt-5 mb-1 pt-3 border-top"><span class="text-muted small text-uppercase fw-semibold">Confronto squadre</span></div>
-
-{{-- D. Confronto pre-match --}}
-<div class="mt-4">
-    <h2 class="fs-5 fw-semibold mb-3">Confronto pre-match <span class="text-muted small fw-normal">(stagione, prima del match{{ ($uefaPhaseLabel ?? null) ? ', ' . $uefaPhaseLabel : '' }})</span></h2>
-    <p class="text-muted small" data-testid="season-sample-note">
-        @if($uefaPhaseLabel ?? null)
-        Solo {{ $match->competition->name }} {{ $match->season->name }}, <strong>{{ $uefaPhaseLabel }}</strong> (stessa fase di questa partita): le altre fasi sono escluse perché non confrontabili.
-        @else
-        Solo {{ $match->competition->name }} {{ $match->season->name }}, tutte le fasi disputate (comprese eventuali qualificazioni): campioni di squadre con percorsi diversi non sono equivalenti.
-        @endif
-        {{ $match->homeTeam->name }}: {{ $sampleTxt($sampleInfo['season']['home'] ?? null) }} · {{ $match->awayTeam->name }}: {{ $sampleTxt($sampleInfo['season']['away'] ?? null) }}.
-        Vale anche per Split casa / trasferta e Trend pre-match.
-    </p>
-    @php $hs = $homeSeasonAnalytics['summary']; $as = $awaySeasonAnalytics['summary']; @endphp
-    @if($hs['matches_played'] === 0 && $as['matches_played'] === 0)
-    <p class="text-muted">Dati stagionali precedenti non disponibili.</p>
-    @else
-    @php $ht = $homeSeasonAnalytics['technical']; $at = $awaySeasonAnalytics['technical']; @endphp
-    <div class="card">
-        <div class="table-responsive">
-            <table class="table table-sm mb-0 text-center align-middle">
-                <thead class="table-light">
-                    <tr>
-                        <th class="text-start ps-3">&nbsp;</th>
-                        <th>{{ $match->homeTeam->name }}</th>
-                        <th>{{ $match->awayTeam->name }}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr><td class="text-start ps-3 text-muted">Partite giocate</td><td>{{ $hs['matches_played'] }}</td><td>{{ $as['matches_played'] }}</td></tr>
-                    <tr><td class="text-start ps-3 text-muted">V / N / P</td><td>{{ $hs['wins'] }} / {{ $hs['draws'] }} / {{ $hs['losses'] }}</td><td>{{ $as['wins'] }} / {{ $as['draws'] }} / {{ $as['losses'] }}</td></tr>
-                    <tr><td class="text-start ps-3 text-muted">Punti</td><td>{{ $hs['points'] }}</td><td>{{ $as['points'] }}</td></tr>
-                    <tr><td class="text-start ps-3 text-muted">GF / GS</td><td>{{ $hs['goals_for'] }} / {{ $hs['goals_against'] }}</td><td>{{ $as['goals_for'] }} / {{ $as['goals_against'] }}</td></tr>
-                    <tr><td class="text-start ps-3 text-muted">Differenza reti</td><td>{{ $hs['goal_difference'] >= 0 ? '+' : '' }}{{ $hs['goal_difference'] }}</td><td>{{ $as['goal_difference'] >= 0 ? '+' : '' }}{{ $as['goal_difference'] }}</td></tr>
-                    <tr><td class="text-start ps-3 text-muted">Media GF</td><td>{{ $avg($hs['avg_goals_for']) }}</td><td>{{ $avg($as['avg_goals_for']) }}</td></tr>
-                    <tr><td class="text-start ps-3 text-muted">Media GS</td><td>{{ $avg($hs['avg_goals_against']) }}</td><td>{{ $avg($as['avg_goals_against']) }}</td></tr>
-                    <tr><td class="text-start ps-3 text-muted">Media gol totali</td><td>{{ $avg($hs['avg_total_goals']) }}</td><td>{{ $avg($as['avg_total_goals']) }}</td></tr>
-                </tbody>
-            </table>
-        </div>
-        <details class="border-top" data-testid="confronto-technical">
-            <summary class="small text-muted px-3 py-2">Dettaglio tecnico (tiri, corner, cartellini)</summary>
-            <div class="table-responsive"><table class="table table-sm mb-0 text-center align-middle"><tbody>
-                    <tr><td class="text-start ps-3 text-muted">Media tiri fatti</td><td>{{ $avg($ht['avg_shots_for'] ?? null) }}</td><td>{{ $avg($at['avg_shots_for'] ?? null) }}</td></tr>
-                    <tr><td class="text-start ps-3 text-muted">Media tiri subiti</td><td>{{ $avg($ht['avg_shots_against'] ?? null) }}</td><td>{{ $avg($at['avg_shots_against'] ?? null) }}</td></tr>
-                    <tr><td class="text-start ps-3 text-muted">Media tiri in porta fatti</td><td>{{ $avg($ht['avg_shots_on_target_for'] ?? null) }}</td><td>{{ $avg($at['avg_shots_on_target_for'] ?? null) }}</td></tr>
-                    <tr><td class="text-start ps-3 text-muted">Media tiri in porta subiti</td><td>{{ $avg($ht['avg_shots_on_target_against'] ?? null) }}</td><td>{{ $avg($at['avg_shots_on_target_against'] ?? null) }}</td></tr>
-                    <tr><td class="text-start ps-3 text-muted">Media corner fatti</td><td>{{ $avg($ht['avg_corners_for'] ?? null) }}</td><td>{{ $avg($at['avg_corners_for'] ?? null) }}</td></tr>
-                    <tr><td class="text-start ps-3 text-muted">Media corner subiti</td><td>{{ $avg($ht['avg_corners_against'] ?? null) }}</td><td>{{ $avg($at['avg_corners_against'] ?? null) }}</td></tr>
-                    <tr><td class="text-start ps-3 text-muted">Media cartellini gialli</td><td>{{ $avg($ht['avg_yellow_cards'] ?? null) }}</td><td>{{ $avg($at['avg_yellow_cards'] ?? null) }}</td></tr>
-                    <tr><td class="text-start ps-3 text-muted">Media cartellini rossi</td><td>{{ $avg($ht['avg_red_cards'] ?? null) }}</td><td>{{ $avg($at['avg_red_cards'] ?? null) }}</td></tr>
-                </tbody>
-            </table>
-        </div>
-        </details>
+<style>
+    /* Totale | Competizione: pure CSS (radio + :has), no JS; without :has support both scopes are simply shown. */
+    .stats-scope-root:has(#scope-total:checked) [data-scope-panel="competition"] { display: none; }
+    .stats-scope-root:has(#scope-competition:checked) [data-scope-panel="total"] { display: none; }
+</style>
+<div class="stats-scope-root" data-testid="stats-scope-root">
+<div class="mt-5 mb-1 pt-3 border-top d-flex flex-wrap align-items-center justify-content-between gap-2">
+    <span class="text-muted small text-uppercase fw-semibold">Confronto squadre</span>
+    <div class="btn-group btn-group-sm" role="group" aria-label="Ambito delle statistiche" data-testid="scope-selector">
+        <input type="radio" class="btn-check" name="stats-scope" id="scope-total" autocomplete="off" checked>
+        <label class="btn btn-outline-secondary" for="scope-total">Totale</label>
+        <input type="radio" class="btn-check" name="stats-scope" id="scope-competition" autocomplete="off">
+        <label class="btn btn-outline-secondary" for="scope-competition">Competizione</label>
     </div>
-    @endif
 </div>
-
+<p class="text-muted small mb-0">Totale: tutte le partite disponibili nel database. Competizione: solo {{ $match->competition->name }} {{ $match->season->name }}@if($uefaPhaseLabel ?? null), {{ $uefaPhaseLabel }}@endif.</p>
 @if(!empty($uefaForm))
 {{-- Forma UEFA: last UEFA matches actually played (any UEFA phase/season in the DB), each tagged with its phase. Descriptive only. --}}
 <div class="mt-4" data-testid="uefa-form">
@@ -818,156 +774,13 @@
 </div>
 @endif
 
-@if(!empty($uefaForm))
-<details class="mt-4" data-testid="th-form-details"><summary class="fw-semibold">Forma Team History <span class="text-muted small fw-normal">(tutte le competizioni coperte dai dati; non confrontabile con la Forma UEFA)</span></summary>
-@endif
-{{-- E. Forma prima del match --}}
-<div class="mt-4">
-    <h2 class="fs-5 fw-semibold mb-3">{{ !empty($uefaForm) ? 'Forma Team History' : 'Forma prima del match' }} <span class="text-muted small fw-normal">(tutte le competizioni coperte dai dati)</span></h2>
-    <div class="row g-3">
-        @foreach([
-            ['label' => $match->homeTeam->name, 'last5' => $homeLast5Analytics, 'last10' => $homeLast10Analytics, 'side' => 'home'],
-            ['label' => $match->awayTeam->name, 'last5' => $awayLast5Analytics, 'last10' => $awayLast10Analytics, 'side' => 'away'],
-        ] as $block)
-        <div class="col-md-6">
-            <div class="card h-100">
-                <div class="card-body p-3">
-                    <div class="text-muted small mb-2">{{ $block['label'] }} <span class="text-muted">(ultime 5)</span></div>
-                    @if(empty($block['last5']['form']))
-                        <span class="text-muted">Dati precedenti non disponibili</span>
-                    @else
-                        @foreach($block['last5']['form'] as $i => $r)
-                            <span class="badge bg-{{ $badgeClass($r) }} me-1" {{ $badgePop($formTooltips[$block['side']]['last5'][$i] ?? null) }}>{{ $r }}</span>
-                        @endforeach
-                    @endif
-                    <div class="text-muted small mt-2 mb-1">Ultime 10</div>
-                    @if(empty($block['last10']['form']))
-                        <span class="text-muted">Dati precedenti non disponibili</span>
-                    @else
-                        @foreach($block['last10']['form'] as $i => $r)
-                            <span class="badge bg-{{ $badgeClass($r) }} me-1" {{ $badgePop($formTooltips[$block['side']]['last10'][$i] ?? null) }}>{{ $r }}</span>
-                        @endforeach
-                    @endif
-                    @php $f10 = $sampleInfo['form10'][$block['side']] ?? null; @endphp
-                    @if($f10 !== null)
-                    <div class="text-muted small mt-2" data-testid="form-sample-note-{{ $block['side'] }}">
-                        Campione: {{ $sampleTxt($f10) }}@if($f10['n'] < 10) — <strong>campione ridotto</strong>: sono escluse le partite di competizioni o avversari non coperti dai dati @endif
-                    </div>
-                    @endif
-                </div>
-            </div>
-        </div>
-        @endforeach
-    </div>
+<div data-scope-panel="total" data-testid="scope-panel-total">
+@include('matches.partials.scope-stats', ['sc' => $scopes['total']])
 </div>
-
-@if(!empty($uefaForm))
-</details>
-@endif
-
-{{-- E. Split casa/trasferta --}}
-<div class="mt-4">
-    <h2 class="fs-5 fw-semibold mb-3">Split casa / trasferta <span class="text-muted small fw-normal">(prima del match{{ ($uefaPhaseLabel ?? null) ? ', ' . $uefaPhaseLabel : '' }})</span></h2>
-    <div class="row g-3">
-        @foreach([
-            ['label' => $match->homeTeam->name . ' — in casa', 'a' => $homeHomeAnalytics],
-            ['label' => $match->awayTeam->name . ' — in trasferta', 'a' => $awayAwayAnalytics],
-        ] as $block)
-        @php $bs = $block['a']['summary']; $bt = $block['a']['technical']; $bmt = $block['a']['market_trends']; @endphp
-        <div class="col-md-6">
-            <div class="card h-100">
-                <div class="card-body p-3">
-                    <div class="text-muted small mb-2">{{ $block['label'] }} <span class="text-muted">({{ $bs['matches_played'] }} PG)</span></div>
-                    @if($bs['matches_played'] === 0)
-                        <p class="text-muted mb-0">Dati precedenti non disponibili.</p>
-                    @else
-                        <div class="small">V {{ $bs['wins'] }} · N {{ $bs['draws'] }} · P {{ $bs['losses'] }}</div>
-                        <div class="small">GF {{ $bs['goals_for'] }} · GS {{ $bs['goals_against'] }}</div>
-                        <div class="small text-muted">Media GF {{ $avg($bs['avg_goals_for']) }} · Media GS {{ $avg($bs['avg_goals_against']) }}</div>
-                        <div class="small text-muted">Media tiri fatti {{ $avg($bt['avg_shots_for'] ?? null) }} · subiti {{ $avg($bt['avg_shots_against'] ?? null) }}</div>
-                        <div class="small mt-1">
-                            GG {{ $pct($bmt['btts']['yes']['percentage']) }}
-                            <span class="text-muted">({{ $bmt['btts']['yes']['count'] }}/{{ $bmt['btts']['yes']['total'] }})</span>
-                            · Over 2.5 {{ $pct($bmt['full_time_goals']['over_2_5']['percentage']) }}
-                            <span class="text-muted">({{ $bmt['full_time_goals']['over_2_5']['count'] }}/{{ $bmt['full_time_goals']['over_2_5']['total'] }})</span>
-                        </div>
-                    @endif
-                </div>
-            </div>
-        </div>
-        @endforeach
-    </div>
+<div data-scope-panel="competition" data-testid="scope-panel-competition">
+@include('matches.partials.scope-stats', ['sc' => $scopes['competition']])
 </div>
-
-{{-- F. Trend pre-match (ambiguo pubblico/tecnico — vedi report Step 1C, mantenuto qui perché stesso dato "a mercato" di Split) --}}
-<details class="mt-4 mb-4" data-testid="trend-details">
-    <summary class="fs-5 fw-semibold mb-3">Trend pre-match <span class="text-muted small fw-normal">(stagione, prima del match{{ ($uefaPhaseLabel ?? null) ? ', ' . $uefaPhaseLabel : '' }})</span></summary>
-    <div class="row g-3">
-        @foreach([['label' => $match->homeTeam->name, 'a' => $homeSeasonAnalytics], ['label' => $match->awayTeam->name, 'a' => $awaySeasonAnalytics]] as $block)
-        @php $mt = $block['a']['market_trends']; @endphp
-        <div class="col-md-6">
-            <div class="text-muted small mb-2">{{ $block['label'] }}</div>
-            @if($mt['coverage']['full_time'] === 0)
-            <p class="text-muted">Dati stagionali precedenti non disponibili.</p>
-            @else
-            <div class="card">
-                <div class="table-responsive">
-                    <table class="table table-sm mb-0 align-middle">
-                        <thead class="table-light">
-                            <tr>
-                                <th class="ps-3">Mercato</th>
-                                <th class="text-center pe-3">%</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td class="ps-3">GG</td>
-                                <td class="text-center pe-3">
-                                    {{ $pct($mt['btts']['yes']['percentage']) }}
-                                    <span class="text-muted small">({{ $mt['btts']['yes']['count'] }}/{{ $mt['btts']['yes']['total'] }})</span>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td class="ps-3">NG</td>
-                                <td class="text-center pe-3">
-                                    {{ $pct($mt['btts']['no']['percentage']) }}
-                                    <span class="text-muted small">({{ $mt['btts']['no']['count'] }}/{{ $mt['btts']['no']['total'] }})</span>
-                                </td>
-                            </tr>
-                            @foreach(['1_5' => 'Over 1.5', '2_5' => 'Over 2.5', '3_5' => 'Over 3.5'] as $key => $label)
-                            <tr>
-                                <td class="ps-3">{{ $label }}</td>
-                                <td class="text-center pe-3">
-                                    {{ $pct($mt['full_time_goals']['over_' . $key]['percentage']) }}
-                                    <span class="text-muted small">({{ $mt['full_time_goals']['over_' . $key]['count'] }}/{{ $mt['full_time_goals']['over_' . $key]['total'] }})</span>
-                                </td>
-                            </tr>
-                            @endforeach
-                            @foreach(['0_5' => 'Over 0.5 HT', '1_5' => 'Over 1.5 HT'] as $key => $label)
-                            <tr>
-                                <td class="ps-3">{{ $label }}</td>
-                                <td class="text-center pe-3">
-                                    {{ $pct($mt['half_time_goals']['over_' . $key . '_ht']['percentage']) }}
-                                    <span class="text-muted small">({{ $mt['half_time_goals']['over_' . $key . '_ht']['count'] }}/{{ $mt['half_time_goals']['over_' . $key . '_ht']['total'] }})</span>
-                                </td>
-                            </tr>
-                            @endforeach
-                            <tr>
-                                <td class="ps-3">GG HT</td>
-                                <td class="text-center pe-3">
-                                    {{ $pct($mt['btts_half_time']['yes']['percentage']) }}
-                                    <span class="text-muted small">({{ $mt['btts_half_time']['yes']['count'] }}/{{ $mt['btts_half_time']['yes']['total'] }})</span>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            @endif
-        </div>
-        @endforeach
-    </div>
-</details>
+</div>{{-- /stats-scope-root --}}
 
 @endif
 </div>{{-- /match-main --}}

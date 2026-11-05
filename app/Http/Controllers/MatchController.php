@@ -383,12 +383,25 @@ class MatchController extends Controller
             ? TeamHistoryMatchEligibility::matchesBefore((int) $match->away_team_id, $match->kickoff_at)
             : collect();
 
+        // Descriptive scopes (Totale | Competizione) share ONE definition of "all matches available": every finished
+        // match in the DB before the kickoff, any competition. "Totale" season = same season year across competitions.
+        $homeAll = $this->allFinishedBefore($match, (int) $match->home_team_id);
+        $awayAll = $this->allFinishedBefore($match, (int) $match->away_team_id);
+        $seasonYear = (int) $match->season->year_start;
+        $inSeasonYear = fn (Collection $c): Collection => $c->filter(fn ($m) => (int) $m->season?->year_start === $seasonYear)->values();
+        $homeTotalSeason = $inSeasonYear($homeAll);
+        $awayTotalSeason = $inSeasonYear($awayAll);
+
         $matchStatistics = PreferredMatchStatisticResolver::forMatchIds(
             collect([$match->id])
                 ->merge($homePrevious->pluck('id'))
                 ->merge($awayPrevious->pluck('id'))
                 ->merge($homeTeamHistory->pluck('id'))
                 ->merge($awayTeamHistory->pluck('id'))
+                ->merge($homeTotalSeason->pluck('id'))
+                ->merge($awayTotalSeason->pluck('id'))
+                ->merge($homeAll->slice(-10)->pluck('id'))
+                ->merge($awayAll->slice(-10)->pluck('id'))
         );
 
         $matchStatistic = $matchStatistics->get($match->id);
@@ -605,10 +618,12 @@ class MatchController extends Controller
             'homeTimeDecay'               => $homeTimeDecay,
             'awayTimeDecay'               => $awayTimeDecay,
             'publicPrediction'            => $publicPrediction,
-            // Hover texts (date, teams, score) for the W/D/L badges, aligned with each form window (oldest first).
-            'formTooltips'                => [
-                'home' => ['last5' => $this->matchTooltips($homeRecent5), 'last10' => $this->matchTooltips($homeRecent10)],
-                'away' => ['last5' => $this->matchTooltips($awayRecent5), 'last10' => $this->matchTooltips($awayRecent10)],
+            // Descriptive statistics, two scopes (Totale | Competizione): same definition for every block, descriptive only.
+            'scopes'                      => [
+                'total'       => $this->scopeData('total', 'Totale', $match, $matchStatistics,
+                    $homeTotalSeason, $awayTotalSeason, $homeAll, $awayAll, $homeAll, $awayAll),
+                'competition' => $this->scopeData('competition', 'Competizione', $match, $matchStatistics,
+                    $homeSeasonSet, $awaySeasonSet, $homeSeasonSet, $awaySeasonSet, $homeAll, $awayAll),
             ],
             // UEFA fixtures only: phase of this match and each team's last UEFA matches (descriptive, not a model input).
             'uefaPhaseLabel'              => $uefaPhase !== null ? UefaPhase::label($uefaPhase) : null,
@@ -616,21 +631,81 @@ class MatchController extends Controller
                 'home' => $this->uefaForm($match, (int) $match->home_team_id),
                 'away' => $this->uefaForm($match, (int) $match->away_team_id),
             ] : null,
-            'sampleInfo'                  => [
-                // Competition-bound set behind Confronto pre-match / Split / Trend (same competition+season, any phase).
-                'season' => ['home' => $this->sampleInfo($homeSeasonSet), 'away' => $this->sampleInfo($awaySeasonSet)],
-                // Team History windows behind Forma (cross-competition, scope-filtered): actual size and date range.
-                'form5'  => ['home' => $this->sampleInfo($homeRecent5), 'away' => $this->sampleInfo($awayRecent5)],
-                'form10' => ['home' => $this->sampleInfo($homeRecent10), 'away' => $this->sampleInfo($awayRecent10)],
-            ],
         ];
     }
 
-    /** @return list<string> e.g. "22/10/2026 · AC Milan 0-3 Atalanta", in the order of $window (oldest first). */
-    private function matchTooltips(Collection $window): array
+    /**
+     * Every finished match of the team (any competition in the DB) strictly before the kickoff, oldest first, with the
+     * relations needed by the descriptive blocks. The single query behind both scopes.
+     */
+    private function allFinishedBefore(FootballMatch $match, int $teamId): Collection
     {
-        return $window->map(fn ($m) => $m->kickoff_at->format('d/m/Y') . ' · ' . ($m->homeTeam?->name ?? '?') . ' '
-            . $m->home_score_ft . '-' . $m->away_score_ft . ' ' . ($m->awayTeam?->name ?? '?'))->values()->all();
+        if ($match->kickoff_at === null) {
+            return collect();
+        }
+
+        return FootballMatch::with(['homeTeam:id,name', 'awayTeam:id,name', 'competition:id,name,slug', 'season:id,name,year_start'])
+            ->where('status', 'finished')
+            ->whereNotNull('home_score_ft')
+            ->whereNotNull('away_score_ft')
+            ->where('kickoff_at', '<', $match->kickoff_at)
+            ->where(fn ($q) => $q->where('home_team_id', $teamId)->orWhere('away_team_id', $teamId))
+            ->orderBy('kickoff_at')
+            ->get();
+    }
+
+    /**
+     * One descriptive scope (Totale | Competizione): season set (Confronto/Split/Trend), form windows (last 5/10),
+     * popover texts, sample info and national-league coverage — all computed from the same two sets per team.
+     *
+     * @return array<string,mixed>
+     */
+    private function scopeData(
+        string $key, string $label, FootballMatch $match, Collection $stats,
+        Collection $homeSeason, Collection $awaySeason, Collection $homeForm, Collection $awayForm,
+        Collection $homeAll, Collection $awayAll,
+    ): array {
+        $homeId = (int) $match->home_team_id;
+        $awayId = (int) $match->away_team_id;
+        $fallbackComp = $match->competition?->name;
+        $coreSlugs = array_values((array) config('api-football.core_leagues', []));
+        $covered = fn (Collection $all): bool => $all->contains(fn ($m) => in_array($m->competition?->slug, $coreSlugs, true));
+
+        return [
+            'key'   => $key,
+            'label' => $label,
+            'season' => [
+                'home' => TeamAnalyticsCalculator::calculate($homeSeason, $homeId, $stats),
+                'away' => TeamAnalyticsCalculator::calculate($awaySeason, $awayId, $stats),
+            ],
+            'split' => [
+                'home' => TeamAnalyticsCalculator::calculate($homeSeason->where('home_team_id', $homeId)->values(), $homeId, $stats),
+                'away' => TeamAnalyticsCalculator::calculate($awaySeason->where('away_team_id', $awayId)->values(), $awayId, $stats),
+            ],
+            'form' => [
+                'home' => ['last5'  => TeamAnalyticsCalculator::calculate($this->lastN($homeForm, 5), $homeId, $stats),
+                           'last10' => TeamAnalyticsCalculator::calculate($this->lastN($homeForm, 10), $homeId, $stats)],
+                'away' => ['last5'  => TeamAnalyticsCalculator::calculate($this->lastN($awayForm, 5), $awayId, $stats),
+                           'last10' => TeamAnalyticsCalculator::calculate($this->lastN($awayForm, 10), $awayId, $stats)],
+            ],
+            'tooltips' => [
+                'home' => ['last5' => $this->matchTooltips($this->lastN($homeForm, 5), $fallbackComp), 'last10' => $this->matchTooltips($this->lastN($homeForm, 10), $fallbackComp)],
+                'away' => ['last5' => $this->matchTooltips($this->lastN($awayForm, 5), $fallbackComp), 'last10' => $this->matchTooltips($this->lastN($awayForm, 10), $fallbackComp)],
+            ],
+            'sample' => [
+                'season' => ['home' => $this->sampleInfo($homeSeason), 'away' => $this->sampleInfo($awaySeason)],
+                'form10' => ['home' => $this->sampleInfo($this->lastN($homeForm, 10)), 'away' => $this->sampleInfo($this->lastN($awayForm, 10))],
+            ],
+            // National league present in the DB (a core-league match exists for the team)? Drives the coverage note.
+            'covered' => ['home' => $covered($homeAll), 'away' => $covered($awayAll)],
+        ];
+    }
+
+    /** @return list<string> e.g. "22/10/2026 · Serie A · AC Milan 0-3 Atalanta", in the order of $window (oldest first). */
+    private function matchTooltips(Collection $window, ?string $fallbackCompetition = null): array
+    {
+        return $window->map(fn ($m) => $m->kickoff_at->format('d/m/Y') . ' · ' . ($m->competition?->name ?? $fallbackCompetition ?? '?') . ' · '
+            . ($m->homeTeam?->name ?? '?') . ' ' . $m->home_score_ft . '-' . $m->away_score_ft . ' ' . ($m->awayTeam?->name ?? '?'))->values()->all();
     }
 
     /**
@@ -674,7 +749,7 @@ class MatchController extends Controller
                     'venue'       => $home ? 'C' : 'T',
                     'score'       => $for . '-' . $against,
                     'result'      => $for > $against ? 'W' : ($for === $against ? 'D' : 'L'),
-                    'tooltip'     => $m->kickoff_at->format('d/m/Y') . ' · ' . ($m->homeTeam?->name ?? '?') . ' ' . $m->home_score_ft . '-' . $m->away_score_ft . ' ' . ($m->awayTeam?->name ?? '?'),
+                    'tooltip'     => $m->kickoff_at->format('d/m/Y') . ' · ' . ($m->competition?->name ?? '?') . ' · ' . ($m->homeTeam?->name ?? '?') . ' ' . $m->home_score_ft . '-' . $m->away_score_ft . ' ' . ($m->awayTeam?->name ?? '?'),
                 ];
             })
             ->all();

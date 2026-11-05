@@ -90,7 +90,7 @@ class MatchPageSampleTransparencyTest extends TestCase
         $r = $this->get(route('matches.show', $this->match));
 
         $r->assertOk();
-        $r->assertSee('data-testid="season-sample-note"', false);
+        $r->assertSee('data-testid="season-sample-note-competition"', false);
         $r->assertSee('League Stage</strong> (stessa fase di questa partita)', false);
         $r->assertDontSee('tutte le fasi disputate');
         // Ferencvarosi: the 2 qualifying-round matches are excluded from the seasonal comparison (1 league-stage match left)
@@ -119,7 +119,7 @@ class MatchPageSampleTransparencyTest extends TestCase
         $this->assertSame('T', $uefa['away'][0]['venue']);          // 09/07: Other FC - Ferencvarosi (away)
         $this->assertSame('C', $uefa['away'][1]['venue']);
         $r->assertSee('Qualificazioni / Play-off');
-        $r->assertSee('data-bs-content="09/07/2026 · Other FC 1-0 Ferencvarosi TC"', false);   // popover with the match and result
+        $r->assertSee('data-bs-content="09/07/2026 · UEFA Europa League · Other FC 1-0 Ferencvarosi TC"', false);   // popover with the match and result
         $r->assertSee('tabindex="0" role="button" data-bs-toggle="popover"', false);            // focusable: works on touch
         $r->assertDontSee('20/11/2026');
         $r->assertDontSee('29/10/2026');
@@ -138,7 +138,7 @@ class MatchPageSampleTransparencyTest extends TestCase
         $r->assertSee('tutte le fasi disputate (comprese eventuali qualificazioni)');
         $r->assertSee('Ferencvarosi TC: 3 partite, dal 09/07/2026 al 15/10/2026', false);   // unfiltered
         // Team History form badges carry the match as tooltip (oldest first)
-        $r->assertSee('data-bs-content="22/10/2026 · AC Milan 1-0 Other FC"', false);
+        $r->assertSee('data-bs-content="22/10/2026 · UEFA Europa League · AC Milan 1-0 Other FC"', false);
         $r->assertDontSee('data-testid="th-form-details"', false);   // domestic: Team History form stays the main (visible) form
     }
 
@@ -161,11 +161,66 @@ class MatchPageSampleTransparencyTest extends TestCase
 
         $r = $this->get(route('matches.show', $this->match));
 
-        // competition is not in the configured Team History scope in this fixture -> 0 eligible matches, flagged as reduced
+        // fewer than 10 matches in both scopes -> flagged, with the actual size and period (Totale: all matches in the DB)
         $r->assertSee('data-testid="form-sample-note-home"', false);
         $r->assertSee('data-testid="form-sample-note-away"', false);
         $r->assertSee('campione ridotto');
-        $r->assertSee('Campione: 0 partite');
+        $r->assertSee('Campione: 3 partite, dal 09/07/2026 al 15/10/2026', false);   // Ferencvarosi, Totale
+    }
+
+    public function test_scope_selector_exposes_totale_and_competizione_with_their_own_samples(): void
+    {
+        $this->mockPrediction(true);
+
+        $r = $this->get(route('matches.show', $this->match));
+
+        $r->assertSee('data-testid="scope-selector"', false);
+        $r->assertSee('id="scope-total"', false);
+        $r->assertSee('id="scope-competition"', false);
+        $s = $r->viewData('scopes');
+        // Totale: every competition/phase of the season in the DB; Competizione: only the same phase (League Stage)
+        $this->assertSame(1, $s['total']['sample']['season']['home']['n']);
+        $this->assertSame(3, $s['total']['sample']['season']['away']['n']);
+        $this->assertSame(1, $s['competition']['sample']['season']['away']['n']);
+        $r->assertSee('data-testid="season-sample-note-total"', false);
+        $r->assertSee('data-testid="season-sample-note-competition"', false);
+        $r->assertSee('Ferencvarosi TC: 3 partite, dal 09/07/2026 al 15/10/2026', false);
+        $r->assertSee('Ferencvarosi TC: 1 partita, dal 15/10/2026 al 15/10/2026', false);
+    }
+
+    public function test_total_scope_flags_missing_national_league_only_for_the_uncovered_team(): void
+    {
+        $this->mockPrediction(true);
+        $country = Country::first();
+        $bl = Competition::create(['name' => 'Serie A', 'slug' => 'serie-a', 'country_id' => $country->id]);
+        $bs = Season::create(['competition_id' => $bl->id, 'name' => '2026/27', 'year_start' => 2026, 'year_end' => 2027]);
+        FootballMatch::create([
+            'competition_id' => $bl->id, 'season_id' => $bs->id, 'home_team_id' => $this->home->id, 'away_team_id' => $this->other->id,
+            'kickoff_at' => '2026-10-25 18:00:00', 'status' => 'finished', 'round' => 'Regular Season - 9', 'home_score_ft' => 2, 'away_score_ft' => 2,
+        ]);
+        config(['api-football.core_leagues' => [135 => 'serie-a']]);
+
+        $r = $this->get(route('matches.show', $this->match));
+
+        $r->assertDontSee('data-testid="coverage-note-home"', false);           // AC Milan: Serie A is in the DB
+        $r->assertSee('data-testid="coverage-note-away"', false);               // Ferencvarosi: national league missing
+        $r->assertSee('non necessariamente tutte quelle disputate');
+        // the Serie A match counts in Milan's Totale (2 matches), not in its Competizione (1)
+        $s = $r->viewData('scopes');
+        $this->assertSame(2, $s['total']['sample']['season']['home']['n']);
+        $this->assertSame(1, $s['competition']['sample']['season']['home']['n']);
+        $r->assertSee('data-bs-content="25/10/2026 · Serie A · AC Milan 2-2 Other FC"', false);   // popover: date, competition, teams, result
+    }
+
+    public function test_unavailable_statistics_are_not_replaced_by_zero(): void
+    {
+        $this->mockPrediction(true);
+
+        $html = $this->get(route('matches.show', $this->match))->getContent();
+
+        // no match_statistics in the fixture: technical averages stay "–" (never 0.00)
+        $this->assertMatchesRegularExpression('#Media tiri fatti</td><td>–</td><td>–</td>#u', $html);
+        $this->assertDoesNotMatchRegularExpression('#Media tiri fatti</td><td>0\.00#', $html);
     }
 
     public function test_fallback_estimate_is_flagged(): void
