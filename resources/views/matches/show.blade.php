@@ -8,9 +8,23 @@
     $pct = fn(?float $p) => $p === null ? '–' : number_format($p, 1) . '%';
     $avg = fn(?float $v) => $v === null ? '–' : number_format($v, 2);
     // Accessible match detail for W/D/L badges: focusable (tap/keyboard) Bootstrap popover, also on hover for desktop.
-    $badgePop = fn(?string $txt) => $txt === null || $txt === '' ? '' : new \Illuminate\Support\HtmlString(
-        'tabindex="0" role="button" data-bs-toggle="popover" data-bs-trigger="hover focus" data-bs-placement="top" data-bs-content="' . e($txt) . '" aria-label="' . e($txt) . '"'
-    );
+    // $row = structured match row from MatchController::matchRows (date, competition, phase_label, home/away, scores, venue, result).
+    $badgePop = function (?array $row) {
+        if ($row === null) { return ''; }
+        $verdict = ['W' => 'Vittoria', 'D' => 'Pareggio', 'L' => 'Sconfitta'][$row['result']] ?? '';
+        $mine = fn (string $name, bool $isMine) => $isMine ? '<strong>' . e($name) . '</strong>' : e($name);
+        $title = $row['date']->format('d/m/Y') . ' · ' . ($row['competition'] ?? '?') . ($row['phase_label'] ? ' · ' . $row['phase_label'] : '');
+        $body = '<div class="text-center">' . $mine($row['home'], $row['venue'] === 'C')
+            . ' <span class="badge text-bg-dark">' . $row['home_score'] . ' - ' . $row['away_score'] . '</span> '
+            . $mine($row['away'], $row['venue'] === 'T') . '</div>'
+            . '<div class="small text-muted text-center mt-1">' . ($row['venue'] === 'C' ? 'In casa' : 'In trasferta') . ' · ' . $verdict . '</div>';
+        $plain = $title . ' · ' . $row['home'] . ' ' . $row['home_score'] . '-' . $row['away_score'] . ' ' . $row['away'];
+
+        return new \Illuminate\Support\HtmlString(
+            'tabindex="0" role="button" data-bs-toggle="popover" data-bs-trigger="hover focus" data-bs-placement="top" data-bs-html="true" data-bs-container="body"'
+            . ' data-bs-custom-class="match-popover" data-bs-title="' . e($title) . '" data-bs-content="' . e($body) . '" aria-label="' . e($plain) . '"'
+        );
+    };
     // Sample size + date range of the matches behind a statistic (pre-match view only; $sampleInfo is absent otherwise).
     $sampleTxt = fn(?array $i) => $i === null ? '' : $i['n'] . ' partit' . ($i['n'] === 1 ? 'a' : 'e')
         . ($i['first'] !== null ? ', dal ' . $i['first']->format('d/m/Y') . ' al ' . $i['last']->format('d/m/Y') : '');
@@ -721,6 +735,8 @@
 @if($matchViewMode === 'pre_match')
 
 <style>
+    .match-popover { --bs-popover-max-width: 290px; }
+    .match-popover .popover-header { font-size: .8rem; }
     /* Totale | Competizione: pure CSS (radio + :has), no JS; without :has support both scopes are simply shown. */
     .stats-scope-root:has(#scope-total:checked) [data-scope-panel="competition"] { display: none; }
     .stats-scope-root:has(#scope-competition:checked) [data-scope-panel="total"] { display: none; }
@@ -736,43 +752,6 @@
     </div>
 </div>
 <p class="text-muted small mb-0">Totale: tutte le partite disponibili nel database. Competizione: solo {{ $match->competition->name }} {{ $match->season->name }}@if($uefaPhaseLabel ?? null), {{ $uefaPhaseLabel }}@endif.</p>
-@if(!empty($uefaForm))
-{{-- Forma UEFA: last UEFA matches actually played (any UEFA phase/season in the DB), each tagged with its phase. Descriptive only. --}}
-<div class="mt-4" data-testid="uefa-form">
-    <h2 class="fs-5 fw-semibold mb-1">Forma UEFA <span class="text-muted small fw-normal">(ultimi incontri UEFA disputati, prima del match)</span></h2>
-    <p class="text-muted small">Le fasi non sono equivalenti: ogni incontro riporta la sua fase. Sono inclusi solo risultati definitivi precedenti al calcio d'inizio.</p>
-    <div class="row g-3">
-        @foreach([['name' => $match->homeTeam->name, 'rows' => $uefaForm['home'], 'side' => 'home'], ['name' => $match->awayTeam->name, 'rows' => $uefaForm['away'], 'side' => 'away']] as $ub)
-        <div class="col-md-6">
-            <div class="card h-100">
-                <div class="card-body p-3">
-                    <div class="text-muted small mb-2">{{ $ub['name'] }}
-                        <span class="text-muted">({{ count($ub['rows']) }} {{ count($ub['rows']) === 1 ? 'incontro' : 'incontri' }}@if(count($ub['rows']) > 0), dal {{ $ub['rows'][0]['date']->format('d/m/Y') }} al {{ $ub['rows'][count($ub['rows']) - 1]['date']->format('d/m/Y') }}@endif)</span>
-                    </div>
-                    @if(count($ub['rows']) === 0)
-                        <span class="text-muted">Nessun incontro UEFA precedente nei dati.</span>
-                    @else
-                    <table class="table table-sm mb-0 small align-middle" data-testid="uefa-form-{{ $ub['side'] }}">
-                        <tbody>
-                        @foreach($ub['rows'] as $u)
-                            <tr>
-                                <td class="text-nowrap text-muted">{{ $u['date']->format('d/m/Y') }}</td>
-                                <td><span class="badge text-bg-light border">{{ $u['phase_label'] }}</span></td>
-                                <td>{{ $u['venue'] === 'C' ? 'vs' : '@' }} {{ $u['opponent'] }}</td>
-                                <td class="text-nowrap">{{ $u['score'] }}</td>
-                                <td><span class="badge bg-{{ $badgeClass($u['result']) }}" {{ $badgePop($u['tooltip']) }}>{{ $u['result'] }}</span></td>
-                            </tr>
-                        @endforeach
-                        </tbody>
-                    </table>
-                    @endif
-                </div>
-            </div>
-        </div>
-        @endforeach
-    </div>
-</div>
-@endif
 
 <div data-scope-panel="total" data-testid="scope-panel-total">
 @include('matches.partials.scope-stats', ['sc' => $scopes['total']])

@@ -98,7 +98,7 @@ class MatchPageSampleTransparencyTest extends TestCase
         $r->assertSee('Ferencvarosi TC: 1 partita, dal 15/10/2026 al 15/10/2026', false);
     }
 
-    public function test_uefa_form_lists_last_uefa_matches_with_phase_opponent_date_score_and_tooltip(): void
+    public function test_recent_matches_list_follows_scope_with_phase_opponent_date_score_and_popover(): void
     {
         $this->mockPrediction(true);
         // a match AFTER the kickoff and a non-final one must never appear
@@ -110,17 +110,25 @@ class MatchPageSampleTransparencyTest extends TestCase
 
         $r = $this->get(route('matches.show', $this->match));
 
-        $r->assertSee('data-testid="uefa-form"', false);
-        $uefa = $r->viewData('uefaForm');
-        $this->assertCount(1, $uefa['home']);
-        $this->assertSame(['qualification', 'qualification', 'league_stage'], array_column($uefa['away'], 'phase'));
-        $this->assertSame(['09/07/2026', '16/07/2026', '15/10/2026'], array_map(fn ($u) => $u['date']->format('d/m/Y'), $uefa['away']));
-        $this->assertSame('Other FC', $uefa['away'][0]['opponent']);
-        $this->assertSame('T', $uefa['away'][0]['venue']);          // 09/07: Other FC - Ferencvarosi (away)
-        $this->assertSame('C', $uefa['away'][1]['venue']);
+        $r->assertSee('data-testid="recent-matches-total"', false);
+        $r->assertSee('data-testid="recent-matches-competition"', false);
+        $s = $r->viewData('scopes');
+        // Totale: every competition/phase; Competizione: same phase (League Stage) only
+        $total = $s['total']['recent']['away'];
+        $this->assertSame(['qualification', 'qualification', 'league_stage'], array_column($total, 'phase'));
+        $this->assertSame(['09/07/2026', '16/07/2026', '15/10/2026'], array_map(fn ($u) => $u['date']->format('d/m/Y'), $total));
+        $this->assertSame('Other FC', $total[0]['opponent']);
+        $this->assertSame('T', $total[0]['venue']);          // 09/07: Other FC - Ferencvarosi (away)
+        $this->assertSame('C', $total[1]['venue']);
+        $this->assertSame(['league_stage'], array_column($s['competition']['recent']['away'], 'phase'));
+        $this->assertCount(1, $s['total']['recent']['home']);
         $r->assertSee('Qualificazioni / Play-off');
-        $r->assertSee('data-bs-content="09/07/2026 · UEFA Europa League · Other FC 1-0 Ferencvarosi TC"', false);   // popover with the match and result
-        $r->assertSee('tabindex="0" role="button" data-bs-toggle="popover"', false);            // focusable: works on touch
+        // nice popover: title (date · competition · phase), body (teams, score, venue, verdict), focusable for touch
+        $r->assertSee('data-bs-title="09/07/2026 · UEFA Europa League · Qualificazioni / Play-off"', false);
+        $r->assertSee('data-bs-html="true"', false);
+        $r->assertSee('Other FC', false);
+        $r->assertSee('In trasferta · Sconfitta', false);   // 09/07: Other FC 1-0 Ferencvarosi (Ferencvarosi away, lost)
+        $r->assertSee('tabindex="0" role="button" data-bs-toggle="popover"', false);
         $r->assertDontSee('20/11/2026');
         $r->assertDontSee('29/10/2026');
     }
@@ -138,7 +146,8 @@ class MatchPageSampleTransparencyTest extends TestCase
         $r->assertSee('tutte le fasi disputate (comprese eventuali qualificazioni)');
         $r->assertSee('Ferencvarosi TC: 3 partite, dal 09/07/2026 al 15/10/2026', false);   // unfiltered
         // Team History form badges carry the match as tooltip (oldest first)
-        $r->assertSee('data-bs-content="22/10/2026 · UEFA Europa League · AC Milan 1-0 Other FC"', false);
+        $r->assertSee('data-bs-title="22/10/2026 · UEFA Europa League"', false);
+        $r->assertSee('&lt;strong&gt;AC Milan&lt;/strong&gt;', false);   // the analysed team is highlighted inside the popover body
         $r->assertDontSee('data-testid="th-form-details"', false);   // domestic: Team History form stays the main (visible) form
     }
 
@@ -209,7 +218,7 @@ class MatchPageSampleTransparencyTest extends TestCase
         $s = $r->viewData('scopes');
         $this->assertSame(2, $s['total']['sample']['season']['home']['n']);
         $this->assertSame(1, $s['competition']['sample']['season']['home']['n']);
-        $r->assertSee('data-bs-content="25/10/2026 · Serie A · AC Milan 2-2 Other FC"', false);   // popover: date, competition, teams, result
+        $r->assertSee('data-bs-title="25/10/2026 · Serie A"', false);   // popover: date and competition (teams/result in the body)
     }
 
     public function test_unavailable_statistics_are_not_replaced_by_zero(): void

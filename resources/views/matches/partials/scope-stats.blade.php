@@ -107,6 +107,49 @@
 </div>
 
 
+{{-- Ultimi 5 incontri of this scope (Totale: any competition; Competizione: same competition/season, UEFA: same phase) --}}
+<div class="mt-4" data-testid="recent-matches-{{ $sc['key'] }}">
+    <h2 class="fs-5 fw-semibold mb-1">Ultimi 5 incontri <span class="badge text-bg-light border ms-1">{{ $sc['label'] }}</span></h2>
+    <p class="text-muted small">
+        @if($sc['key'] === 'total')
+            Tutte le competizioni presenti nel database.
+        @else
+            Solo {{ $match->competition->name }} {{ $match->season->name }}@if($uefaPhaseLabel ?? null), {{ $uefaPhaseLabel }}@endif.
+        @endif
+        Ogni incontro riporta la competizione e, per le coppe UEFA, la fase. Solo risultati definitivi precedenti al calcio d'inizio.
+    </p>
+    <div class="row g-3">
+        @foreach([['name' => $match->homeTeam->name, 'rows' => $sc['recent']['home'], 'side' => 'home'], ['name' => $match->awayTeam->name, 'rows' => $sc['recent']['away'], 'side' => 'away']] as $ub)
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-body p-3">
+                    <div class="text-muted small mb-2">{{ $ub['name'] }}
+                        <span class="text-muted">({{ count($ub['rows']) }} {{ count($ub['rows']) === 1 ? 'incontro' : 'incontri' }}@if(count($ub['rows']) > 0), dal {{ $ub['rows'][0]['date']->format('d/m/Y') }} al {{ $ub['rows'][count($ub['rows']) - 1]['date']->format('d/m/Y') }}@endif)</span>
+                    </div>
+                    @if(count($ub['rows']) === 0)
+                        <span class="text-muted">Nessun incontro precedente nei dati.</span>
+                    @else
+                    <table class="table table-sm mb-0 small align-middle" data-testid="recent-{{ $sc['key'] }}-{{ $ub['side'] }}">
+                        <tbody>
+                        @foreach($ub['rows'] as $u)
+                            <tr>
+                                <td class="text-nowrap text-muted">{{ $u['date']->format('d/m/Y') }}</td>
+                                <td><span class="badge text-bg-light border">{{ $u['competition'] ?? '?' }}</span>@if($u['phase_label']) <span class="text-muted">{{ $u['phase_label'] }}</span>@endif</td>
+                                <td>{{ $u['venue'] === 'C' ? 'vs' : '@' }} {{ $u['opponent'] }}</td>
+                                <td class="text-nowrap">{{ $u['score'] }}</td>
+                                <td><span class="badge bg-{{ $badgeClass($u['result']) }}" {{ $badgePop($u) }}>{{ $u['result'] }}</span></td>
+                            </tr>
+                        @endforeach
+                        </tbody>
+                    </table>
+                    @endif
+                </div>
+            </div>
+        </div>
+        @endforeach
+    </div>
+</div>
+
 {{-- E. Split casa/trasferta --}}
 <div class="mt-4">
     <h2 class="fs-5 fw-semibold mb-3">Split casa / trasferta <span class="text-muted small fw-normal">(prima del match{{ ($sc['key'] === 'competition' && ($uefaPhaseLabel ?? null)) ? ', ' . $uefaPhaseLabel : '' }})</span> <span class="badge text-bg-light border ms-1">{{ $sc['label'] }}</span></h2>

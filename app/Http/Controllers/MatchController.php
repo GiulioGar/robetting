@@ -625,12 +625,8 @@ class MatchController extends Controller
                 'competition' => $this->scopeData('competition', 'Competizione', $match, $matchStatistics,
                     $homeSeasonSet, $awaySeasonSet, $homeSeasonSet, $awaySeasonSet, $homeAll, $awayAll),
             ],
-            // UEFA fixtures only: phase of this match and each team's last UEFA matches (descriptive, not a model input).
+            // UEFA fixtures only: phase of this match (descriptive, not a model input).
             'uefaPhaseLabel'              => $uefaPhase !== null ? UefaPhase::label($uefaPhase) : null,
-            'uefaForm'                    => $isUefa ? [
-                'home' => $this->uefaForm($match, (int) $match->home_team_id),
-                'away' => $this->uefaForm($match, (int) $match->away_team_id),
-            ] : null,
         ];
     }
 
@@ -667,7 +663,8 @@ class MatchController extends Controller
     ): array {
         $homeId = (int) $match->home_team_id;
         $awayId = (int) $match->away_team_id;
-        $fallbackComp = $match->competition?->name;
+        $homeRows = $this->matchRows($this->lastN($homeForm, 10), $homeId, $match->competition);
+        $awayRows = $this->matchRows($this->lastN($awayForm, 10), $awayId, $match->competition);
         $coreSlugs = array_values((array) config('api-football.core_leagues', []));
         $covered = fn (Collection $all): bool => $all->contains(fn ($m) => in_array($m->competition?->slug, $coreSlugs, true));
 
@@ -688,10 +685,12 @@ class MatchController extends Controller
                 'away' => ['last5'  => TeamAnalyticsCalculator::calculate($this->lastN($awayForm, 5), $awayId, $stats),
                            'last10' => TeamAnalyticsCalculator::calculate($this->lastN($awayForm, 10), $awayId, $stats)],
             ],
+            // Structured rows behind the W/D/L popovers (oldest first) and the "Ultimi 5 incontri" list of this scope.
             'tooltips' => [
-                'home' => ['last5' => $this->matchTooltips($this->lastN($homeForm, 5), $fallbackComp), 'last10' => $this->matchTooltips($this->lastN($homeForm, 10), $fallbackComp)],
-                'away' => ['last5' => $this->matchTooltips($this->lastN($awayForm, 5), $fallbackComp), 'last10' => $this->matchTooltips($this->lastN($awayForm, 10), $fallbackComp)],
+                'home' => ['last5' => array_slice($homeRows, -5), 'last10' => $homeRows],
+                'away' => ['last5' => array_slice($awayRows, -5), 'last10' => $awayRows],
             ],
+            'recent' => ['home' => array_slice($homeRows, -5), 'away' => array_slice($awayRows, -5)],
             'sample' => [
                 'season' => ['home' => $this->sampleInfo($homeSeason), 'away' => $this->sampleInfo($awaySeason)],
                 'form10' => ['home' => $this->sampleInfo($this->lastN($homeForm, 10)), 'away' => $this->sampleInfo($this->lastN($awayForm, 10))],
@@ -701,60 +700,38 @@ class MatchController extends Controller
         ];
     }
 
-    /** @return list<string> e.g. "22/10/2026 · Serie A · AC Milan 0-3 Atalanta", in the order of $window (oldest first). */
-    private function matchTooltips(Collection $window, ?string $fallbackCompetition = null): array
-    {
-        return $window->map(fn ($m) => $m->kickoff_at->format('d/m/Y') . ' · ' . ($m->competition?->name ?? $fallbackCompetition ?? '?') . ' · '
-            . ($m->homeTeam?->name ?? '?') . ' ' . $m->home_score_ft . '-' . $m->away_score_ft . ' ' . ($m->awayTeam?->name ?? '?'))->values()->all();
-    }
-
     /**
-     * Last UEFA club-competition matches actually played by the team (any UEFA competition/season in the DB, finished,
-     * strictly before the kickoff), oldest first, each tagged with its phase. Independent of MatchDataScope.
+     * Structured rows for a window of matches (oldest first), from the point of view of $teamId: used by the W/D/L
+     * popovers and by the "Ultimi 5 incontri" lists. Phase is set only for UEFA club competitions.
      *
      * @return list<array<string,mixed>>
      */
-    private function uefaForm(FootballMatch $match, int $teamId, int $limit = 5): array
+    private function matchRows(Collection $window, int $teamId, ?\App\Models\Competition $fallbackCompetition = null): array
     {
-        if ($match->kickoff_at === null) {
-            return [];
-        }
+        return $window->map(function ($m) use ($teamId, $fallbackCompetition) {
+            $home = (int) $m->home_team_id === $teamId;
+            $for = (int) ($home ? $m->home_score_ft : $m->away_score_ft);
+            $against = (int) ($home ? $m->away_score_ft : $m->home_score_ft);
+            $competition = $m->competition ?? $fallbackCompetition;
+            $phase = UefaPhase::isUefaClubSlug($competition?->slug) ? UefaPhase::fromRound($m->round) : null;
 
-        return FootballMatch::with(['homeTeam:id,name', 'awayTeam:id,name', 'competition:id,name,slug'])
-            ->whereHas('competition', fn ($q) => $q->whereIn('slug', UefaPhase::CLUB_SLUGS))
-            ->where('kickoff_at', '<', $match->kickoff_at)
-            ->where('status', 'finished')
-            ->whereNotNull('home_score_ft')
-            ->whereNotNull('away_score_ft')
-            ->where(fn ($q) => $q->where('home_team_id', $teamId)->orWhere('away_team_id', $teamId))
-            ->orderByDesc('kickoff_at')
-            ->limit($limit)
-            ->get()
-            ->reverse()
-            ->values()
-            ->map(function ($m) use ($teamId) {
-                $home = (int) $m->home_team_id === $teamId;
-                $for = (int) ($home ? $m->home_score_ft : $m->away_score_ft);
-                $against = (int) ($home ? $m->away_score_ft : $m->home_score_ft);
-                $phase = UefaPhase::fromRound($m->round);
-
-                return [
-                    'match_id'    => (int) $m->id,
-                    'date'        => $m->kickoff_at,
-                    'phase'       => $phase,
-                    'phase_label' => UefaPhase::label($phase),
-                    'round'       => $m->round,
-                    'competition' => $m->competition?->name,
-                    'opponent'    => ($home ? $m->awayTeam : $m->homeTeam)?->name ?? '?',
-                    'venue'       => $home ? 'C' : 'T',
-                    'score'       => $for . '-' . $against,
-                    'result'      => $for > $against ? 'W' : ($for === $against ? 'D' : 'L'),
-                    'tooltip'     => $m->kickoff_at->format('d/m/Y') . ' · ' . ($m->competition?->name ?? '?') . ' · ' . ($m->homeTeam?->name ?? '?') . ' ' . $m->home_score_ft . '-' . $m->away_score_ft . ' ' . ($m->awayTeam?->name ?? '?'),
-                ];
-            })
-            ->all();
+            return [
+                'match_id'    => (int) $m->id,
+                'date'        => $m->kickoff_at,
+                'competition' => $competition?->name,
+                'phase'       => $phase,
+                'phase_label' => $phase !== null ? UefaPhase::label($phase) : null,
+                'home'        => $m->homeTeam?->name ?? '?',
+                'away'        => $m->awayTeam?->name ?? '?',
+                'home_score'  => (int) $m->home_score_ft,
+                'away_score'  => (int) $m->away_score_ft,
+                'opponent'    => ($home ? $m->awayTeam : $m->homeTeam)?->name ?? '?',
+                'venue'       => $home ? 'C' : 'T',
+                'score'       => $for . '-' . $against,
+                'result'      => $for > $against ? 'W' : ($for === $against ? 'D' : 'L'),
+            ];
+        })->values()->all();
     }
-
     /** Size and date range of a match sample (shown next to the statistics built from it). */
     private function sampleInfo(Collection $matches): array
     {
