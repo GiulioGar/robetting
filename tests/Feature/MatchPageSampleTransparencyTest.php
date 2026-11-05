@@ -124,11 +124,11 @@ class MatchPageSampleTransparencyTest extends TestCase
         $this->assertCount(1, $s['total']['recent']['home']);
         $r->assertSee('Qualificazioni / Play-off');
         // nice popover: title (date · competition · phase), body (teams, score, venue, verdict), focusable for touch
-        $r->assertSee('data-bs-title="09/07/2026 · UEFA Europa League · Qualificazioni / Play-off"', false);
-        $r->assertSee('data-bs-html="true"', false);
+        $r->assertSee('data-tip-title="09/07/2026 · UEFA Europa League · Qualificazioni / Play-off"', false);
+        $r->assertSee('data-tip-body="', false);
         $r->assertSee('Other FC', false);
         $r->assertSee('In trasferta · Sconfitta', false);   // 09/07: Other FC 1-0 Ferencvarosi (Ferencvarosi away, lost)
-        $r->assertSee('tabindex="0" role="button" data-bs-toggle="popover"', false);
+        $r->assertSee('tabindex="0" role="button" data-tip-title=', false);
         $r->assertDontSee('20/11/2026');
         $r->assertDontSee('29/10/2026');
     }
@@ -146,7 +146,7 @@ class MatchPageSampleTransparencyTest extends TestCase
         $r->assertSee('tutte le fasi disputate (comprese eventuali qualificazioni)');
         $r->assertSee('Ferencvarosi TC: 3 partite, dal 09/07/2026 al 15/10/2026', false);   // unfiltered
         // Team History form badges carry the match as tooltip (oldest first)
-        $r->assertSee('data-bs-title="22/10/2026 · UEFA Europa League"', false);
+        $r->assertSee('data-tip-title="22/10/2026 · UEFA Europa League"', false);
         $r->assertSee('&lt;strong&gt;AC Milan&lt;/strong&gt;', false);   // the analysed team is highlighted inside the popover body
         $r->assertDontSee('data-testid="th-form-details"', false);   // domestic: Team History form stays the main (visible) form
     }
@@ -218,7 +218,7 @@ class MatchPageSampleTransparencyTest extends TestCase
         $s = $r->viewData('scopes');
         $this->assertSame(2, $s['total']['sample']['season']['home']['n']);
         $this->assertSame(1, $s['competition']['sample']['season']['home']['n']);
-        $r->assertSee('data-bs-title="25/10/2026 · Serie A"', false);   // popover: date and competition (teams/result in the body)
+        $r->assertSee('data-tip-title="25/10/2026 · Serie A"', false);   // tooltip: date and competition (teams/result in the body)
     }
 
     public function test_results_only_league_match_appears_in_totale_but_not_in_competizione(): void
@@ -239,7 +239,7 @@ class MatchPageSampleTransparencyTest extends TestCase
         $this->assertSame(1, $s['competition']['sample']['season']['away']['n']);  // League Stage only: unchanged
         $this->assertContains('NB I', array_column($s['total']['recent']['away'], 'competition'));
         $this->assertNotContains('NB I', array_column($s['competition']['recent']['away'], 'competition'));
-        $r->assertSee('data-bs-title="25/10/2026 · NB I"', false);
+        $r->assertSee('data-tip-title="25/10/2026 · NB I"', false);
         // the imported national league now covers the team: no "Copertura parziale" note for it
         $this->assertTrue($s['total']['covered']['away']);
         $r->assertDontSee('data-testid="coverage-note-away"', false);

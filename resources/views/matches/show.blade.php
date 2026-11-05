@@ -7,7 +7,7 @@
 @php
     $pct = fn(?float $p) => $p === null ? '–' : number_format($p, 1) . '%';
     $avg = fn(?float $v) => $v === null ? '–' : number_format($v, 2);
-    // Accessible match detail for W/D/L badges: focusable (tap/keyboard) Bootstrap popover, also on hover for desktop.
+    // Accessible match detail for W/D/L badges: focusable link; a dependency-free tooltip (script at the end) shows it on hover/focus/tap.
     // $row = structured match row from MatchController::matchRows (date, competition, phase_label, home/away, scores, venue, result).
     $badgePop = function (?array $row) {
         if ($row === null) { return ''; }
@@ -21,8 +21,7 @@
         $plain = $title . ' · ' . $row['home'] . ' ' . $row['home_score'] . '-' . $row['away_score'] . ' ' . $row['away'];
 
         return new \Illuminate\Support\HtmlString(
-            'tabindex="0" role="button" data-bs-toggle="popover" data-bs-trigger="hover focus" data-bs-placement="top" data-bs-html="true" data-bs-container="body"'
-            . ' data-bs-custom-class="match-popover" data-bs-title="' . e($title) . '" data-bs-content="' . e($body) . '" aria-label="' . e($plain) . '"'
+            'tabindex="0" role="button" data-tip-title="' . e($title) . '" data-tip-body="' . e($body) . '" aria-label="' . e($plain) . '"'
         );
     };
     // Sample size + date range of the matches behind a statistic (pre-match view only; $sampleInfo is absent otherwise).
@@ -735,11 +734,13 @@
 @if($matchViewMode === 'pre_match')
 
 <style>
-    /* W/D/L badges are <a tabindex=0 role=button> (Bootstrap's recommended popover trigger: focusable on iOS/Safari taps). */
+    /* W/D/L badges are <a tabindex=0 role=button>: focusable on iOS/Safari taps; the tooltip is positioned by the page script (end of file). */
     a.badge.match-badge { cursor: pointer; text-decoration: none; color: var(--bs-badge-color); }
     a.badge.match-badge:hover, a.badge.match-badge:focus { color: var(--bs-badge-color); filter: brightness(.92); outline: 0; }
-    .match-popover { --bs-popover-max-width: 290px; }
-    .match-popover .popover-header { font-size: .8rem; }
+    .match-tip { position: fixed; z-index: 2000; max-width: 260px; padding: .5rem .7rem; background: var(--bs-body-bg); color: var(--bs-body-color);
+                 border: 1px solid var(--bs-border-color); border-radius: .5rem; box-shadow: 0 .5rem 1rem rgba(0,0,0,.18); font-size: .85rem; line-height: 1.35; pointer-events: none; }
+    .match-tip[hidden] { display: none; }
+    .match-tip .match-tip-title { font-size: .75rem; color: var(--bs-secondary-color); margin-bottom: .25rem; text-align: center; }
     /* Totale | Competizione: pure CSS (radio + :has), no JS; without :has support both scopes are simply shown. */
     .stats-scope-root:has(#scope-total:checked) [data-scope-panel="competition"] { display: none; }
     .stats-scope-root:has(#scope-competition:checked) [data-scope-panel="total"] { display: none; }
@@ -1817,11 +1818,45 @@
 @endif
 
 <script>
-// W/D/L badge details (Bootstrap popover): tap/focus on touch devices, hover/focus on desktop. The bundle loads after the content.
-document.addEventListener('DOMContentLoaded', function () {
-    if (!window.bootstrap || !bootstrap.Popover) { return; }
-    document.querySelectorAll('[data-bs-toggle="popover"]').forEach(function (el) { new bootstrap.Popover(el); });
-});
+// W/D/L badge details: dependency-free tooltip (hover, keyboard focus, tap). Content comes from the badge's data-tip-* attributes,
+// built server-side with escaped team names. Positioned with fixed coordinates and clamped inside the viewport.
+(function () {
+    var tip = document.createElement('div');
+    tip.className = 'match-tip'; tip.setAttribute('role', 'tooltip'); tip.hidden = true;
+    var title = document.createElement('div'); title.className = 'match-tip-title';
+    var body = document.createElement('div');
+    tip.appendChild(title); tip.appendChild(body); document.body.appendChild(tip);
+    var current = null;
+
+    function place(el) {
+        var r = el.getBoundingClientRect();
+        tip.style.left = '0px'; tip.style.top = '0px';
+        var w = tip.offsetWidth, h = tip.offsetHeight;
+        var x = Math.max(8, Math.min(r.left + r.width / 2 - w / 2, window.innerWidth - w - 8));
+        var y = r.top - h - 8; if (y < 8) { y = r.bottom + 8; }
+        tip.style.left = x + 'px'; tip.style.top = y + 'px';
+    }
+    function show(el) {
+        current = el;
+        title.textContent = el.getAttribute('data-tip-title') || '';
+        body.innerHTML = el.getAttribute('data-tip-body') || '';
+        tip.hidden = false; place(el);
+    }
+    function hide() { tip.hidden = true; current = null; }
+    function badge(t) { return t && t.closest ? t.closest('.match-badge[data-tip-body]') : null; }
+
+    document.addEventListener('mouseover', function (e) { var b = badge(e.target); if (b) { show(b); } });
+    document.addEventListener('mouseout', function (e) { var b = badge(e.target); if (b && document.activeElement !== b) { hide(); } });
+    document.addEventListener('focusin', function (e) { var b = badge(e.target); if (b) { show(b); } });
+    document.addEventListener('focusout', function (e) { if (badge(e.target)) { hide(); } });
+    document.addEventListener('pointerdown', function (e) {           // touch: tap toggles, tap elsewhere closes
+        if (e.pointerType !== 'touch') { return; }
+        var b = badge(e.target);
+        if (b && !(current === b && !tip.hidden)) { show(b); } else { hide(); }
+    }, true);
+    window.addEventListener('scroll', hide, true);
+    window.addEventListener('resize', hide);
+})();
 </script>
 
 @endsection
