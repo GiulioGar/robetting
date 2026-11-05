@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-05T13:37:45.590541+00:00",
+  "generated_at": "2026-11-05T13:44:35.320573+00:00",
   "definition": "top25_market_value",
   "teams": {
     "274": {
@@ -775,6 +775,174 @@
       "team_name": "Plzen",
       "players_count": 28,
       "top25_market_value": 58600000
+    },
+    "454": {
+      "transfermarkt_club_id": 829,
+      "team_name": "Omonia Nicosia",
+      "players_count": 25,
+      "top25_market_value": 20625000
+    },
+    "418": {
+      "transfermarkt_club_id": 678,
+      "team_name": "Aarhus",
+      "players_count": 28,
+      "top25_market_value": 37800000
+    },
+    "596": {
+      "transfermarkt_club_id": 157,
+      "team_name": "Gent",
+      "players_count": 34,
+      "top25_market_value": 74100000
+    },
+    "419": {
+      "transfermarkt_club_id": 467,
+      "team_name": "NEC Nijmegen",
+      "players_count": 28,
+      "top25_market_value": 57850000
+    },
+    "471": {
+      "transfermarkt_club_id": 865,
+      "team_name": "FC Midtjylland",
+      "players_count": 28,
+      "top25_market_value": 76300000
+    },
+    "438": {
+      "transfermarkt_club_id": 38204,
+      "team_name": "Lincoln Red Imps FC",
+      "players_count": 26,
+      "top25_market_value": 2240000
+    },
+    "443": {
+      "transfermarkt_club_id": 938,
+      "team_name": "FC Thun",
+      "players_count": 28,
+      "top25_market_value": 19325000
+    },
+    "445": {
+      "transfermarkt_club_id": 6251,
+      "team_name": "KuPS",
+      "players_count": 30,
+      "top25_market_value": 7050000
+    },
+    "447": {
+      "transfermarkt_club_id": 2719,
+      "team_name": "Mjallby AIF",
+      "players_count": 24,
+      "top25_market_value": 17300000
+    },
+    "520": {
+      "transfermarkt_club_id": 1075,
+      "team_name": "SC Braga",
+      "players_count": 26,
+      "top25_market_value": 158300000
+    },
+    "534": {
+      "transfermarkt_club_id": 449,
+      "team_name": "Trabzonspor",
+      "players_count": 29,
+      "top25_market_value": 182600000
+    },
+    "452": {
+      "transfermarkt_club_id": 41916,
+      "team_name": "Inter Club d'Escaldes",
+      "players_count": 25,
+      "top25_market_value": 4510000
+    },
+    "565": {
+      "transfermarkt_club_id": 447,
+      "team_name": "HNK Hajduk Split",
+      "players_count": 28,
+      "top25_market_value": 33100000
+    },
+    "453": {
+      "transfermarkt_club_id": 3900,
+      "team_name": "Borac Banja Luka",
+      "players_count": 31,
+      "top25_market_value": 8500000
+    },
+    "567": {
+      "transfermarkt_club_id": 475,
+      "team_name": "St. Truiden",
+      "players_count": 27,
+      "top25_market_value": 43050000
+    },
+    "568": {
+      "transfermarkt_club_id": 208,
+      "team_name": "CSKA Sofia",
+      "players_count": 24,
+      "top25_market_value": 26675000
+    },
+    "456": {
+      "transfermarkt_club_id": 53453,
+      "team_name": "Ararat-Armenia",
+      "players_count": 26,
+      "top25_market_value": 8725000
+    },
+    "457": {
+      "transfermarkt_club_id": 40090,
+      "team_name": "Kauno Žalgiris",
+      "players_count": 26,
+      "top25_market_value": 9400000
+    },
+    "684": {
+      "transfermarkt_club_id": 2778,
+      "team_name": "FC Nordsjaelland",
+      "players_count": 26,
+      "top25_market_value": 44550000
+    },
+    "458": {
+      "transfermarkt_club_id": 710,
+      "team_name": "Celje",
+      "players_count": 28,
+      "top25_market_value": 14700000
+    },
+    "690": {
+      "transfermarkt_club_id": 1322,
+      "team_name": "FK Jablonec",
+      "players_count": 29,
+      "top25_market_value": 15250000
+    },
+    "462": {
+      "transfermarkt_club_id": 48325,
+      "team_name": "Riga",
+      "players_count": 27,
+      "top25_market_value": 15050000
+    },
+    "431": {
+      "transfermarkt_club_id": 40812,
+      "team_name": "Universitatea Craiova",
+      "players_count": 27,
+      "top25_market_value": 36500000
+    },
+    "432": {
+      "transfermarkt_club_id": 122,
+      "team_name": "Sturm Graz",
+      "players_count": 28,
+      "top25_market_value": 75350000
+    },
+    "481": {
+      "transfermarkt_club_id": 2790,
+      "team_name": "FC Lugano",
+      "players_count": 26,
+      "top25_market_value": 45125000
+    },
+    "500": {
+      "transfermarkt_club_id": 1100,
+      "team_name": "Brann",
+      "players_count": 25,
+      "top25_market_value": 26100000
+    },
+    "516": {
+      "transfermarkt_club_id": 45457,
+      "team_name": "Pafos",
+      "players_count": 26,
+      "top25_market_value": 31075000
+    },
+    "421": {
+      "transfermarkt_club_id": 683,
+      "team_name": "Olympiakos Piraeus",
+      "players_count": 30,
+      "top25_market_value": 181300000
     }
   }
 }
