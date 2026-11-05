@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-05T13:30:48.679806+00:00",
+  "generated_at": "2026-11-05T13:37:45.590541+00:00",
   "definition": "top25_market_value",
   "teams": {
     "274": {
@@ -703,6 +703,78 @@
       "team_name": "Red Bull Salzburg",
       "players_count": 30,
       "top25_market_value": 127300000
+    },
+    "430": {
+      "transfermarkt_club_id": 197,
+      "team_name": "Sparta Praha",
+      "players_count": 30,
+      "top25_market_value": 89100000
+    },
+    "519": {
+      "transfermarkt_club_id": 1090,
+      "team_name": "AZ Alkmaar",
+      "players_count": 30,
+      "top25_market_value": 160000000
+    },
+    "429": {
+      "transfermarkt_club_id": 419,
+      "team_name": "Dinamo Zagreb",
+      "players_count": 33,
+      "top25_market_value": 75900000
+    },
+    "446": {
+      "transfermarkt_club_id": 3948,
+      "team_name": "Union St. Gilloise",
+      "players_count": 26,
+      "top25_market_value": 119300000
+    },
+    "416": {
+      "transfermarkt_club_id": 238,
+      "team_name": "Lech Poznan",
+      "players_count": 25,
+      "top25_market_value": 57500000
+    },
+    "525": {
+      "transfermarkt_club_id": 114,
+      "team_name": "Besiktas",
+      "players_count": 29,
+      "top25_market_value": 270500000
+    },
+    "423": {
+      "transfermarkt_club_id": 2976,
+      "team_name": "Hapoel Beer Sheva",
+      "players_count": 26,
+      "top25_market_value": 27325000
+    },
+    "570": {
+      "transfermarkt_club_id": 653,
+      "team_name": "OFI",
+      "players_count": 27,
+      "top25_market_value": 21600000
+    },
+    "434": {
+      "transfermarkt_club_id": 156,
+      "team_name": "Levski Sofia",
+      "players_count": 28,
+      "top25_market_value": 44800000
+    },
+    "468": {
+      "transfermarkt_club_id": 2300,
+      "team_name": "Jagiellonia",
+      "players_count": 28,
+      "top25_market_value": 32800000
+    },
+    "562": {
+      "transfermarkt_club_id": 353,
+      "team_name": "Lillestrom",
+      "players_count": 24,
+      "top25_market_value": 14975000
+    },
+    "504": {
+      "transfermarkt_club_id": 941,
+      "team_name": "Plzen",
+      "players_count": 28,
+      "top25_market_value": 58600000
     }
   }
 }
