@@ -83,7 +83,7 @@ class MatchPageSampleTransparencyTest extends TestCase
         $this->app->instance(CandidateModelService::class, $cand);
     }
 
-    public function test_season_sample_note_shows_scope_size_and_date_range_per_team(): void
+    public function test_uefa_league_stage_season_blocks_use_only_same_phase_matches(): void
     {
         $this->mockPrediction(true);
 
@@ -91,9 +91,66 @@ class MatchPageSampleTransparencyTest extends TestCase
 
         $r->assertOk();
         $r->assertSee('data-testid="season-sample-note"', false);
-        $r->assertSee('tutte le fasi disputate (comprese eventuali qualificazioni)');
+        $r->assertSee('League Stage</strong> (stessa fase di questa partita)', false);
+        $r->assertDontSee('tutte le fasi disputate');
+        // Ferencvarosi: the 2 qualifying-round matches are excluded from the seasonal comparison (1 league-stage match left)
         $r->assertSee('AC Milan: 1 partita, dal 22/10/2026 al 22/10/2026', false);
-        $r->assertSee('Ferencvarosi TC: 3 partite, dal 09/07/2026 al 15/10/2026', false);
+        $r->assertSee('Ferencvarosi TC: 1 partita, dal 15/10/2026 al 15/10/2026', false);
+    }
+
+    public function test_uefa_form_lists_last_uefa_matches_with_phase_opponent_date_score_and_tooltip(): void
+    {
+        $this->mockPrediction(true);
+        // a match AFTER the kickoff and a non-final one must never appear
+        $this->played($this->away, $this->other, '2026-11-20 19:00:00', 'League Stage - 5');
+        FootballMatch::create([
+            'competition_id' => $this->c->id, 'season_id' => $this->s->id, 'home_team_id' => $this->away->id, 'away_team_id' => $this->other->id,
+            'kickoff_at' => '2026-10-29 19:00:00', 'status' => 'scheduled', 'round' => 'League Stage - 4',
+        ]);
+
+        $r = $this->get(route('matches.show', $this->match));
+
+        $r->assertSee('data-testid="uefa-form"', false);
+        $uefa = $r->viewData('uefaForm');
+        $this->assertCount(1, $uefa['home']);
+        $this->assertSame(['qualification', 'qualification', 'league_stage'], array_column($uefa['away'], 'phase'));
+        $this->assertSame(['09/07/2026', '16/07/2026', '15/10/2026'], array_map(fn ($u) => $u['date']->format('d/m/Y'), $uefa['away']));
+        $this->assertSame('Other FC', $uefa['away'][0]['opponent']);
+        $this->assertSame('T', $uefa['away'][0]['venue']);          // 09/07: Other FC - Ferencvarosi (away)
+        $this->assertSame('C', $uefa['away'][1]['venue']);
+        $r->assertSee('Qualificazioni / Play-off');
+        $r->assertSee('title="09/07/2026 · Other FC 1-0 Ferencvarosi TC"', false);   // tooltip with the match and result
+        $r->assertDontSee('20/11/2026');
+        $r->assertDontSee('29/10/2026');
+    }
+
+    public function test_domestic_match_keeps_full_season_set_and_has_no_uefa_blocks_and_form_tooltips(): void
+    {
+        $this->c->update(['slug' => 'bundesliga']);
+        config(['api-football.core_leagues' => [78 => 'bundesliga']]);
+        $this->mockPrediction(true);
+
+        $r = $this->get(route('matches.show', $this->match));
+
+        $r->assertOk();
+        $r->assertDontSee('data-testid="uefa-form"', false);
+        $r->assertSee('tutte le fasi disputate (comprese eventuali qualificazioni)');
+        $r->assertSee('Ferencvarosi TC: 3 partite, dal 09/07/2026 al 15/10/2026', false);   // unfiltered
+        // Team History form badges carry the match as tooltip (oldest first)
+        $r->assertSee('title="22/10/2026 · AC Milan 1-0 Other FC"', false);
+    }
+
+    public function test_uefa_phase_classification(): void
+    {
+        foreach (['1st Qualifying Round', '2nd Qualifying Round', '3rd Qualifying Round', 'Play-offs', 'Playoff round'] as $r) {
+            $this->assertSame('qualification', \App\Services\Analytics\UefaPhase::fromRound($r), $r);
+        }
+        $this->assertSame('league_stage', \App\Services\Analytics\UefaPhase::fromRound('League Stage - 4'));
+        foreach (['Knockout Round Play-offs', 'Round of 32', 'Round of 16', 'Quarter-finals', 'Semi-finals', 'Final'] as $r) {
+            $this->assertSame('knockout', \App\Services\Analytics\UefaPhase::fromRound($r), $r);
+        }
+        $this->assertNull(\App\Services\Analytics\UefaPhase::fromRound(null));
+        $this->assertNull(\App\Services\Analytics\UefaPhase::fromRound('Regular Season - 3'));
     }
 
     public function test_form_block_flags_reduced_sample_with_actual_size(): void

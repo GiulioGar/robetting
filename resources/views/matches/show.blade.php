@@ -709,9 +709,13 @@
 
 {{-- D. Confronto pre-match --}}
 <div class="mt-4">
-    <h2 class="fs-5 fw-semibold mb-3">Confronto pre-match <span class="text-muted small fw-normal">(stagione, prima del match)</span></h2>
+    <h2 class="fs-5 fw-semibold mb-3">Confronto pre-match <span class="text-muted small fw-normal">(stagione, prima del match{{ ($uefaPhaseLabel ?? null) ? ', ' . $uefaPhaseLabel : '' }})</span></h2>
     <p class="text-muted small" data-testid="season-sample-note">
+        @if($uefaPhaseLabel ?? null)
+        Solo {{ $match->competition->name }} {{ $match->season->name }}, <strong>{{ $uefaPhaseLabel }}</strong> (stessa fase di questa partita): le altre fasi sono escluse perché non confrontabili.
+        @else
         Solo {{ $match->competition->name }} {{ $match->season->name }}, tutte le fasi disputate (comprese eventuali qualificazioni): campioni di squadre con percorsi diversi non sono equivalenti.
+        @endif
         {{ $match->homeTeam->name }}: {{ $sampleTxt($sampleInfo['season']['home'] ?? null) }} · {{ $match->awayTeam->name }}: {{ $sampleTxt($sampleInfo['season']['away'] ?? null) }}.
         Vale anche per Split casa / trasferta e Trend pre-match.
     </p>
@@ -769,16 +773,16 @@
                     @if(empty($block['last5']['form']))
                         <span class="text-muted">Dati precedenti non disponibili</span>
                     @else
-                        @foreach($block['last5']['form'] as $r)
-                            <span class="badge bg-{{ $badgeClass($r) }} me-1">{{ $r }}</span>
+                        @foreach($block['last5']['form'] as $i => $r)
+                            <span class="badge bg-{{ $badgeClass($r) }} me-1" title="{{ $formTooltips[$block['side']]['last5'][$i] ?? '' }}">{{ $r }}</span>
                         @endforeach
                     @endif
                     <div class="text-muted small mt-2 mb-1">Ultime 10</div>
                     @if(empty($block['last10']['form']))
                         <span class="text-muted">Dati precedenti non disponibili</span>
                     @else
-                        @foreach($block['last10']['form'] as $r)
-                            <span class="badge bg-{{ $badgeClass($r) }} me-1">{{ $r }}</span>
+                        @foreach($block['last10']['form'] as $i => $r)
+                            <span class="badge bg-{{ $badgeClass($r) }} me-1" title="{{ $formTooltips[$block['side']]['last10'][$i] ?? '' }}">{{ $r }}</span>
                         @endforeach
                     @endif
                     @php $f10 = $sampleInfo['form10'][$block['side']] ?? null; @endphp
@@ -794,9 +798,47 @@
     </div>
 </div>
 
+@if(!empty($uefaForm))
+{{-- Forma UEFA: last UEFA matches actually played (any UEFA phase/season in the DB), each tagged with its phase. Descriptive only. --}}
+<div class="mt-4" data-testid="uefa-form">
+    <h2 class="fs-5 fw-semibold mb-1">Forma UEFA <span class="text-muted small fw-normal">(ultimi incontri UEFA disputati, prima del match)</span></h2>
+    <p class="text-muted small">Le fasi non sono equivalenti: ogni incontro riporta la sua fase. Sono inclusi solo risultati definitivi precedenti al calcio d'inizio.</p>
+    <div class="row g-3">
+        @foreach([['name' => $match->homeTeam->name, 'rows' => $uefaForm['home'], 'side' => 'home'], ['name' => $match->awayTeam->name, 'rows' => $uefaForm['away'], 'side' => 'away']] as $ub)
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-body p-3">
+                    <div class="text-muted small mb-2">{{ $ub['name'] }}
+                        <span class="text-muted">({{ count($ub['rows']) }} {{ count($ub['rows']) === 1 ? 'incontro' : 'incontri' }}@if(count($ub['rows']) > 0), dal {{ $ub['rows'][0]['date']->format('d/m/Y') }} al {{ $ub['rows'][count($ub['rows']) - 1]['date']->format('d/m/Y') }}@endif)</span>
+                    </div>
+                    @if(count($ub['rows']) === 0)
+                        <span class="text-muted">Nessun incontro UEFA precedente nei dati.</span>
+                    @else
+                    <table class="table table-sm mb-0 small align-middle" data-testid="uefa-form-{{ $ub['side'] }}">
+                        <tbody>
+                        @foreach($ub['rows'] as $u)
+                            <tr title="{{ $u['tooltip'] }}">
+                                <td class="text-nowrap text-muted">{{ $u['date']->format('d/m/Y') }}</td>
+                                <td><span class="badge text-bg-light border">{{ $u['phase_label'] }}</span></td>
+                                <td>{{ $u['venue'] === 'C' ? 'vs' : '@' }} {{ $u['opponent'] }}</td>
+                                <td class="text-nowrap">{{ $u['score'] }}</td>
+                                <td><span class="badge bg-{{ $badgeClass($u['result']) }}" title="{{ $u['tooltip'] }}">{{ $u['result'] }}</span></td>
+                            </tr>
+                        @endforeach
+                        </tbody>
+                    </table>
+                    @endif
+                </div>
+            </div>
+        </div>
+        @endforeach
+    </div>
+</div>
+@endif
+
 {{-- E. Split casa/trasferta --}}
 <div class="mt-4">
-    <h2 class="fs-5 fw-semibold mb-3">Split casa / trasferta <span class="text-muted small fw-normal">(prima del match)</span></h2>
+    <h2 class="fs-5 fw-semibold mb-3">Split casa / trasferta <span class="text-muted small fw-normal">(prima del match{{ ($uefaPhaseLabel ?? null) ? ', ' . $uefaPhaseLabel : '' }})</span></h2>
     <div class="row g-3">
         @foreach([
             ['label' => $match->homeTeam->name . ' — in casa', 'a' => $homeHomeAnalytics],
@@ -830,7 +872,7 @@
 
 {{-- F. Trend pre-match (ambiguo pubblico/tecnico — vedi report Step 1C, mantenuto qui perché stesso dato "a mercato" di Split) --}}
 <div class="mt-4 mb-4">
-    <h2 class="fs-5 fw-semibold mb-3">Trend pre-match <span class="text-muted small fw-normal">(stagione, prima del match)</span></h2>
+    <h2 class="fs-5 fw-semibold mb-3">Trend pre-match <span class="text-muted small fw-normal">(stagione, prima del match{{ ($uefaPhaseLabel ?? null) ? ', ' . $uefaPhaseLabel : '' }})</span></h2>
     <div class="row g-3">
         @foreach([['label' => $match->homeTeam->name, 'a' => $homeSeasonAnalytics], ['label' => $match->awayTeam->name, 'a' => $awaySeasonAnalytics]] as $block)
         @php $mt = $block['a']['market_trends']; @endphp
