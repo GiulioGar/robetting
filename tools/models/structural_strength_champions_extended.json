@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-20T15:03:27.417440+00:00",
+  "generated_at": "2026-11-05T13:30:48.679806+00:00",
   "definition": "top25_market_value",
   "teams": {
     "274": {
@@ -667,6 +667,42 @@
       "team_name": "Sabah FA",
       "players_count": 25,
       "top25_market_value": 19000000
+    },
+    "484": {
+      "transfermarkt_club_id": 279,
+      "team_name": "Ferencvarosi TC",
+      "players_count": 36,
+      "top25_market_value": 36450000
+    },
+    "466": {
+      "transfermarkt_club_id": 294,
+      "team_name": "Benfica",
+      "players_count": 26,
+      "top25_market_value": 419000000
+    },
+    "411": {
+      "transfermarkt_club_id": 371,
+      "team_name": "Celtic",
+      "players_count": 29,
+      "top25_market_value": 121750000
+    },
+    "498": {
+      "transfermarkt_club_id": 610,
+      "team_name": "Ajax",
+      "players_count": 29,
+      "top25_market_value": 225500000
+    },
+    "527": {
+      "transfermarkt_club_id": 58,
+      "team_name": "Anderlecht",
+      "players_count": 33,
+      "top25_market_value": 100800000
+    },
+    "477": {
+      "transfermarkt_club_id": 409,
+      "team_name": "Red Bull Salzburg",
+      "players_count": 30,
+      "top25_market_value": 127300000
     }
   }
 }
