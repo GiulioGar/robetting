@@ -157,6 +157,25 @@ class ServeLocal extends Command
         } else {
             $this->error('[latent] official predictions capture SKIPPED — latent snapshot is not current.');
         }
+
+        $this->info('[startup] Recording GOAL evaluations...');
+        $this->runGoalEvaluationsRecord();
+    }
+
+    /**
+     * GOAL evaluation register — append-only pre-match photographs (official Candidate47 vs stored GOAL quotes).
+     * Uses only predictions/quotes already persisted (no API). Fail-safe: errors are logged and reported but never
+     * stop the startup, the portal or the official predictions capture.
+     */
+    private function runGoalEvaluationsRecord(): void
+    {
+        try {
+            $this->callSilently('robetting:record-goal-evaluations');
+            $this->line('[goal-eval] GOAL evaluations recorded');
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('[goal-eval] recording failed: ' . $e->getMessage(), ['exception' => $e]);
+            $this->error('[goal-eval] recording failed: ' . $e->getMessage() . ' (startup continues)');
+        }
     }
 
     /**

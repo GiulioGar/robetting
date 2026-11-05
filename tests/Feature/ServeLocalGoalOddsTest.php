@@ -125,6 +125,41 @@ class ServeLocalGoalOddsTest extends TestCase
             ->assertSuccessful();
     }
 
+    public function test_startup_records_goal_evaluations_after_the_official_capture(): void
+    {
+        $this->mock(ApiFootballGoalOddsSyncService::class, function ($m) {
+            $m->shouldReceive('syncPending')->once()->andReturn($this->goalSummary());
+        });
+
+        $this->artisan('robetting:serve', ['--once' => true, '--skip-server' => true])
+            ->expectsOutputToContain('[learning] official predictions capture completed')
+            ->expectsOutputToContain('[goal-eval] GOAL evaluations recorded')
+            ->assertSuccessful();
+    }
+
+    public function test_goal_evaluation_failure_is_logged_and_does_not_block_startup(): void
+    {
+        $this->mock(ApiFootballGoalOddsSyncService::class, function ($m) {
+            $m->shouldReceive('syncPending')->once()->andReturn($this->goalSummary());
+        });
+        \Illuminate\Support\Facades\Log::spy();
+        $this->app[\Illuminate\Contracts\Console\Kernel::class]->registerCommand(new class extends \Illuminate\Console\Command {
+            protected $signature = 'robetting:record-goal-evaluations';
+
+            public function handle(): int
+            {
+                throw new \RuntimeException('register down');
+            }
+        });
+
+        $this->artisan('robetting:serve', ['--once' => true, '--skip-server' => true])
+            ->expectsOutputToContain('[learning] official predictions capture completed')
+            ->expectsOutputToContain('[goal-eval] recording failed: register down (startup continues)')
+            ->assertSuccessful();
+
+        \Illuminate\Support\Facades\Log::shouldHaveReceived('error')->withArgs(fn ($m) => str_contains($m, '[goal-eval] recording failed'))->once();
+    }
+
     public function test_goal_odds_exception_is_reported_but_does_not_block_startup_or_capture(): void
     {
         $this->mock(ApiFootballGoalOddsSyncService::class, function ($m) {

@@ -262,8 +262,9 @@ final class GoalMarketComparator
             'line_key'            => $lineKey,
             'bookmaker_id'        => (int) $first['bookmaker_id'],
             'bookmaker_name'      => (string) $first['bookmaker_name'],
+            'observation_id'      => (string) $first['observation_id'],
             'odds'                => $odds,
-            'fair'                => array_map(fn (float $p) => $p / $sum, $raw),
+            'fair'               => array_map(fn (float $p) => $p / $sum, $raw),
             'overround'           => $sum - 1,
             'fetched_at'          => $fetchedAt,
             'provider_updated_at' => $first['provider_updated_at'] ?? null,
@@ -320,12 +321,13 @@ final class GoalMarketComparator
                 'name'                => $o['bookmaker_name'],
                 'odd'                 => $o['odds'][$selection],
                 'fair_probability'    => $o['fair'][$selection],
+                'observation_id'      => $o['observation_id'],
                 'overround'           => $o['overround'],
                 'fetched_at'          => $o['fetched_at'],
                 'provider_updated_at' => $o['provider_updated_at'],
             ];
             if (abs($o['odds'][$selection] - $bestOdd) < 1e-9) {
-                $best[] = ['bookmaker_id' => $o['bookmaker_id'], 'name' => $o['bookmaker_name'], 'fetched_at' => $o['fetched_at']];
+                $best[] = ['bookmaker_id' => $o['bookmaker_id'], 'name' => $o['bookmaker_name'], 'observation_id' => $o['observation_id'], 'fetched_at' => $o['fetched_at']];
             }
             $latest = $latest === null || $o['fetched_at']->gt($latest) ? $o['fetched_at'] : $latest;
             $oldest = $oldest === null || $o['fetched_at']->lt($oldest) ? $o['fetched_at'] : $oldest;
