@@ -453,7 +453,11 @@ class PredictionEvaluationService
      * @param Collection<int, Prediction> $evaluated
      * @return array{n: int, log_loss: float, brier: float, rps: float, accuracy: float, predicted_mean: array{'1': float, X: float, '2': float}, actual_frequency: array{'1': float, X: float, '2': float}, bias: array{'1': float, X: float, '2': float}}|null
      */
-    private function computeMetrics(Collection $evaluated): ?array
+    /**
+     * Metrics (LogLoss / multiclass Brier / RPS / accuracy / bias) of rows exposing probability_home|draw|away and outcome.
+     * Public so that other read-only reports (e.g. the Recent experiment report) reuse the SAME formulas instead of copying them.
+     */
+    public function computeMetrics(Collection $evaluated): ?array
     {
         $n = $evaluated->count();
         if ($n === 0) {
