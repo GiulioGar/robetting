@@ -224,7 +224,7 @@ class MatchPagePublicPredictionTest extends TestCase
         }
     }
 
-    public function test_D_v2_unavailable_falls_back_to_full59_silently(): void
+    public function test_D_v2_unavailable_falls_back_to_full59_with_disclosure(): void
     {
         $match = $this->createMatch();
         $this->mockBase($match->id);
@@ -241,8 +241,10 @@ class MatchPagePublicPredictionTest extends TestCase
 
         $block = $this->publicBlock($response->getContent());
         $this->assertStringContainsString('44.8%', $block);
-        $this->assertStringNotContainsStringIgnoringCase('fallback', $block);
-        $this->assertStringNotContainsStringIgnoringCase('full', $block);
+        // Product rule (supersedes the silent-fallback invariant): the reserve model is disclosed, without reliability claims.
+        $this->assertStringContainsString('data-testid="public-prediction-fallback-note"', $block);
+        $this->assertStringContainsString('modello di riserva FULL59', $block);
+        $this->assertStringNotContainsStringIgnoringCase('affidabilit', $block);
     }
 
     public function test_E_compare_exception_falls_back_to_base_full59(): void

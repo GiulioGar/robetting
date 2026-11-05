@@ -7,6 +7,9 @@
 @php
     $pct = fn(?float $p) => $p === null ? '–' : number_format($p, 1) . '%';
     $avg = fn(?float $v) => $v === null ? '–' : number_format($v, 2);
+    // Sample size + date range of the matches behind a statistic (pre-match view only; $sampleInfo is absent otherwise).
+    $sampleTxt = fn(?array $i) => $i === null ? '' : $i['n'] . ' partit' . ($i['n'] === 1 ? 'a' : 'e')
+        . ($i['first'] !== null ? ', dal ' . $i['first']->format('d/m/Y') . ' al ' . $i['last']->format('d/m/Y') : '');
     $badgeClass = fn(string $r) => match ($r) {
         'W'     => 'success',
         'D'     => 'secondary',
@@ -112,6 +115,23 @@
                 </div>
                 @endforeach
             </div>
+            @if($pp['fallback_used'])
+            @php
+                $fbr = $pp['fallback_reason'] ?? [];
+                $fbWhat = [];
+                if (!empty($fbr['latent_missing_home']) || !empty($fbr['latent_missing_away'])) $fbWhat[] = 'forza dinamica (Latent)';
+                if (!empty($fbr['structural_missing_home']) || !empty($fbr['structural_missing_away'])) $fbWhat[] = 'dati strutturali';
+                $fbTeams = [];
+                if (!empty($fbr['latent_missing_home']) || !empty($fbr['structural_missing_home'])) $fbTeams[] = $match->homeTeam->name;
+                if (!empty($fbr['latent_missing_away']) || !empty($fbr['structural_missing_away'])) $fbTeams[] = $match->awayTeam->name;
+            @endphp
+            <div class="small text-muted mt-2" data-testid="public-prediction-fallback-note">
+                Stima calcolata con il modello di riserva FULL59, non con il modello principale.
+                @if($fbWhat && $fbTeams)
+                    Mancano {{ implode(' e ', $fbWhat) }} per {{ implode(', ', array_unique($fbTeams)) }}.
+                @endif
+            </div>
+            @endif
             @if($showPredictionDiagnostics ?? false)
             <div class="small text-muted mt-2" data-testid="public-prediction-diagnostics">
                 Modello: {{ strtoupper($pp['model_used']) }}
@@ -690,6 +710,11 @@
 {{-- D. Confronto pre-match --}}
 <div class="mt-4">
     <h2 class="fs-5 fw-semibold mb-3">Confronto pre-match <span class="text-muted small fw-normal">(stagione, prima del match)</span></h2>
+    <p class="text-muted small" data-testid="season-sample-note">
+        Solo {{ $match->competition->name }} {{ $match->season->name }}, tutte le fasi disputate (comprese eventuali qualificazioni): campioni di squadre con percorsi diversi non sono equivalenti.
+        {{ $match->homeTeam->name }}: {{ $sampleTxt($sampleInfo['season']['home'] ?? null) }} · {{ $match->awayTeam->name }}: {{ $sampleTxt($sampleInfo['season']['away'] ?? null) }}.
+        Vale anche per Split casa / trasferta e Trend pre-match.
+    </p>
     @php $hs = $homeSeasonAnalytics['summary']; $as = $awaySeasonAnalytics['summary']; @endphp
     @if($hs['matches_played'] === 0 && $as['matches_played'] === 0)
     <p class="text-muted">Dati stagionali precedenti non disponibili.</p>
@@ -734,8 +759,8 @@
     <h2 class="fs-5 fw-semibold mb-3">Forma prima del match</h2>
     <div class="row g-3">
         @foreach([
-            ['label' => $match->homeTeam->name, 'last5' => $homeLast5Analytics, 'last10' => $homeLast10Analytics],
-            ['label' => $match->awayTeam->name, 'last5' => $awayLast5Analytics, 'last10' => $awayLast10Analytics],
+            ['label' => $match->homeTeam->name, 'last5' => $homeLast5Analytics, 'last10' => $homeLast10Analytics, 'side' => 'home'],
+            ['label' => $match->awayTeam->name, 'last5' => $awayLast5Analytics, 'last10' => $awayLast10Analytics, 'side' => 'away'],
         ] as $block)
         <div class="col-md-6">
             <div class="card h-100">
@@ -755,6 +780,12 @@
                         @foreach($block['last10']['form'] as $r)
                             <span class="badge bg-{{ $badgeClass($r) }} me-1">{{ $r }}</span>
                         @endforeach
+                    @endif
+                    @php $f10 = $sampleInfo['form10'][$block['side']] ?? null; @endphp
+                    @if($f10 !== null)
+                    <div class="text-muted small mt-2" data-testid="form-sample-note-{{ $block['side'] }}">
+                        Campione: {{ $sampleTxt($f10) }}@if($f10['n'] < 10) — <strong>campione ridotto</strong>: sono escluse le partite di competizioni o avversari non coperti dai dati @endif
+                    </div>
                     @endif
                 </div>
             </div>

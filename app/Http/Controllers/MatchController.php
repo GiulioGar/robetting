@@ -594,6 +594,23 @@ class MatchController extends Controller
             'homeTimeDecay'               => $homeTimeDecay,
             'awayTimeDecay'               => $awayTimeDecay,
             'publicPrediction'            => $publicPrediction,
+            'sampleInfo'                  => [
+                // Competition-bound set behind Confronto pre-match / Split / Trend (same competition+season, any phase).
+                'season' => ['home' => $this->sampleInfo($homePrevious), 'away' => $this->sampleInfo($awayPrevious)],
+                // Team History windows behind Forma (cross-competition, scope-filtered): actual size and date range.
+                'form5'  => ['home' => $this->sampleInfo($homeRecent5), 'away' => $this->sampleInfo($awayRecent5)],
+                'form10' => ['home' => $this->sampleInfo($homeRecent10), 'away' => $this->sampleInfo($awayRecent10)],
+            ],
+        ];
+    }
+
+    /** Size and date range of a match sample (shown next to the statistics built from it). */
+    private function sampleInfo(Collection $matches): array
+    {
+        return [
+            'n'     => $matches->count(),
+            'first' => $matches->min('kickoff_at'),
+            'last'  => $matches->max('kickoff_at'),
         ];
     }
 
