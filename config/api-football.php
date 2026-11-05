@@ -86,4 +86,18 @@ return [
         81  => 'dfb-pokal',
         66  => 'coupe-de-france',
     ],
+
+    // Results-only competitions: fixtures/results are imported so that DESCRIPTIVE statistics ("Totale" on the match page)
+    // see the teams' full history, but they are NEVER a model input and never enable odds / official predictions /
+    // detailed statistics:
+    //   - not in additional_competitions -> MatchDataScope = UNKNOWN (excluded from Team History);
+    //   - excluded from the legacy Elo replay (TeamEloCalculator, allowed ids = null) and from the Candidate47 schedule
+    //     history (PreMatchFeatureAggregator::loadScheduleHistory), via MatchDataScope::resultsOnlyCompetitionIds();
+    //   - network/extended Elo whitelist core_leagues + additional_competitions only, so they never see these.
+    // Onboard one league + season (3 API calls: league, teams, fixtures; no statistics):
+    //   php artisan robetting:sync-additional-competition --league=<id> --season=<year>
+    // Format: API-Football league id => canonical competition slug. Nothing here is synced periodically.
+    'results_only_competitions' => [
+        271 => 'hungary-nb-i',   // Hungary NB I (id verified via GET /leagues?country=Hungary&season=2026)
+    ],
 ];

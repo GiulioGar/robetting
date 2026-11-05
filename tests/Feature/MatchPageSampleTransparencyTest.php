@@ -221,6 +221,30 @@ class MatchPageSampleTransparencyTest extends TestCase
         $r->assertSee('data-bs-title="25/10/2026 · Serie A"', false);   // popover: date and competition (teams/result in the body)
     }
 
+    public function test_results_only_league_match_appears_in_totale_but_not_in_competizione(): void
+    {
+        $this->mockPrediction(true);
+        $hun = Competition::create(['name' => 'NB I', 'slug' => 'hungary-nb-i', 'country_id' => Country::first()->id]);
+        $hs = Season::create(['competition_id' => $hun->id, 'name' => '2026/27', 'year_start' => 2026, 'year_end' => 2027]);
+        FootballMatch::create([
+            'competition_id' => $hun->id, 'season_id' => $hs->id, 'home_team_id' => $this->away->id, 'away_team_id' => $this->other->id,
+            'kickoff_at' => '2026-10-25 17:00:00', 'status' => 'finished', 'round' => 'Regular Season - 12', 'home_score_ft' => 3, 'away_score_ft' => 0,
+        ]);
+        config(['api-football.results_only_competitions' => [271 => 'hungary-nb-i']]);
+
+        $r = $this->get(route('matches.show', $this->match));
+
+        $s = $r->viewData('scopes');
+        $this->assertSame(4, $s['total']['sample']['season']['away']['n']);        // 3 UEFA + the Hungarian league match
+        $this->assertSame(1, $s['competition']['sample']['season']['away']['n']);  // League Stage only: unchanged
+        $this->assertContains('NB I', array_column($s['total']['recent']['away'], 'competition'));
+        $this->assertNotContains('NB I', array_column($s['competition']['recent']['away'], 'competition'));
+        $r->assertSee('data-bs-title="25/10/2026 · NB I"', false);
+        // the imported national league now covers the team: no "Copertura parziale" note for it
+        $this->assertTrue($s['total']['covered']['away']);
+        $r->assertDontSee('data-testid="coverage-note-away"', false);
+    }
+
     public function test_unavailable_statistics_are_not_replaced_by_zero(): void
     {
         $this->mockPrediction(true);

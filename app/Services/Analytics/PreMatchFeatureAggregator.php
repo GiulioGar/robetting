@@ -6,6 +6,7 @@ use App\Models\Competition;
 use App\Models\DataSource;
 use App\Models\FootballMatch;
 use App\Services\Matches\PreferredMatchStatisticResolver;
+use App\Services\DataSources\ApiFootball\MatchDataScope;
 use App\Services\Prediction\TeamHistoryMatchEligibility;
 use Illuminate\Support\Collection;
 use InvalidArgumentException;
@@ -496,7 +497,11 @@ class PreMatchFeatureAggregator
      */
     private static function loadScheduleHistory(FootballMatch $match, int $teamId): Collection
     {
+        // Results-only competitions (config results_only_competitions) are descriptive history, never a Schedule input.
+        $resultsOnly = MatchDataScope::resultsOnlyCompetitionSlugs();
+
         return FootballMatch::whereIn('status', ['finished', 'awarded', 'walkover'])
+            ->when($resultsOnly !== [], fn ($q) => $q->whereNotIn('competition_id', fn ($s) => $s->select('id')->from('competitions')->whereIn('slug', $resultsOnly)))
             ->where('kickoff_at', '<', $match->kickoff_at)
             ->where(function ($q) use ($teamId): void {
                 $q->where('home_team_id', $teamId)->orWhere('away_team_id', $teamId);

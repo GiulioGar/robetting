@@ -3,6 +3,7 @@
 namespace App\Services\Analytics;
 
 use App\Models\FootballMatch;
+use App\Services\DataSources\ApiFootball\MatchDataScope;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 
@@ -97,11 +98,15 @@ class TeamEloCalculator
     {
         $cutoffTs = $cutoff->getTimestamp();
 
+        // Legacy (unscoped) replay must never silently pick up results-only competitions (config: results_only_competitions).
+        $resultsOnly = $allowedCompetitionIds === null ? MatchDataScope::resultsOnlyCompetitionSlugs() : [];
+
         $matches = FootballMatch::whereIn('status', self::DEFINITIVE_STATUSES)
             ->whereNotNull('home_score_ft')
             ->whereNotNull('away_score_ft')
             ->where('kickoff_at', '<', $cutoff)
             ->when($allowedCompetitionIds !== null, fn ($q) => $q->whereIn('competition_id', $allowedCompetitionIds))
+            ->when($resultsOnly !== [], fn ($q) => $q->whereNotIn('competition_id', fn ($s) => $s->select('id')->from('competitions')->whereIn('slug', $resultsOnly)))
             ->orderBy('kickoff_at')
             ->orderBy('id')
             ->get(['id', 'kickoff_at', 'home_team_id', 'away_team_id', 'home_score_ft', 'away_score_ft']);
@@ -287,11 +292,14 @@ class TeamEloCalculator
         // target kickoff.  Matches at the exact cutoff are included so the
         // loop can process them — but we CAPTURE state before applying them,
         // which enforces the same strict-< semantics as calculateRatingsBefore.
+        $resultsOnly = $allowedCompetitionIds === null ? MatchDataScope::resultsOnlyCompetitionSlugs() : [];   // see calculateRatingsBefore()
+
         $history = FootballMatch::whereIn('status', self::DEFINITIVE_STATUSES)
             ->whereNotNull('home_score_ft')
             ->whereNotNull('away_score_ft')
             ->where('kickoff_at', '<=', $maxKickoff)
             ->when($allowedCompetitionIds !== null, fn ($q) => $q->whereIn('competition_id', $allowedCompetitionIds))
+            ->when($resultsOnly !== [], fn ($q) => $q->whereNotIn('competition_id', fn ($s) => $s->select('id')->from('competitions')->whereIn('slug', $resultsOnly)))
             ->orderBy('kickoff_at')
             ->orderBy('id')
             ->get(['id', 'kickoff_at', 'home_team_id', 'away_team_id', 'home_score_ft', 'away_score_ft']);

@@ -32,7 +32,13 @@ class ApiFootballLeagueImporter
         }
 
         $additional = (array) config('api-football.additional_competitions', []);
-        return $additional[$leagueId] ?? null;
+        if (isset($additional[$leagueId])) {
+            return $additional[$leagueId];
+        }
+
+        // Results-only leagues (descriptive statistics only, never a model input) — see config.
+        $resultsOnly = (array) config('api-football.results_only_competitions', []);
+        return $resultsOnly[$leagueId] ?? null;
     }
 
     /**

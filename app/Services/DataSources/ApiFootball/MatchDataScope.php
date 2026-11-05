@@ -125,6 +125,25 @@ class MatchDataScope
             ->values();
     }
 
+    /**
+     * Slugs of the configured results-only competitions (config api-football.results_only_competitions): imported for
+     * descriptive statistics only. Predictive code paths that scan ALL competitions (legacy Elo replay, Candidate47
+     * schedule history) exclude them with a `competition_id NOT IN (SELECT id FROM competitions WHERE slug IN (...))`
+     * sub-query built from this list (no extra query); it never affects classify()/classifyMany().
+     *
+     * @return array<int, string>
+     */
+    public static function resultsOnlyCompetitionSlugs(): array
+    {
+        return array_values((array) config('api-football.results_only_competitions', []));
+    }
+
+    /** @return array<int, int> DB ids of the results-only competitions (for callers that need the ids themselves). */
+    public static function resultsOnlyCompetitionIds(): array
+    {
+        return self::competitionIdsForSlugs((array) config('api-football.results_only_competitions', []));
+    }
+
     /** @param  array<int, string>  $slugMap  config array, e.g. [135 => 'serie-a', ...] */
     private static function competitionIdsForSlugs(array $slugMap): array
     {

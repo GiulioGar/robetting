@@ -665,7 +665,11 @@ class MatchController extends Controller
         $awayId = (int) $match->away_team_id;
         $homeRows = $this->matchRows($this->lastN($homeForm, 10), $homeId, $match->competition);
         $awayRows = $this->matchRows($this->lastN($awayForm, 10), $awayId, $match->competition);
-        $coreSlugs = array_values((array) config('api-football.core_leagues', []));
+        // National leagues present in the DB: the 5 core leagues + imported results-only leagues (config).
+        $coreSlugs = array_values(array_merge(
+            (array) config('api-football.core_leagues', []),
+            (array) config('api-football.results_only_competitions', []),
+        ));
         $covered = fn (Collection $all): bool => $all->contains(fn ($m) => in_array($m->competition?->slug, $coreSlugs, true));
 
         return [

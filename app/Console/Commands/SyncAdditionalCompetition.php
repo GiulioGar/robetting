@@ -41,7 +41,8 @@ class SyncAdditionalCompetition extends Command
             return self::FAILURE;
         }
 
-        $additional = (array) config('api-football.additional_competitions', []);
+        // additional_competitions (UEFA/cups) + results_only_competitions (descriptive history only; never a model input).
+        $additional = (array) config('api-football.additional_competitions', []) + (array) config('api-football.results_only_competitions', []);
         if (!isset($additional[$leagueId])) {
             $this->error("League {$leagueId} is not configured in api-football.additional_competitions — refusing arbitrary league ID.");
             return self::FAILURE;
