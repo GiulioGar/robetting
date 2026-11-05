@@ -7,6 +7,10 @@
 @php
     $pct = fn(?float $p) => $p === null ? '–' : number_format($p, 1) . '%';
     $avg = fn(?float $v) => $v === null ? '–' : number_format($v, 2);
+    // Accessible match detail for W/D/L badges: focusable (tap/keyboard) Bootstrap popover, also on hover for desktop.
+    $badgePop = fn(?string $txt) => $txt === null || $txt === '' ? '' : new \Illuminate\Support\HtmlString(
+        'tabindex="0" role="button" data-bs-toggle="popover" data-bs-trigger="hover focus" data-bs-placement="top" data-bs-content="' . e($txt) . '" aria-label="' . e($txt) . '"'
+    );
     // Sample size + date range of the matches behind a statistic (pre-match view only; $sampleInfo is absent otherwise).
     $sampleTxt = fn(?array $i) => $i === null ? '' : $i['n'] . ' partit' . ($i['n'] === 1 ? 'a' : 'e')
         . ($i['first'] !== null ? ', dal ' . $i['first']->format('d/m/Y') . ' al ' . $i['last']->format('d/m/Y') : '');
@@ -132,6 +136,10 @@
                 @endif
             </div>
             @endif
+            <div class="small text-muted mt-2" data-testid="public-prediction-model">
+                Modello: {{ $pp['fallback_used'] ? 'FULL59 (modello di riserva)' : 'Candidate47 (Latent + Structural)' }}
+                · stima calcolata al caricamento della pagina con i soli dati precedenti al calcio d'inizio.
+            </div>
             @if($showPredictionDiagnostics ?? false)
             <div class="small text-muted mt-2" data-testid="public-prediction-diagnostics">
                 Modello: {{ strtoupper($pp['model_used']) }}
@@ -246,76 +254,7 @@
 </div>
 @endif
 
-{{-- Confronto GOAL Robetting vs bookmaker — diagnostic only (GoalMarketComparator::compare, as of now()).
-     Summary (Over/Under 2.5 and 3.5, BTTS) first, every other quoted market in "Tutti i mercati".
-     No recommendation, stake or EV threshold: quotes are stored observations, not live prices. --}}
-@if(!empty($goalComparison))
-@php
-    $gc = $goalComparison;
-    $gcRows = array_values(array_filter($gc['markets'], fn($e) => $e['status'] === 'ok'));
-    $gcRome = fn($t) => $t->copy()->setTimezone('Europe/Rome');
-@endphp
-<div class="mt-4" data-testid="goal-comparison">
-    <h2 class="fs-5 fw-semibold mb-3">Confronto GOAL con bookmaker</h2>
-    @if(count($gcRows) === 0)
-        <p class="text-muted small mb-0" data-testid="goal-comparison-empty">
-            @if($goalOddsInScope ?? true)
-                Quote GOAL dei bookmaker non ancora disponibili per questa partita.
-            @else
-                Le quote GOAL dei bookmaker non sono raccolte per questa competizione.
-            @endif
-        </p>
-    @else
-    @php
-        $gcAllSections = [
-            'total_goals'     => 'Gol totali',
-            'btts'            => 'Entrambe segnano (BTTS)',
-            'team_goals_home' => 'Team Goals · ' . $match->homeTeam->name,
-            'team_goals_away' => 'Team Goals · ' . $match->awayTeam->name,
-        ];
-        $gcSummarySections = array_intersect_key($gcAllSections, ['total_goals' => 1, 'btts' => 1]);
-        $gcSummary = array_values(array_filter($gcRows, fn($e) =>
-            ($e['market'] === 'btts')
-            || ($e['market'] === 'total_goals' && in_array(number_format($e['line'], 1), ['2.5', '3.5'], true))));
-        $gcLabel = fn($e) => match ($e['selection']) {
-            'over'  => 'Over ' . number_format($e['line'], 1),
-            'under' => 'Under ' . number_format($e['line'], 1),
-            'yes'   => 'Sì',
-            'no'    => 'No',
-        };
-        $gcLatest = collect($gcRows)->map(fn($e) => $e['latest_fetched_at'])->max();
-        $gcOldest = collect($gcRows)->map(fn($e) => $e['oldest_fetched_at'])->min();
-        $gcMinBm  = collect($gcRows)->min('bookmaker_count');
-        $gcMaxBm  = collect($gcRows)->max('bookmaker_count');
-    @endphp
-    <div class="card">
-        <div data-testid="goal-comparison-summary">
-            @if(count($gcSummary) > 0)
-            @include('matches.partials.goal-comparison-table', ['rows' => $gcSummary, 'sections' => $gcSummarySections, 'detail' => false, 'label' => $gcLabel, 'pct' => $pct, 'rome' => $gcRome])
-            @else
-            <p class="text-muted small p-3 mb-0">Nessuna quota per Over/Under 2.5, 3.5 e BTTS: gli altri mercati quotati sono in «Tutti i mercati».</p>
-            @endif
-        </div>
-        <details class="border-top" data-testid="goal-comparison-all">
-            <summary class="px-3 py-2 small fw-semibold">Tutti i mercati <span class="text-muted fw-normal">({{ count($gcRows) }} selezioni quotate: consenso, quota equa, bookmaker e orario)</span></summary>
-            @include('matches.partials.goal-comparison-table', ['rows' => $gcRows, 'sections' => $gcAllSections, 'detail' => true, 'label' => $gcLabel, 'pct' => $pct, 'rome' => $gcRome])
-        </details>
-        <div class="card-body border-top small text-muted" data-testid="goal-comparison-meta">
-            Bookmaker per mercato: {{ $gcMinBm === $gcMaxBm ? $gcMaxBm : $gcMinBm . '–' . $gcMaxBm }}.
-            Quote rilevate
-            @if($gcLatest->eq($gcOldest))
-                il {{ $gcRome($gcLatest)->format('d/m H:i') }}
-            @else
-                tra il {{ $gcRome($gcOldest)->format('d/m H:i') }} e il {{ $gcRome($gcLatest)->format('d/m H:i') }}
-            @endif
-            (ora di Roma; ultima rilevazione {{ $gcRome($gcLatest)->locale('it')->diffForHumans() }}).
-            Sono osservazioni salvate, non quote in tempo reale: potrebbero essere cambiate o non più disponibili.
-            Confronto diagnostico, non un consiglio di scommessa.
-        </div>
-    </div>
-    @endif
-</div>
-@endif
+<div class="mt-5 mb-1 pt-3 border-top"><span class="text-muted small text-uppercase fw-semibold">Quote bookmaker</span></div>
 
 {{-- Mercato 1X2 (Odds V1) — raw market information only. Certified pre-match snapshots,
      latest per bookmaker. NOT a value signal: no edge/ROI/stake/recommendation here. --}}
@@ -332,6 +271,8 @@
             $bestLabels = ['home' => '1', 'draw' => 'X', 'away' => '2'];
         @endphp
         <div class="card">
+            <details data-testid="market-1x2-bookmakers">
+            <summary class="small text-muted px-3 py-2">Quote per bookmaker ({{ count($mk['bookmakers']) }} bookmaker, 1X2 pre-match)</summary>
             <div class="table-responsive">
                 <table class="table table-sm align-middle mb-0">
                     <thead class="table-light">
@@ -361,6 +302,7 @@
                     </tbody>
                 </table>
             </div>
+            </details>
             <div class="card-body border-top small" data-testid="market-best">
                 <div class="fw-semibold mb-1">Migliore quota disponibile <span class="text-muted fw-normal">(informazione di mercato, non un segnale value)</span></div>
                 <div class="row g-2">
@@ -433,6 +375,77 @@
         </div>
     @endif
 </div>
+
+{{-- Confronto GOAL Robetting vs bookmaker — diagnostic only (GoalMarketComparator::compare, as of now()).
+     Summary (Over/Under 2.5 and 3.5, BTTS) first, every other quoted market in "Tutti i mercati".
+     No recommendation, stake or EV threshold: quotes are stored observations, not live prices. --}}
+@if(!empty($goalComparison))
+@php
+    $gc = $goalComparison;
+    $gcRows = array_values(array_filter($gc['markets'], fn($e) => $e['status'] === 'ok'));
+    $gcRome = fn($t) => $t->copy()->setTimezone('Europe/Rome');
+@endphp
+<div class="mt-4" data-testid="goal-comparison">
+    <h2 class="fs-5 fw-semibold mb-3">Confronto GOAL con bookmaker</h2>
+    @if(count($gcRows) === 0)
+        <p class="text-muted small mb-0" data-testid="goal-comparison-empty">
+            @if($goalOddsInScope ?? true)
+                Quote GOAL dei bookmaker non ancora disponibili per questa partita.
+            @else
+                Le quote GOAL dei bookmaker non sono raccolte per questa competizione.
+            @endif
+        </p>
+    @else
+    @php
+        $gcAllSections = [
+            'total_goals'     => 'Gol totali',
+            'btts'            => 'Entrambe segnano (BTTS)',
+            'team_goals_home' => 'Team Goals · ' . $match->homeTeam->name,
+            'team_goals_away' => 'Team Goals · ' . $match->awayTeam->name,
+        ];
+        $gcSummarySections = array_intersect_key($gcAllSections, ['total_goals' => 1, 'btts' => 1]);
+        $gcSummary = array_values(array_filter($gcRows, fn($e) =>
+            ($e['market'] === 'btts')
+            || ($e['market'] === 'total_goals' && in_array(number_format($e['line'], 1), ['2.5', '3.5'], true))));
+        $gcLabel = fn($e) => match ($e['selection']) {
+            'over'  => 'Over ' . number_format($e['line'], 1),
+            'under' => 'Under ' . number_format($e['line'], 1),
+            'yes'   => 'Sì',
+            'no'    => 'No',
+        };
+        $gcLatest = collect($gcRows)->map(fn($e) => $e['latest_fetched_at'])->max();
+        $gcOldest = collect($gcRows)->map(fn($e) => $e['oldest_fetched_at'])->min();
+        $gcMinBm  = collect($gcRows)->min('bookmaker_count');
+        $gcMaxBm  = collect($gcRows)->max('bookmaker_count');
+    @endphp
+    <div class="card">
+        <div data-testid="goal-comparison-summary">
+            @if(count($gcSummary) > 0)
+            @include('matches.partials.goal-comparison-table', ['rows' => $gcSummary, 'sections' => $gcSummarySections, 'detail' => false, 'label' => $gcLabel, 'pct' => $pct, 'rome' => $gcRome])
+            @else
+            <p class="text-muted small p-3 mb-0">Nessuna quota per Over/Under 2.5, 3.5 e BTTS: gli altri mercati quotati sono in «Tutti i mercati».</p>
+            @endif
+        </div>
+        <details class="border-top" data-testid="goal-comparison-all">
+            <summary class="px-3 py-2 small fw-semibold">Tutti i mercati <span class="text-muted fw-normal">({{ count($gcRows) }} selezioni quotate: consenso, quota equa, bookmaker e orario)</span></summary>
+            @include('matches.partials.goal-comparison-table', ['rows' => $gcRows, 'sections' => $gcAllSections, 'detail' => true, 'label' => $gcLabel, 'pct' => $pct, 'rome' => $gcRome])
+        </details>
+        <div class="card-body border-top small text-muted" data-testid="goal-comparison-meta">
+            Bookmaker per mercato: {{ $gcMinBm === $gcMaxBm ? $gcMaxBm : $gcMinBm . '–' . $gcMaxBm }}.
+            Quote rilevate
+            @if($gcLatest->eq($gcOldest))
+                il {{ $gcRome($gcLatest)->format('d/m H:i') }}
+            @else
+                tra il {{ $gcRome($gcOldest)->format('d/m H:i') }} e il {{ $gcRome($gcLatest)->format('d/m H:i') }}
+            @endif
+            (ora di Roma; ultima rilevazione {{ $gcRome($gcLatest)->locale('it')->diffForHumans() }}).
+            Sono osservazioni salvate, non quote in tempo reale: potrebbero essere cambiate o non più disponibili.
+            Confronto diagnostico, non un consiglio di scommessa.
+        </div>
+    </div>
+    @endif
+</div>
+@endif
 
 {{-- Step 1C.1 — B/C/D (real match data: statistics/events/lineups) belong
      semantically to the played match, never to a pre-match preview. Data/
@@ -707,6 +720,8 @@
      outside this block. --}}
 @if($matchViewMode === 'pre_match')
 
+<div class="mt-5 mb-1 pt-3 border-top"><span class="text-muted small text-uppercase fw-semibold">Confronto squadre</span></div>
+
 {{-- D. Confronto pre-match --}}
 <div class="mt-4">
     <h2 class="fs-5 fw-semibold mb-3">Confronto pre-match <span class="text-muted small fw-normal">(stagione, prima del match{{ ($uefaPhaseLabel ?? null) ? ', ' . $uefaPhaseLabel : '' }})</span></h2>
@@ -743,6 +758,12 @@
                     <tr><td class="text-start ps-3 text-muted">Media GF</td><td>{{ $avg($hs['avg_goals_for']) }}</td><td>{{ $avg($as['avg_goals_for']) }}</td></tr>
                     <tr><td class="text-start ps-3 text-muted">Media GS</td><td>{{ $avg($hs['avg_goals_against']) }}</td><td>{{ $avg($as['avg_goals_against']) }}</td></tr>
                     <tr><td class="text-start ps-3 text-muted">Media gol totali</td><td>{{ $avg($hs['avg_total_goals']) }}</td><td>{{ $avg($as['avg_total_goals']) }}</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <details class="border-top" data-testid="confronto-technical">
+            <summary class="small text-muted px-3 py-2">Dettaglio tecnico (tiri, corner, cartellini)</summary>
+            <div class="table-responsive"><table class="table table-sm mb-0 text-center align-middle"><tbody>
                     <tr><td class="text-start ps-3 text-muted">Media tiri fatti</td><td>{{ $avg($ht['avg_shots_for'] ?? null) }}</td><td>{{ $avg($at['avg_shots_for'] ?? null) }}</td></tr>
                     <tr><td class="text-start ps-3 text-muted">Media tiri subiti</td><td>{{ $avg($ht['avg_shots_against'] ?? null) }}</td><td>{{ $avg($at['avg_shots_against'] ?? null) }}</td></tr>
                     <tr><td class="text-start ps-3 text-muted">Media tiri in porta fatti</td><td>{{ $avg($ht['avg_shots_on_target_for'] ?? null) }}</td><td>{{ $avg($at['avg_shots_on_target_for'] ?? null) }}</td></tr>
@@ -754,48 +775,9 @@
                 </tbody>
             </table>
         </div>
+        </details>
     </div>
     @endif
-</div>
-
-{{-- E. Forma prima del match --}}
-<div class="mt-4">
-    <h2 class="fs-5 fw-semibold mb-3">Forma prima del match</h2>
-    <div class="row g-3">
-        @foreach([
-            ['label' => $match->homeTeam->name, 'last5' => $homeLast5Analytics, 'last10' => $homeLast10Analytics, 'side' => 'home'],
-            ['label' => $match->awayTeam->name, 'last5' => $awayLast5Analytics, 'last10' => $awayLast10Analytics, 'side' => 'away'],
-        ] as $block)
-        <div class="col-md-6">
-            <div class="card h-100">
-                <div class="card-body p-3">
-                    <div class="text-muted small mb-2">{{ $block['label'] }} <span class="text-muted">(ultime 5)</span></div>
-                    @if(empty($block['last5']['form']))
-                        <span class="text-muted">Dati precedenti non disponibili</span>
-                    @else
-                        @foreach($block['last5']['form'] as $i => $r)
-                            <span class="badge bg-{{ $badgeClass($r) }} me-1" title="{{ $formTooltips[$block['side']]['last5'][$i] ?? '' }}">{{ $r }}</span>
-                        @endforeach
-                    @endif
-                    <div class="text-muted small mt-2 mb-1">Ultime 10</div>
-                    @if(empty($block['last10']['form']))
-                        <span class="text-muted">Dati precedenti non disponibili</span>
-                    @else
-                        @foreach($block['last10']['form'] as $i => $r)
-                            <span class="badge bg-{{ $badgeClass($r) }} me-1" title="{{ $formTooltips[$block['side']]['last10'][$i] ?? '' }}">{{ $r }}</span>
-                        @endforeach
-                    @endif
-                    @php $f10 = $sampleInfo['form10'][$block['side']] ?? null; @endphp
-                    @if($f10 !== null)
-                    <div class="text-muted small mt-2" data-testid="form-sample-note-{{ $block['side'] }}">
-                        Campione: {{ $sampleTxt($f10) }}@if($f10['n'] < 10) — <strong>campione ridotto</strong>: sono escluse le partite di competizioni o avversari non coperti dai dati @endif
-                    </div>
-                    @endif
-                </div>
-            </div>
-        </div>
-        @endforeach
-    </div>
 </div>
 
 @if(!empty($uefaForm))
@@ -817,12 +799,12 @@
                     <table class="table table-sm mb-0 small align-middle" data-testid="uefa-form-{{ $ub['side'] }}">
                         <tbody>
                         @foreach($ub['rows'] as $u)
-                            <tr title="{{ $u['tooltip'] }}">
+                            <tr>
                                 <td class="text-nowrap text-muted">{{ $u['date']->format('d/m/Y') }}</td>
                                 <td><span class="badge text-bg-light border">{{ $u['phase_label'] }}</span></td>
                                 <td>{{ $u['venue'] === 'C' ? 'vs' : '@' }} {{ $u['opponent'] }}</td>
                                 <td class="text-nowrap">{{ $u['score'] }}</td>
-                                <td><span class="badge bg-{{ $badgeClass($u['result']) }}" title="{{ $u['tooltip'] }}">{{ $u['result'] }}</span></td>
+                                <td><span class="badge bg-{{ $badgeClass($u['result']) }}" {{ $badgePop($u['tooltip']) }}>{{ $u['result'] }}</span></td>
                             </tr>
                         @endforeach
                         </tbody>
@@ -834,6 +816,53 @@
         @endforeach
     </div>
 </div>
+@endif
+
+@if(!empty($uefaForm))
+<details class="mt-4" data-testid="th-form-details"><summary class="fw-semibold">Forma Team History <span class="text-muted small fw-normal">(tutte le competizioni coperte dai dati; non confrontabile con la Forma UEFA)</span></summary>
+@endif
+{{-- E. Forma prima del match --}}
+<div class="mt-4">
+    <h2 class="fs-5 fw-semibold mb-3">{{ !empty($uefaForm) ? 'Forma Team History' : 'Forma prima del match' }} <span class="text-muted small fw-normal">(tutte le competizioni coperte dai dati)</span></h2>
+    <div class="row g-3">
+        @foreach([
+            ['label' => $match->homeTeam->name, 'last5' => $homeLast5Analytics, 'last10' => $homeLast10Analytics, 'side' => 'home'],
+            ['label' => $match->awayTeam->name, 'last5' => $awayLast5Analytics, 'last10' => $awayLast10Analytics, 'side' => 'away'],
+        ] as $block)
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-body p-3">
+                    <div class="text-muted small mb-2">{{ $block['label'] }} <span class="text-muted">(ultime 5)</span></div>
+                    @if(empty($block['last5']['form']))
+                        <span class="text-muted">Dati precedenti non disponibili</span>
+                    @else
+                        @foreach($block['last5']['form'] as $i => $r)
+                            <span class="badge bg-{{ $badgeClass($r) }} me-1" {{ $badgePop($formTooltips[$block['side']]['last5'][$i] ?? null) }}>{{ $r }}</span>
+                        @endforeach
+                    @endif
+                    <div class="text-muted small mt-2 mb-1">Ultime 10</div>
+                    @if(empty($block['last10']['form']))
+                        <span class="text-muted">Dati precedenti non disponibili</span>
+                    @else
+                        @foreach($block['last10']['form'] as $i => $r)
+                            <span class="badge bg-{{ $badgeClass($r) }} me-1" {{ $badgePop($formTooltips[$block['side']]['last10'][$i] ?? null) }}>{{ $r }}</span>
+                        @endforeach
+                    @endif
+                    @php $f10 = $sampleInfo['form10'][$block['side']] ?? null; @endphp
+                    @if($f10 !== null)
+                    <div class="text-muted small mt-2" data-testid="form-sample-note-{{ $block['side'] }}">
+                        Campione: {{ $sampleTxt($f10) }}@if($f10['n'] < 10) — <strong>campione ridotto</strong>: sono escluse le partite di competizioni o avversari non coperti dai dati @endif
+                    </div>
+                    @endif
+                </div>
+            </div>
+        </div>
+        @endforeach
+    </div>
+</div>
+
+@if(!empty($uefaForm))
+</details>
 @endif
 
 {{-- E. Split casa/trasferta --}}
@@ -871,8 +900,8 @@
 </div>
 
 {{-- F. Trend pre-match (ambiguo pubblico/tecnico — vedi report Step 1C, mantenuto qui perché stesso dato "a mercato" di Split) --}}
-<div class="mt-4 mb-4">
-    <h2 class="fs-5 fw-semibold mb-3">Trend pre-match <span class="text-muted small fw-normal">(stagione, prima del match{{ ($uefaPhaseLabel ?? null) ? ', ' . $uefaPhaseLabel : '' }})</span></h2>
+<details class="mt-4 mb-4" data-testid="trend-details">
+    <summary class="fs-5 fw-semibold mb-3">Trend pre-match <span class="text-muted small fw-normal">(stagione, prima del match{{ ($uefaPhaseLabel ?? null) ? ', ' . $uefaPhaseLabel : '' }})</span></summary>
     <div class="row g-3">
         @foreach([['label' => $match->homeTeam->name, 'a' => $homeSeasonAnalytics], ['label' => $match->awayTeam->name, 'a' => $awaySeasonAnalytics]] as $block)
         @php $mt = $block['a']['market_trends']; @endphp
@@ -938,7 +967,7 @@
         </div>
         @endforeach
     </div>
-</div>
+</details>
 
 @endif
 </div>{{-- /match-main --}}
@@ -1089,9 +1118,8 @@
      stessi dati/calculator di prima, solo spostati sotto la parte Portale.
      Non eliminati: restano tutti disponibili per verificare coerenza del
      modello. --}}
-<div class="mt-5 mb-2 pt-3 border-top">
-    <span class="text-muted small text-uppercase fw-semibold">Dati analisi / verifica</span>
-</div>
+<details class="mt-5 pt-3 border-top" data-testid="analysis-details">
+<summary class="text-muted small text-uppercase fw-semibold mb-2">Statistiche approfondite · Dati analisi / verifica (E1–E12)</summary>
 
 {{-- E1. Carico recente --}}
 <div class="mt-4">
@@ -1989,6 +2017,16 @@
     </div>
 </div>
 
+</details>
+
 @endif
+
+<script>
+// W/D/L badge details (Bootstrap popover): tap/focus on touch devices, hover/focus on desktop. The bundle loads after the content.
+document.addEventListener('DOMContentLoaded', function () {
+    if (!window.bootstrap || !bootstrap.Popover) { return; }
+    document.querySelectorAll('[data-bs-toggle="popover"]').forEach(function (el) { new bootstrap.Popover(el); });
+});
+</script>
 
 @endsection

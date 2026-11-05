@@ -118,7 +118,8 @@ class MatchPageGoalComparisonTest extends TestCase
     {
         $start = strpos($html, 'data-testid="goal-comparison"');
         $this->assertNotFalse($start, 'comparison section not rendered');
-        $end = strpos($html, 'data-testid="market-1x2"', $start);
+        // Step 58: the section now follows the 1X2 market; it ends where the next page section ("Confronto squadre") begins.
+        $end = strpos($html, 'Confronto squadre', $start);
         $this->assertNotFalse($end);
 
         return substr($html, $start, $end - $start);

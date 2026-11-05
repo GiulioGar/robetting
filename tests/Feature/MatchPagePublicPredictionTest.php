@@ -313,8 +313,13 @@ class MatchPagePublicPredictionTest extends TestCase
 
         $block = $this->publicBlock($this->get(route('matches.show', $match))->getContent());
 
+        // Product rule (Step 58): the model used is always disclosed, in one dedicated line; nothing else technical leaks.
+        $this->assertStringContainsString('data-testid="public-prediction-model"', $block);
+        $this->assertStringContainsString('Candidate47', $block);
+        $rest = preg_replace('/<div[^>]*data-testid="public-prediction-model".*?<\/div>/s', '', $block);
+
         foreach (['λ', 'lambda', 'Structural', 'TOP25', 'Elo', 'Latent', 'Candidate', 'model', '1.7735', '0.1500', 'debug'] as $needle) {
-            $this->assertStringNotContainsStringIgnoringCase($needle, $block, "Technical detail '{$needle}' leaked");
+            $this->assertStringNotContainsStringIgnoringCase($needle, $rest, "Technical detail '{$needle}' leaked");
         }
         $this->assertStringContainsString('Quota equa', $block);
     }

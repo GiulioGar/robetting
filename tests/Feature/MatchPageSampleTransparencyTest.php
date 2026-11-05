@@ -119,7 +119,8 @@ class MatchPageSampleTransparencyTest extends TestCase
         $this->assertSame('T', $uefa['away'][0]['venue']);          // 09/07: Other FC - Ferencvarosi (away)
         $this->assertSame('C', $uefa['away'][1]['venue']);
         $r->assertSee('Qualificazioni / Play-off');
-        $r->assertSee('title="09/07/2026 · Other FC 1-0 Ferencvarosi TC"', false);   // tooltip with the match and result
+        $r->assertSee('data-bs-content="09/07/2026 · Other FC 1-0 Ferencvarosi TC"', false);   // popover with the match and result
+        $r->assertSee('tabindex="0" role="button" data-bs-toggle="popover"', false);            // focusable: works on touch
         $r->assertDontSee('20/11/2026');
         $r->assertDontSee('29/10/2026');
     }
@@ -137,7 +138,8 @@ class MatchPageSampleTransparencyTest extends TestCase
         $r->assertSee('tutte le fasi disputate (comprese eventuali qualificazioni)');
         $r->assertSee('Ferencvarosi TC: 3 partite, dal 09/07/2026 al 15/10/2026', false);   // unfiltered
         // Team History form badges carry the match as tooltip (oldest first)
-        $r->assertSee('title="22/10/2026 · AC Milan 1-0 Other FC"', false);
+        $r->assertSee('data-bs-content="22/10/2026 · AC Milan 1-0 Other FC"', false);
+        $r->assertDontSee('data-testid="th-form-details"', false);   // domestic: Team History form stays the main (visible) form
     }
 
     public function test_uefa_phase_classification(): void
