@@ -49,10 +49,12 @@ final class GoalMarketComparator
      */
     public static function forMatch(int $matchId, CarbonInterface $asOf): array
     {
+        $asOfUtc = $asOf->copy()->utc();   // DB values are UTC; SQL bindings are formatted in the instance's own timezone
+
         $prediction = Prediction::where('match_id', $matchId)
             ->where('purpose', Prediction::PURPOSE_OFFICIAL)
             ->where('model_key', self::MODEL_KEY)
-            ->where('generated_at', '<=', $asOf)
+            ->where('generated_at', '<=', $asOfUtc)
             ->whereColumn('generated_at', '<', 'kickoff_at')
             ->orderByDesc('generated_at')
             ->orderByDesc('id')
@@ -76,7 +78,7 @@ final class GoalMarketComparator
     public static function quoteRows(int $matchId, CarbonInterface $asOf): array
     {
         return GoalOddsSnapshot::where('match_id', $matchId)
-            ->where('fetched_at', '<=', $asOf)
+            ->where('fetched_at', '<=', $asOf->copy()->utc())   // DB values are UTC (see forMatch)
             ->whereColumn('fetched_at', '<', 'kickoff_at')
             ->orderBy('id')
             ->get()
