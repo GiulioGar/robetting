@@ -160,6 +160,24 @@ class ServeLocal extends Command
 
         $this->info('[startup] Recording GOAL evaluations...');
         $this->runGoalEvaluationsRecord();
+
+        $this->info('[startup] Capturing parallel Recent experiment (UEFA)...');
+        $this->runRecentExperimentCapture();
+    }
+
+    /**
+     * Prospective Candidate47 (Team History) vs RECENT_ALL pair on upcoming UEFA fixtures — separate purpose, never read by
+     * the official Learning Loop. Fail-safe: errors are logged and never stop the startup or the official capture.
+     */
+    private function runRecentExperimentCapture(): void
+    {
+        try {
+            $this->callSilently('robetting:capture-recent-experiment', ['--within-hours' => 72]);
+            $this->line('[recent-exp] experiment capture completed');
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('[recent-exp] capture failed: ' . $e->getMessage(), ['exception' => $e]);
+            $this->error('[recent-exp] capture failed: ' . $e->getMessage() . ' (startup continues)');
+        }
     }
 
     /**

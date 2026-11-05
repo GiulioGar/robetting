@@ -67,6 +67,12 @@ class PreMatchFeatureAggregator
 
     public const RECENT_WINDOW_LEGACY       = 'legacy';
     public const RECENT_WINDOW_TEAM_HISTORY = 'team_history';
+    /**
+     * EXPERIMENTAL, opt-in only (never the default, never used by official predictions): the last 10 definitive matches of
+     * the team in ANY competition in the DB (ELO_ONLY and results-only included), strictly before the kickoff. Same E8/TAC
+     * computation as the other modes; only the match window differs.
+     */
+    public const RECENT_WINDOW_ALL          = 'recent_all';
 
     public const ELO_MODE_LEGACY   = 'legacy';
     public const ELO_MODE_NETWORK  = 'network';
@@ -131,9 +137,9 @@ class PreMatchFeatureAggregator
             );
         }
 
-        if (!in_array($recentWindowMode, [self::RECENT_WINDOW_LEGACY, self::RECENT_WINDOW_TEAM_HISTORY], true)) {
+        if (!in_array($recentWindowMode, [self::RECENT_WINDOW_LEGACY, self::RECENT_WINDOW_TEAM_HISTORY, self::RECENT_WINDOW_ALL], true)) {
             throw new InvalidArgumentException(
-                "Unknown recentWindowMode '{$recentWindowMode}'. Valid: legacy, team_history."
+                "Unknown recentWindowMode '{$recentWindowMode}'. Valid: legacy, team_history, recent_all."
             );
         }
 
@@ -165,9 +171,9 @@ class PreMatchFeatureAggregator
         // Step C1 — OPT-IN recent window for E8/TAC ONLY. Elo (E6), E9, E10, E12
         // and H2H keep using $homeLast10/$awayLast10 (legacy) unconditionally,
         // regardless of $recentWindowMode — see docblock above.
-        if ($recentWindowMode === self::RECENT_WINDOW_TEAM_HISTORY) {
-            $homeRecentWindow = TeamHistoryMatchEligibility::matchesBefore((int) $match->home_team_id, $kickoff)->slice(-10)->values();
-            $awayRecentWindow = TeamHistoryMatchEligibility::matchesBefore((int) $match->away_team_id, $kickoff)->slice(-10)->values();
+        if ($recentWindowMode === self::RECENT_WINDOW_TEAM_HISTORY || $recentWindowMode === self::RECENT_WINDOW_ALL) {
+            $homeRecentWindow = self::recentWindowFor($match, (int) $match->home_team_id, $recentWindowMode);
+            $awayRecentWindow = self::recentWindowFor($match, (int) $match->away_team_id, $recentWindowMode);
         } else {
             $homeRecentWindow = $homeLast10;
             $awayRecentWindow = $awayLast10;
@@ -481,6 +487,39 @@ class PreMatchFeatureAggregator
             ->where('competition_id', $match->competition_id)
             ->where('season_id', $match->season_id)
             ->where('status', 'finished')
+            ->whereNotNull('home_score_ft')
+            ->whereNotNull('away_score_ft')
+            ->where('kickoff_at', '<', $match->kickoff_at)
+            ->where(function ($q) use ($teamId): void {
+                $q->where('home_team_id', $teamId)->orWhere('away_team_id', $teamId);
+            })
+            ->orderBy('kickoff_at')
+            ->get();
+    }
+
+    /**
+     * The last-10 Recent window of a team for the opt-in modes (team_history | recent_all), strictly before the match
+     * kickoff, oldest first. Single definition shared by aggregate() and by the parallel-prediction capture, so the
+     * window reported next to a prediction is exactly the one that fed it.
+     *
+     * @return Collection<int, FootballMatch>
+     */
+    public static function recentWindowFor(FootballMatch $match, int $teamId, string $mode): Collection
+    {
+        return match ($mode) {
+            self::RECENT_WINDOW_TEAM_HISTORY => TeamHistoryMatchEligibility::matchesBefore($teamId, $match->kickoff_at)->slice(-10)->values(),
+            self::RECENT_WINDOW_ALL          => self::loadAllDefinitiveBefore($match, $teamId)->slice(-10)->values(),
+            default                          => throw new InvalidArgumentException("recentWindowFor() supports team_history and recent_all, got '{$mode}'."),
+        };
+    }
+
+    /**
+     * EXPERIMENTAL (RECENT_WINDOW_ALL): every finished match with a valid FT score of $teamId, any competition/season,
+     * strictly before the target kickoff, ascending. No MatchDataScope filter (ELO_ONLY / results-only included).
+     */
+    private static function loadAllDefinitiveBefore(FootballMatch $match, int $teamId): Collection
+    {
+        return FootballMatch::where('status', 'finished')
             ->whereNotNull('home_score_ft')
             ->whereNotNull('away_score_ft')
             ->where('kickoff_at', '<', $match->kickoff_at)

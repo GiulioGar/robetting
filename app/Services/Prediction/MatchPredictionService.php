@@ -99,7 +99,8 @@ class MatchPredictionService
         // the semantics FULL59 / C40 / C44 / NO_E9* were trained with). Candidate47
         // Team History was trained on Recent team_history + Elo extended, so it gets
         // its own vector from the SAME aggregation path with those modes.
-        if ($recentWindowMode === PreMatchFeatureAggregator::RECENT_WINDOW_TEAM_HISTORY
+        // RECENT_WINDOW_ALL is the experimental opt-in variant: its Candidate47 vector follows the requested window too.
+        if (in_array($recentWindowMode, [PreMatchFeatureAggregator::RECENT_WINDOW_TEAM_HISTORY, PreMatchFeatureAggregator::RECENT_WINDOW_ALL], true)
             && $eloMode === PreMatchFeatureAggregator::ELO_MODE_EXTENDED) {
             $candidate47Input = $engineInput;
         } else {

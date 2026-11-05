@@ -42,9 +42,9 @@ class PublicMatchPredictionService
 
     private const UEFA_CLUB_SLUGS = ['uefa-champions-league', 'uefa-europa-league', 'uefa-conference-league'];
 
-    private const EXPERIMENTAL_CAND47_ARTIFACT    = 'prediction_engine_candidate47_team_history_recent.json';
-    private const EXPERIMENTAL_LATENT_SNAPSHOT     = 'latent_strength_champions_anchored.json';
-    private const EXPERIMENTAL_STRUCTURAL_SNAPSHOT = 'structural_strength_champions_extended.json';
+    public const EXPERIMENTAL_CAND47_ARTIFACT    = 'prediction_engine_candidate47_team_history_recent.json';
+    public const EXPERIMENTAL_LATENT_SNAPSHOT     = 'latent_strength_champions_anchored.json';
+    public const EXPERIMENTAL_STRUCTURAL_SNAPSHOT = 'structural_strength_champions_extended.json';
 
     public function __construct(
         private readonly MatchPredictionService $predictionService,

@@ -13,6 +13,12 @@ class Prediction extends Model
     /** Portal-facing, refreshed periodically — not yet written by any service (Step 1A.3: schema/isolation only). */
     public const PURPOSE_PUBLIC_LATEST = 'public_latest';
 
+    /**
+     * Prospective parallel experiment (Candidate47 Team History vs RECENT_ALL on UEFA fixtures). Isolated from the official
+     * Learning Loop: every official consumer filters purpose = 'official', so these rows are never read by them.
+     */
+    public const PURPOSE_RECENT_EXPERIMENT = 'recent_exp';
+
     protected $fillable = [
         'match_id',
         'model_key',
