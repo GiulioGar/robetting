@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-05T13:44:35.320573+00:00",
+  "generated_at": "2026-11-05T13:50:48.288942+00:00",
   "definition": "top25_market_value",
   "teams": {
     "274": {
@@ -943,6 +943,54 @@
       "team_name": "Olympiakos Piraeus",
       "players_count": 30,
       "top25_market_value": 181300000
+    },
+    "412": {
+      "transfermarkt_club_id": 43,
+      "team_name": "Heart Of Midlothian",
+      "players_count": 32,
+      "top25_market_value": 24250000
+    },
+    "427": {
+      "transfermarkt_club_id": 159,
+      "team_name": "FK Crvena Zvezda",
+      "players_count": 29,
+      "top25_market_value": 95950000
+    },
+    "437": {
+      "transfermarkt_club_id": 10482,
+      "team_name": "Kairat Almaty",
+      "players_count": 23,
+      "top25_market_value": 9200000
+    },
+    "455": {
+      "transfermarkt_club_id": 41133,
+      "team_name": "FC Iberia 1999",
+      "players_count": 26,
+      "top25_market_value": 9500000
+    },
+    "472": {
+      "transfermarkt_club_id": 317,
+      "team_name": "Twente",
+      "players_count": 27,
+      "top25_market_value": 101150000
+    },
+    "451": {
+      "transfermarkt_club_id": 27114,
+      "team_name": "Egnatia Rrogozhine",
+      "players_count": 27,
+      "top25_market_value": 7625000
+    },
+    "501": {
+      "transfermarkt_club_id": 190,
+      "team_name": "FC Copenhagen",
+      "players_count": 24,
+      "top25_market_value": 64050000
+    },
+    "511": {
+      "transfermarkt_club_id": 265,
+      "team_name": "Panathinaikos",
+      "players_count": 31,
+      "top25_market_value": 123300000
     }
   }
 }
