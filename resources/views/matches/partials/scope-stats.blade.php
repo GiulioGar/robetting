@@ -82,7 +82,7 @@
                         <span class="text-muted">Dati precedenti non disponibili</span>
                     @else
                         @foreach($block['last5']['form'] as $i => $r)
-                            <span class="badge bg-{{ $badgeClass($r) }} me-1" {{ $badgePop($sc['tooltips'][$block['side']]['last5'][$i] ?? null) }}>{{ $r }}</span>
+                            <a class="badge match-badge bg-{{ $badgeClass($r) }} me-1" {{ $badgePop($sc['tooltips'][$block['side']]['last5'][$i] ?? null) }}>{{ $r }}</a>
                         @endforeach
                     @endif
                     <div class="text-muted small mt-2 mb-1">Ultime 10</div>
@@ -90,7 +90,7 @@
                         <span class="text-muted">Dati precedenti non disponibili</span>
                     @else
                         @foreach($block['last10']['form'] as $i => $r)
-                            <span class="badge bg-{{ $badgeClass($r) }} me-1" {{ $badgePop($sc['tooltips'][$block['side']]['last10'][$i] ?? null) }}>{{ $r }}</span>
+                            <a class="badge match-badge bg-{{ $badgeClass($r) }} me-1" {{ $badgePop($sc['tooltips'][$block['side']]['last10'][$i] ?? null) }}>{{ $r }}</a>
                         @endforeach
                     @endif
                     @php $f10 = $sc['sample']['form10'][$block['side']] ?? null; @endphp
@@ -137,7 +137,7 @@
                                 <td><span class="badge text-bg-light border">{{ $u['competition'] ?? '?' }}</span>@if($u['phase_label']) <span class="text-muted">{{ $u['phase_label'] }}</span>@endif</td>
                                 <td>{{ $u['venue'] === 'C' ? 'vs' : '@' }} {{ $u['opponent'] }}</td>
                                 <td class="text-nowrap">{{ $u['score'] }}</td>
-                                <td><span class="badge bg-{{ $badgeClass($u['result']) }}" {{ $badgePop($u) }}>{{ $u['result'] }}</span></td>
+                                <td><a class="badge match-badge bg-{{ $badgeClass($u['result']) }}" {{ $badgePop($u) }}>{{ $u['result'] }}</a></td>
                             </tr>
                         @endforeach
                         </tbody>

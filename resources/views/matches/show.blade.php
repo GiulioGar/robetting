@@ -735,6 +735,9 @@
 @if($matchViewMode === 'pre_match')
 
 <style>
+    /* W/D/L badges are <a tabindex=0 role=button> (Bootstrap's recommended popover trigger: focusable on iOS/Safari taps). */
+    a.badge.match-badge { cursor: pointer; text-decoration: none; color: var(--bs-badge-color); }
+    a.badge.match-badge:hover, a.badge.match-badge:focus { color: var(--bs-badge-color); filter: brightness(.92); outline: 0; }
     .match-popover { --bs-popover-max-width: 290px; }
     .match-popover .popover-header { font-size: .8rem; }
     /* Totale | Competizione: pure CSS (radio + :has), no JS; without :has support both scopes are simply shown. */
