@@ -310,6 +310,24 @@ class BuildPredictionDatasetTest extends TestCase
         $this->assertFileDoesNotExist($legacyPath, 'team_history run must never create/overwrite the legacy filename.');
     }
 
+    // ── [K2] --recent-window-mode=recent_all → separate filename, legacy untouched ──
+
+    public function test_recent_window_mode_recent_all_uses_separate_filename_and_does_not_touch_legacy(): void
+    {
+        $this->makeMatch('9999-10-01 20:45:00');
+        $legacyPath = base_path('tools/datasets/dataset_core_v1_9999.csv');
+        $allPath    = base_path('tools/datasets/dataset_core_v1_recent_all_9999.csv');
+
+        $this->artisan('robetting:build-prediction-dataset', [
+            '--mode'               => 'core_only',
+            '--seasons'            => '9999',
+            '--recent-window-mode' => 'recent_all',
+        ])->assertExitCode(0);
+
+        $this->assertFileExists($allPath);
+        $this->assertFileDoesNotExist($legacyPath, 'recent_all run must never create/overwrite the legacy filename.');
+    }
+
     // ── [L] invalid --recent-window-mode rejected, no dataset written ───────────
 
     public function test_invalid_recent_window_mode_returns_failure_and_writes_no_file(): void

@@ -15,7 +15,7 @@ class BuildPredictionDataset extends Command
     protected $signature = 'robetting:build-prediction-dataset
         {--mode=core_only : Feature set mode (core_only|core_plus_experimental)}
         {--seasons=       : Comma-separated year_start values (e.g. 2024,2025). Omit to include all seasons.}
-        {--recent-window-mode=legacy : Recent-window source for core_recent_* only (legacy|team_history)}
+        {--recent-window-mode=legacy : Recent-window source for core_recent_* only (legacy|team_history|recent_all)}
         {--elo-mode=legacy : Elo replay scope for E6 Elo features only (legacy|network|extended)}
         {--output=        : Override output CSV path. Omit to use the default filename convention.}
         {--force          : Overwrite output file if it already exists}';
@@ -31,6 +31,7 @@ class BuildPredictionDataset extends Command
     private const VALID_RECENT_WINDOW_MODES = [
         PreMatchFeatureAggregator::RECENT_WINDOW_LEGACY,
         PreMatchFeatureAggregator::RECENT_WINDOW_TEAM_HISTORY,
+        PreMatchFeatureAggregator::RECENT_WINDOW_ALL,
     ];
 
     private const VALID_ELO_MODES = [
@@ -186,7 +187,7 @@ class BuildPredictionDataset extends Command
         // (the current Candidate47 dataset) — see Step C2.2.
         $modeSuffix = $recentWindowMode === PreMatchFeatureAggregator::RECENT_WINDOW_TEAM_HISTORY
             ? '_team_history'
-            : '';
+            : ($recentWindowMode === PreMatchFeatureAggregator::RECENT_WINDOW_ALL ? '_recent_all' : '');
 
         return base_path(self::OUTPUT_DIR) . DIRECTORY_SEPARATOR . "dataset_{$version}{$modeSuffix}{$suffix}.csv";
     }
