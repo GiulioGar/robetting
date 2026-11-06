@@ -550,6 +550,38 @@ class TeamStarterContinuityCalculatorTest extends TestCase
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // [P2] forModelFeatures(): unobserved counts → null, real zeros preserved
+    // ─────────────────────────────────────────────────────────────────────────
+
+    public function test_for_model_features_nulls_counts_when_no_data_was_observed(): void
+    {
+        $target = $this->makeTarget();
+
+        $raw   = TeamStarterContinuityCalculator::calculateForMatch($target, $this->teamA->id);
+        $model = TeamStarterContinuityCalculator::forModelFeatures($raw);
+
+        $this->assertSame(0, $raw['distinct_starters_last_5'], 'calculateForMatch() contract is unchanged');
+        foreach (['complete_transitions_count', 'players_started_4_of_last_5', 'players_started_5_of_last_5', 'distinct_starters_last_5'] as $field) {
+            $this->assertNull($model[$field], $field);
+        }
+        $this->assertSame(0, $model['matches_considered'], 'matches_considered=0 is a real fact and stays 0');
+    }
+
+    public function test_for_model_features_keeps_zero_that_comes_from_real_data(): void
+    {
+        // Two matches observed, 22 distinct starters, nobody started 4 of 5, no complete pair.
+        $real = [
+            'average_starters_retained' => null, 'average_starters_changed' => null,
+            'complete_transitions_count' => 0, 'players_started_4_of_last_5' => 0,
+            'players_started_5_of_last_5' => 0, 'distinct_starters_last_5' => 22,
+            'matches_considered' => 2, 'matches_with_complete_starting_xi' => 0,
+            'lineup_coverage_percentage' => 0.0,
+        ];
+
+        $this->assertSame($real, TeamStarterContinuityCalculator::forModelFeatures($real));
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // [Q] Null kickoff_at → emptyResult
     // ─────────────────────────────────────────────────────────────────────────
 

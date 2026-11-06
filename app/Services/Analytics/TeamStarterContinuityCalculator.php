@@ -213,6 +213,26 @@ class TeamStarterContinuityCalculator
         ];
     }
 
+    /**
+     * Model-input view of a calculateForMatch() result: the count fields that are 0 only because
+     * no player data was observed (matches_considered === 0) become null, so the artifact's
+     * imputer applies instead of a fake "0 distinct starters". A 0 coming from real data
+     * (e.g. nobody started 4 of the last 5) is kept. calculateForMatch() itself is unchanged
+     * (match page and its tests keep the 0 / "no data" display).
+     */
+    public static function forModelFeatures(array $result): array
+    {
+        if (($result['matches_considered'] ?? 0) > 0) {
+            return $result;
+        }
+
+        foreach (['complete_transitions_count', 'players_started_4_of_last_5', 'players_started_5_of_last_5', 'distinct_starters_last_5'] as $field) {
+            $result[$field] = null;
+        }
+
+        return $result;
+    }
+
     private static function emptyResult(): array
     {
         return [

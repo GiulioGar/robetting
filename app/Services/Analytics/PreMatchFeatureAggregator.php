@@ -252,8 +252,8 @@ class PreMatchFeatureAggregator
         //     internally with its own double guard (query-level + timestamp check).
         $homeAbsence    = TeamAbsenceImpactCalculator::calculateForMatch($match, (int) $match->home_team_id);
         $awayAbsence    = TeamAbsenceImpactCalculator::calculateForMatch($match, (int) $match->away_team_id);
-        $homeContinuity = TeamStarterContinuityCalculator::calculateForMatch($match, (int) $match->home_team_id);
-        $awayContinuity = TeamStarterContinuityCalculator::calculateForMatch($match, (int) $match->away_team_id);
+        $homeContinuity = TeamStarterContinuityCalculator::forModelFeatures(TeamStarterContinuityCalculator::calculateForMatch($match, (int) $match->home_team_id));
+        $awayContinuity = TeamStarterContinuityCalculator::forModelFeatures(TeamStarterContinuityCalculator::calculateForMatch($match, (int) $match->away_team_id));
         $homeAge        = TeamAgeProfileCalculator::calculateForMatch($match, (int) $match->home_team_id);
         $awayAge        = TeamAgeProfileCalculator::calculateForMatch($match, (int) $match->away_team_id);
 
