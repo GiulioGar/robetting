@@ -137,8 +137,8 @@ def paired_ci(diff, resamples=2000, seed=84):
     return float(np.percentile(m, 2.5)), float(np.percentile(m, 97.5))
 
 
-def run(rows):
-    fm = ce.fit_marginals(rows)
+def run(rows, train_years=(ce.TRAIN_YEAR,), test_years=(ce.TEST_YEAR,)):
+    fm = ce.fit_marginals(rows, train_years=train_years, test_years=test_years)
     tr, te, Y, mus, phis = fm['tr'], fm['te'], fm['Y'], fm['mus'], fm['phis']
     mh, ma = mus['home']['nb'], mus['away']['nb']
     ph, pa = phis['home']['nb'], phis['away']['nb']

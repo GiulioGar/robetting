@@ -131,11 +131,11 @@ def shot_features(m, idx):
     return f
 
 
-def build_dataset(matches, core_ids):
+def build_dataset(matches, core_ids, years=(TRAIN_YEAR, TEST_YEAR)):
     idx = build_indexes(matches)
     rows = []
     for m in matches:
-        if m['comp'] not in core_ids or m['year'] not in (TRAIN_YEAR, TEST_YEAR) or m['hc'] is None or m['ac'] is None:
+        if m['comp'] not in core_ids or m['year'] not in years or m['hc'] is None or m['ac'] is None:
             continue
         f = corner_features(m, idx)
         fs = shot_features(m, idx)
@@ -207,11 +207,12 @@ def corr(a, b):
     return float(np.corrcoef(a, b)[0, 1])
 
 
-def fit_marginals(rows, use_shots=False):
+def fit_marginals(rows, use_shots=False, train_years=(TRAIN_YEAR,), test_years=(TEST_YEAR,)):
     """Fit baseline / Poisson / NB marginals on TRAIN only and predict every row (shared by run() and the joint model).
-    use_shots=True appends the Step 85 shot-volume features (same preprocessing and hyper-parameters)."""
+    use_shots=True appends the Step 85 shot-volume features (same preprocessing and hyper-parameters).
+    train_years / test_years select the fixed chronological split (Step 86 trains on 2024+2025 and tests on 2026)."""
     year = np.array([r['year'] for r in rows])
-    tr, te = year == TRAIN_YEAR, year == TEST_YEAR
+    tr, te = np.isin(year, train_years), np.isin(year, test_years)
     X = np.array([r['x'] + (r['xs'] if use_shots else []) for r in rows])
     comp = np.array([r['comp'] for r in rows])
     Y = {'home': np.array([r['yh'] for r in rows], float), 'away': np.array([r['ya'] for r in rows], float)}
@@ -237,8 +238,8 @@ def fit_marginals(rows, use_shots=False):
     return {'tr': tr, 'te': te, 'X': X, 'Y': Y, 'mus': mus, 'phis': phis}
 
 
-def run(rows):
-    fm = fit_marginals(rows)
+def run(rows, train_years=(TRAIN_YEAR,), test_years=(TEST_YEAR,)):
+    fm = fit_marginals(rows, train_years=train_years, test_years=test_years)
     tr, te, X, Y, mus, phis = fm['tr'], fm['te'], fm['X'], fm['Y'], fm['mus'], fm['phis']
     out = {'n_train': int(tr.sum()), 'n_test': int(te.sum()), 'n_features': len(FEATURES),
            'missing_share_train': {k: float(np.isnan(X[tr, j]).mean()) for j, k in enumerate(FEATURES) if np.isnan(X[tr, j]).any()},

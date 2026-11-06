@@ -101,6 +101,30 @@ class DensityTest(unittest.TestCase):
             self.assertAlmostEqual(float(ce.bin_probs(np.array([5.0]), phi).sum()), 1.0, places=6)
 
 
+class SplitYearsTest(unittest.TestCase):
+    """Step 86: configurable chronological split; the defaults keep the Step 83 behaviour."""
+
+    def _rows(self):
+        rng = np.random.default_rng(5)
+        years = [2024] * 60 + [2025] * 40 + [2026] * 20
+        return [{'id': i, 'comp': 1, 'year': y, 'ko': '2024-08-01', 'yh': int(rng.poisson(5)), 'ya': int(rng.poisson(4)),
+                 'x': list(rng.normal(size=len(ce.FEATURES))), 'xs': []} for i, y in enumerate(years)]
+
+    def test_default_split_is_2024_train_2025_test_and_ignores_other_years(self):
+        fm = ce.fit_marginals(self._rows())
+        self.assertEqual((int(fm['tr'].sum()), int(fm['te'].sum())), (60, 40))
+
+    def test_final_split_trains_on_two_seasons_and_tests_on_the_third_without_overlap(self):
+        fm = ce.fit_marginals(self._rows(), train_years=(2024, 2025), test_years=(2026,))
+        self.assertEqual((int(fm['tr'].sum()), int(fm['te'].sum())), (100, 20))
+        self.assertFalse((fm['tr'] & fm['te']).any())
+
+    def test_build_dataset_year_filter(self):
+        ms = [dict(m, year=2026 if m['id'] == 4 else 2024) for m in MATCHES]
+        self.assertEqual([r['id'] for r in ce.build_dataset(ms, {1})], [1, 2])
+        self.assertEqual([r['id'] for r in ce.build_dataset(ms, {1}, years=(2024, 2026))], [1, 2, 4])
+
+
 class ShotFeaturesTest(unittest.TestCase):
     """Step 85: shot-volume windows follow the same point-in-time and missing-value rules as the corner windows."""
 
