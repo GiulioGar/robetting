@@ -186,7 +186,8 @@ def corr(a, b):
     return float(np.corrcoef(a, b)[0, 1])
 
 
-def run(rows):
+def fit_marginals(rows):
+    """Fit baseline / Poisson / NB marginals on TRAIN only and predict every row (shared by run() and the joint model)."""
     year = np.array([r['year'] for r in rows])
     tr, te = year == TRAIN_YEAR, year == TEST_YEAR
     X = np.array([r['x'] for r in rows])
@@ -199,10 +200,6 @@ def run(rows):
     sd[sd == 0] = 1.0
     Z = (Xi - mean) / sd
 
-    out = {'n_train': int(tr.sum()), 'n_test': int(te.sum()), 'n_features': len(FEATURES),
-           'missing_share_train': {k: float(np.isnan(X[tr, j]).mean()) for j, k in enumerate(FEATURES) if np.isnan(X[tr, j]).any()},
-           'raw_corr_home_away': {'train': corr(Y['home'][tr], Y['away'][tr]), 'test': corr(Y['home'][te], Y['away'][te])},
-           'models': {}}
     mus, phis = {}, {}
     for side in ('home', 'away'):
         y = Y[side]
@@ -215,6 +212,18 @@ def run(rows):
         mus[side] = {'baseline': base, 'poisson': pois.predict(Z), 'nb': np.exp(Z @ w + b)}
         phis[side] = {'baseline': None, 'baseline_nb': fit_nb_dispersion(y[tr], base[tr]), 'poisson': None, 'nb': phi}
         mus[side]['baseline_nb'] = base
+    return {'tr': tr, 'te': te, 'X': X, 'Y': Y, 'mus': mus, 'phis': phis}
+
+
+def run(rows):
+    fm = fit_marginals(rows)
+    tr, te, X, Y, mus, phis = fm['tr'], fm['te'], fm['X'], fm['Y'], fm['mus'], fm['phis']
+    out = {'n_train': int(tr.sum()), 'n_test': int(te.sum()), 'n_features': len(FEATURES),
+           'missing_share_train': {k: float(np.isnan(X[tr, j]).mean()) for j, k in enumerate(FEATURES) if np.isnan(X[tr, j]).any()},
+           'raw_corr_home_away': {'train': corr(Y['home'][tr], Y['away'][tr]), 'test': corr(Y['home'][te], Y['away'][te])},
+           'models': {}}
+    for side in ('home', 'away'):
+        y = Y[side]
         out['models'][side] = {}
         for name in ('baseline', 'baseline_nb', 'poisson', 'nb'):
             out['models'][side][name] = {'dispersion': phis[side][name],
