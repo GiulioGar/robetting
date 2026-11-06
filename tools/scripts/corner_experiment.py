@@ -224,6 +224,7 @@ def fit_marginals(rows, use_shots=False, train_years=(TRAIN_YEAR,), test_years=(
     Z = (Xi - mean) / sd
 
     mus, phis = {}, {}
+    nb_params = {}
     for side in ('home', 'away'):
         y = Y[side]
         base = np.zeros(len(rows))
@@ -232,10 +233,12 @@ def fit_marginals(rows, use_shots=False, train_years=(TRAIN_YEAR,), test_years=(
             base[sel] = y[tr & sel].mean() if (tr & sel).any() else y[tr].mean()
         pois = PoissonRegressor(alpha=ALPHA, max_iter=2000).fit(Z[tr], y[tr])
         w, b, phi = fit_nb(Z[tr], y[tr])
+        nb_params[side] = {'coefficients': w, 'intercept': float(b), 'dispersion': float(phi)}
         mus[side] = {'baseline': base, 'poisson': pois.predict(Z), 'nb': np.exp(Z @ w + b)}
         phis[side] = {'baseline': None, 'baseline_nb': fit_nb_dispersion(y[tr], base[tr]), 'poisson': None, 'nb': phi}
         mus[side]['baseline_nb'] = base
-    return {'tr': tr, 'te': te, 'X': X, 'Y': Y, 'mus': mus, 'phis': phis}
+    return {'tr': tr, 'te': te, 'X': X, 'Y': Y, 'mus': mus, 'phis': phis,
+            'params': {'median': med, 'mean': mean, 'scale': sd, 'nb': nb_params}}
 
 
 def run(rows, train_years=(TRAIN_YEAR,), test_years=(TEST_YEAR,)):
