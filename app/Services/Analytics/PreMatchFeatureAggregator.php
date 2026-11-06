@@ -536,11 +536,10 @@ class PreMatchFeatureAggregator
      */
     private static function loadScheduleHistory(FootballMatch $match, int $teamId): Collection
     {
-        // Results-only competitions (config results_only_competitions) are descriptive history, never a Schedule input.
-        $resultsOnly = MatchDataScope::resultsOnlyCompetitionSlugs();
-
+        // Schedule describes the real calendar: official concluded matches of ANY competition count, results-only
+        // ones (config results_only_competitions) included. They stay excluded from Elo, Team History and the model's
+        // other inputs. No training row changes: results-only clubs never play in the 5 core leagues.
         return FootballMatch::whereIn('status', ['finished', 'awarded', 'walkover'])
-            ->when($resultsOnly !== [], fn ($q) => $q->whereNotIn('competition_id', fn ($s) => $s->select('id')->from('competitions')->whereIn('slug', $resultsOnly)))
             ->where('kickoff_at', '<', $match->kickoff_at)
             ->where(function ($q) use ($teamId): void {
                 $q->where('home_team_id', $teamId)->orWhere('away_team_id', $teamId);

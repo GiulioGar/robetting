@@ -18,7 +18,7 @@ use Tests\TestCase;
 
 /**
  * Results-only competitions (config api-football.results_only_competitions): imported for descriptive statistics only.
- * They must NOT change legacy Elo, the Candidate47 schedule history, Team History or MatchDataScope.
+ * They must NOT change legacy Elo, Team History or MatchDataScope. They DO count in the Schedule history (real calendar).
  */
 class ResultsOnlyCompetitionTest extends TestCase
 {
@@ -91,7 +91,7 @@ class ResultsOnlyCompetitionTest extends TestCase
         $this->assertNotSame($before, TeamEloCalculator::calculateRatingsBefore($cutoff));
     }
 
-    public function test_candidate47_schedule_history_excludes_results_only_matches(): void
+    public function test_candidate47_schedule_history_includes_results_only_matches(): void
     {
         $this->played($this->core, $this->coreSeason, $this->a, $this->b, '2026-08-10 18:00:00', 1, 0);
         $this->played($this->hun, $this->hunSeason, $this->a, $this->c, '2026-08-20 18:00:00', 3, 0);
@@ -102,10 +102,14 @@ class ResultsOnlyCompetitionTest extends TestCase
         $m = new ReflectionMethod(PreMatchFeatureAggregator::class, 'loadScheduleHistory');
         $m->setAccessible(true);
 
-        $this->assertCount(1, $m->invoke(null, $target, $this->a->id));      // only the Serie A match
+        // Schedule is the real calendar: the Serie A match AND the results-only one, each exactly once.
+        $history = $m->invoke(null, $target, $this->a->id);
+        $this->assertCount(2, $history);
+        $this->assertSame($history->pluck('id')->unique()->count(), $history->count());
 
-        config(['api-football.results_only_competitions' => []]);
-        $this->assertCount(2, $m->invoke(null, $target, $this->a->id));      // control: the guard is what excludes it
+        // the target kickoff itself and later matches never enter the history
+        $this->played($this->hun, $this->hunSeason, $this->a, $this->c, '2026-09-05 18:00:00', 1, 1);
+        $this->assertCount(2, $m->invoke(null, $target, $this->a->id));
     }
 
     public function test_team_history_does_not_include_results_only_matches(): void
