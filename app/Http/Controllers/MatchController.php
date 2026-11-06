@@ -28,6 +28,7 @@ use App\Services\Matches\PreferredMatchStatisticResolver;
 use App\Services\Prediction\TeamHistoryMatchEligibility;
 use App\Services\DataSources\ApiFootball\ApiFootballGoalOddsSyncService;
 use App\Services\Odds\GoalMarketComparator;
+use App\Services\Prediction\Corner\CornerModelService;
 use App\Services\Prediction\GoalMarketProbabilityCalculator;
 use App\Services\Prediction\PublicMatchPredictionService;
 use App\Services\Prediction\PublicPredictionRefreshService;
@@ -236,7 +237,33 @@ class MatchController extends Controller
         // Distinguishes "not yet collected" from "never collected for this competition" in the empty-state message.
         $data['goalOddsInScope'] = ApiFootballGoalOddsSyncService::inScope($match->competition?->slug);
 
+        // CORNER (experimental): pre-match only, computed live from the versioned artifact (nothing stored).
+        $data['cornerAnalysis'] = $this->cornerAnalysis($match, $matchViewMode);
+
         return view('matches.show', $data);
+    }
+
+    /**
+     * "Analisi CORNER (sperimentale)". Null (section hidden) outside pre-match and for competitions the model does not cover
+     * (the service returns before any feature query in that case); available=false renders a discreet "insufficient data" note.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function cornerAnalysis(FootballMatch $match, string $matchViewMode): ?array
+    {
+        if ($matchViewMode !== 'pre_match') {
+            return null;
+        }
+
+        try {
+            $result = app(CornerModelService::class)->predictForMatch($match);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return ['available' => false, 'reason' => 'error'];
+        }
+
+        return ($result['reason'] ?? null) === 'competition_not_supported' ? null : $result;
     }
 
     /**

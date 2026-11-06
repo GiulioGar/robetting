@@ -267,6 +267,65 @@
 </div>
 @endif
 
+{{-- Analisi CORNER — EXPERIMENTAL negative-binomial + copula model (CornerModelService, versioned artifact). Derived live, not stored.
+     Information only: no odds comparison, no recommendation. Hidden when null (not pre-match / unsupported competition). --}}
+@if(!empty($cornerAnalysis))
+@php
+    $ca = $cornerAnalysis;
+    $dec = fn(?float $v) => $v === null ? 'n.d.' : number_format($v, 1, ',', '');
+@endphp
+<div class="mt-4" data-testid="corner-analysis">
+    <h2 class="fs-5 fw-semibold mb-3">Analisi corner <span class="badge text-bg-secondary fw-normal align-middle">Sperimentale</span></h2>
+    @if(empty($ca['available']))
+        <p class="text-muted small mb-0" data-testid="corner-unavailable">Dati insufficienti per l'analisi dei corner di questa partita.</p>
+    @else
+        @php $f = $ca['features']; @endphp
+        <div class="row g-3">
+            <div class="col-12 col-xl-6" data-testid="corner-expected">
+                <div class="card h-100">
+                    <div class="card-header py-2 small fw-semibold">Corner attesi</div>
+                    <div class="card-body p-2">
+                        <div class="row text-center g-2">
+                            <div class="col-4"><div class="text-muted small">{{ $match->homeTeam->name }}</div><div class="fs-5 fw-semibold" data-corner="home">{{ $dec($ca['mu_home']) }}</div></div>
+                            <div class="col-4"><div class="text-muted small">{{ $match->awayTeam->name }}</div><div class="fs-5 fw-semibold" data-corner="away">{{ $dec($ca['mu_away']) }}</div></div>
+                            <div class="col-4"><div class="text-muted small">Totale</div><div class="fs-5 fw-semibold" data-corner="total">{{ $dec($ca['expected_total']) }}</div></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-xl-6" data-testid="corner-over-under">
+                <div class="card h-100">
+                    <div class="card-header py-2 small fw-semibold">Over/Under corner totali</div>
+                    <table class="table table-sm align-middle mb-0 text-center">
+                        <thead class="table-light"><tr><th class="text-start ps-3">Linea</th><th>Over</th><th class="pe-3">Under</th></tr></thead>
+                        <tbody>
+                        @foreach($ca['over'] as $line => $p)
+                            <tr data-line="{{ $line }}"><td class="text-start ps-3">{{ $line }}</td><td>{{ $pct($p * 100) }}</td><td class="pe-3">{{ $pct($ca['under'][$line] * 100) }}</td></tr>
+                        @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="col-12" data-testid="corner-history">
+                <div class="card">
+                    <div class="card-header py-2 small fw-semibold">Medie storiche corner (ultime 10 partite)</div>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0 text-center">
+                            <thead class="table-light"><tr><th class="text-start ps-3">Squadra</th><th>Fatti</th><th>Concessi</th><th class="pe-3">Partite con dati</th></tr></thead>
+                            <tbody>
+                                <tr data-team="home"><td class="text-start ps-3">{{ $match->homeTeam->name }}</td><td>{{ $dec($f['h_for10'] ?? null) }}</td><td>{{ $dec($f['h_ag10'] ?? null) }}</td><td class="pe-3">{{ $f['h_n10'] ?? 0 }}</td></tr>
+                                <tr data-team="away"><td class="text-start ps-3">{{ $match->awayTeam->name }}</td><td>{{ $dec($f['a_for10'] ?? null) }}</td><td>{{ $dec($f['a_ag10'] ?? null) }}</td><td class="pe-3">{{ $f['a_n10'] ?? 0 }}</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <p class="text-muted small mt-2 mb-0">Modello sperimentale: stima statistica basata sullo storico dei corner, solo a scopo informativo.</p>
+    @endif
+</div>
+@endif
+
 <div class="mt-5 mb-1 pt-3 border-top"><span class="text-muted small text-uppercase fw-semibold">Quote bookmaker</span></div>
 
 {{-- Mercato 1X2 (Odds V1) — raw market information only. Certified pre-match snapshots,
