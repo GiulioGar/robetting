@@ -101,5 +101,37 @@ class DensityTest(unittest.TestCase):
             self.assertAlmostEqual(float(ce.bin_probs(np.array([5.0]), phi).sum()), 1.0, places=6)
 
 
+class ShotFeaturesTest(unittest.TestCase):
+    """Step 85: shot-volume windows follow the same point-in-time and missing-value rules as the corner windows."""
+
+    def _idx(self):
+        ms = [dict(m, hs=None, **{'as': None}) for m in MATCHES]
+        ms[0].update(hs=14, **{'as': 9})        # m1: team 10 home -> shots for 14, against 9
+        ms[1].update(hs=8, **{'as': 12})        # m2: team 20 home, team 10 away -> team 10 shots for 12, against 8
+        ms[2].update(hs=11, **{'as': 7})        # m3 has shots but NO corners: shot window must still use it
+        return ms, ce.build_indexes(ms)
+
+    def test_window_uses_shots_independently_of_corner_availability_and_stays_strictly_before(self):
+        ms, idx = self._idx()
+        f = ce.shot_features(ms[4], idx)        # target m5, team 10 at home
+        self.assertEqual(f['h_sn10'], 3)        # m1, m2, m3 (m4 has no shot data)
+        self.assertAlmostEqual(f['h_sfor10'], (14 + 12 + 11) / 3)
+        self.assertAlmostEqual(f['h_sag10'], (9 + 8 + 7) / 3)
+        f0 = ce.shot_features(ms[0], idx)       # first match: nothing before
+        self.assertEqual((f0['h_sn5'], f0['h_sfor5']), (0, None))
+
+    def test_dataset_rows_carry_shot_features_with_nan_for_missing(self):
+        ms, _ = self._idx()
+        rows = ce.build_dataset(ms, {1})
+        self.assertEqual(len(rows[0]['xs']), len(ce.SHOT_FEATURES))
+        self.assertTrue(np.isnan(rows[0]['xs'][ce.SHOT_FEATURES.index('h_sfor5')]))   # no history yet: NaN, not 0
+
+    def test_corner_features_are_unchanged_by_the_shot_columns(self):
+        ms, idx = self._idx()
+        plain = ce.corner_features(MATCHES[4], ce.build_indexes(MATCHES))
+        withshots = ce.corner_features(ms[4], idx)
+        self.assertEqual(plain, withshots)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -57,7 +57,8 @@ def load_matches(path):
         for r in csv.DictReader(f, delimiter='\t'):
             out.append({'id': int(r['id']), 'ko': r['kickoff_at'], 'comp': int(r['competition_id']), 'year': int(r['year_start']),
                         'season': int(r['season_id']), 'home': int(r['home_team_id']), 'away': int(r['away_team_id']),
-                        'hc': _int(r['home_corners']), 'ac': _int(r['away_corners'])})
+                        'hc': _int(r['home_corners']), 'ac': _int(r['away_corners']),
+                        'hs': _int(r.get('home_shots')), 'as': _int(r.get('away_shots'))})   # shots columns are optional (Step 85)
     return sorted(out, key=lambda m: (m['ko'], m['id']))
 
 
@@ -67,8 +68,11 @@ def build_indexes(matches):
     league = defaultdict(list)
     for m in matches:
         has = m['hc'] is not None and m['ac'] is not None
-        team[m['home']].append({'ko': m['ko'], 'venue': 'H', 'cf': m['hc'] if has else None, 'ca': m['ac'] if has else None})
-        team[m['away']].append({'ko': m['ko'], 'venue': 'A', 'cf': m['ac'] if has else None, 'ca': m['hc'] if has else None})
+        has_s = m.get('hs') is not None and m.get('as') is not None
+        team[m['home']].append({'ko': m['ko'], 'venue': 'H', 'cf': m['hc'] if has else None, 'ca': m['ac'] if has else None,
+                                'sf': m['hs'] if has_s else None, 'sa': m['as'] if has_s else None})
+        team[m['away']].append({'ko': m['ko'], 'venue': 'A', 'cf': m['ac'] if has else None, 'ca': m['hc'] if has else None,
+                                'sf': m['as'] if has_s else None, 'sa': m['hs'] if has_s else None})
         if has:
             league[(m['comp'], m['season'])].append((m['ko'], m['hc'], m['ac']))
     team_ko = {t: [e['ko'] for e in es] for t, es in team.items()}
@@ -79,16 +83,16 @@ def build_indexes(matches):
     return team, team_ko, league_ko, league_cum
 
 
-def window_stats(entries, kos, ko, n, venue=None):
+def window_stats(entries, kos, ko, n, venue=None, fkey='cf', akey='ca'):
     """Last n matches strictly before ko (of the given venue if set): (avg_for, avg_against, n_with_data).
-    Averages are None when no match of the window has corner data."""
+    Averages are None when no match of the window has data for the metric (corners by default, 'sf'/'sa' = shots)."""
     hi = bisect.bisect_left(kos, ko)
     prior = [e for e in entries[:hi] if venue is None or e['venue'] == venue]
     window = prior[-n:]
-    data = [e for e in window if e['cf'] is not None]
+    data = [e for e in window if e[fkey] is not None]
     if not data:
         return None, None, 0
-    return sum(e['cf'] for e in data) / len(data), sum(e['ca'] for e in data) / len(data), len(data)
+    return sum(e[fkey] for e in data) / len(data), sum(e[akey] for e in data) / len(data), len(data)
 
 
 def corner_features(m, idx):
@@ -112,6 +116,21 @@ FEATURES = ([f'{s}_{k}' for s in ('h', 'a') for k in ('for5', 'ag5', 'n5', 'for1
             + ['lg_home', 'lg_away', 'lg_n'])
 
 
+SHOT_FEATURES = [f'{s}_{k}' for s in ('h', 'a') for k in ('sfor5', 'sag5', 'sn5', 'sfor10', 'sag10', 'sn10')]
+
+
+def shot_features(m, idx):
+    """Step 85: total shots for / against over the last 5 and 10 matches (any competition), same rules as the corner windows:
+    averages over the window's matches WITH shot data, None when there is none, explicit count of those matches."""
+    team, team_ko = idx[0], idx[1]
+    f = {}
+    for side, tid in (('h', m['home']), ('a', m['away'])):
+        es, kos = team.get(tid, []), team_ko.get(tid, [])
+        for n in WINDOWS:
+            f[f'{side}_sfor{n}'], f[f'{side}_sag{n}'], f[f'{side}_sn{n}'] = window_stats(es, kos, m['ko'], n, fkey='sf', akey='sa')
+    return f
+
+
 def build_dataset(matches, core_ids):
     idx = build_indexes(matches)
     rows = []
@@ -119,8 +138,10 @@ def build_dataset(matches, core_ids):
         if m['comp'] not in core_ids or m['year'] not in (TRAIN_YEAR, TEST_YEAR) or m['hc'] is None or m['ac'] is None:
             continue
         f = corner_features(m, idx)
+        fs = shot_features(m, idx)
         rows.append({'id': m['id'], 'comp': m['comp'], 'year': m['year'], 'ko': m['ko'], 'yh': m['hc'], 'ya': m['ac'],
-                     'x': [np.nan if f[k] is None else float(f[k]) for k in FEATURES]})
+                     'x': [np.nan if f[k] is None else float(f[k]) for k in FEATURES],
+                     'xs': [np.nan if fs[k] is None else float(fs[k]) for k in SHOT_FEATURES]})
     return rows
 
 
@@ -186,11 +207,12 @@ def corr(a, b):
     return float(np.corrcoef(a, b)[0, 1])
 
 
-def fit_marginals(rows):
-    """Fit baseline / Poisson / NB marginals on TRAIN only and predict every row (shared by run() and the joint model)."""
+def fit_marginals(rows, use_shots=False):
+    """Fit baseline / Poisson / NB marginals on TRAIN only and predict every row (shared by run() and the joint model).
+    use_shots=True appends the Step 85 shot-volume features (same preprocessing and hyper-parameters)."""
     year = np.array([r['year'] for r in rows])
     tr, te = year == TRAIN_YEAR, year == TEST_YEAR
-    X = np.array([r['x'] for r in rows])
+    X = np.array([r['x'] + (r['xs'] if use_shots else []) for r in rows])
     comp = np.array([r['comp'] for r in rows])
     Y = {'home': np.array([r['yh'] for r in rows], float), 'away': np.array([r['ya'] for r in rows], float)}
 
