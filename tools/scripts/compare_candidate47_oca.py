@@ -159,16 +159,44 @@ def coverage_report(match_ids, summaries, mask, label):
         label, wins, tot, cov, 100 * cov / max(1, tot), full, 100 * full / max(1, wins)))
 
 
+def load_rows(paths):
+    """Valid historical rows of one or more dataset CSVs (same builder, same columns), chronological.
+    Rows earlier than the training window still feed the walk-forward Latent history."""
+    rows = []
+    for p in paths:
+        rows.extend(pipe.load_historical_rows(p))
+    return sorted(rows, key=lambda r: r['kickoff_at'])
+
+
+def date_split_masks(raw_rows, train_from, test_from):
+    """Fixed chronological split: train = [train_from, test_from), test = [test_from, end). Dates 'YYYY-MM-DD'."""
+    day = np.array([str(r['kickoff_at'])[:10] for r in raw_rows])
+    return (day >= train_from) & (day < test_from), day >= test_from
+
+
+def distribution_report(X, names, train_mask, test_mask):
+    """Descriptive train vs test distribution of each column (NaN-aware), shift in train SDs."""
+    out = []
+    for j, n in enumerate(names):
+        a, b = X[train_mask, j], X[test_mask, j]
+        sd = np.nanstd(a)
+        out.append((n, float(np.nanmean(a)), float(np.nanstd(a)), float(np.nanmean(b)), float(np.nanstd(b)),
+                    float((np.nanmean(b) - np.nanmean(a)) / sd) if sd > 0 else float('nan')))
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--dataset', required=True)
+    ap.add_argument('--dataset', required=True, nargs='+')
     ap.add_argument('--legacy-csv', required=True)
     ap.add_argument('--extended-csv', required=True)
     ap.add_argument('--all-matches-tsv', required=True)
+    ap.add_argument('--train-from', default=None, help='YYYY-MM-DD; with --test-from replaces the season split')
+    ap.add_argument('--test-from', default=None, help='YYYY-MM-DD')
     a = ap.parse_args()
 
     t0 = time.perf_counter()
-    hist_rows = pipe.load_historical_rows(a.dataset)
+    hist_rows = load_rows(a.dataset)
     raw_rows = pipe.build_raw_feature_rows(hist_rows)
     X47, y_h, y_a, season_id = base.build_matrix(raw_rows)
     match_ids = [str(r['match_id']) for r in raw_rows]
@@ -181,8 +209,11 @@ def main():
     Xoca = oca_matrix(match_ids, summaries)
     t_oca = time.perf_counter() - t1
 
-    train_mask = np.isin(season_id, list(base.TRAIN_SEASONS))
-    test_mask = np.isin(season_id, list(base.TEST_SEASONS))
+    if a.train_from and a.test_from:
+        train_mask, test_mask = date_split_masks(raw_rows, a.train_from, a.test_from)
+    else:
+        train_mask = np.isin(season_id, list(base.TRAIN_SEASONS))
+        test_mask = np.isin(season_id, list(base.TEST_SEASONS))
     print('rows=%d TRAIN=%d TEST=%d | base features %.1fs, OCA features %.1fs' % (
         len(raw_rows), train_mask.sum(), test_mask.sum(), t_base, t_oca))
     print('OCA coverage:')
@@ -190,6 +221,9 @@ def main():
     coverage_report(match_ids, summaries, test_mask, 'TEST')
     print('  OCA NaN mean columns (TRAIN): ' + ', '.join(
         '%s=%d' % (n, int(np.isnan(Xoca[train_mask, j]).sum())) for j, n in enumerate(OCA_NAMES[:4])))
+    print('OCA distribution (name, train mean/sd, test mean/sd, shift in train SD):')
+    for n, tm, ts, em, es, sh in distribution_report(Xoca, OCA_NAMES, train_mask, test_mask):
+        print('  %-17s %8.3f %7.3f | %8.3f %7.3f | %+5.2f' % (n, tm, ts, em, es, sh))
 
     results = {}
     for label, X in (('BASELINE (RECENT_ALL)', X47), ('+ OCA', np.hstack([X47, Xoca]))):

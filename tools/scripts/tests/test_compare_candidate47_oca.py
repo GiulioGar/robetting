@@ -64,6 +64,26 @@ class WindowsTest(unittest.TestCase):
         self.assertEqual(w[('m', 'away')], [('2026-02-15', '6')])
 
 
+class SplitTest(unittest.TestCase):
+
+    def test_date_split_is_disjoint_chronological_and_excludes_earlier_rows_from_train(self):
+        rows = [{'kickoff_at': d + 'T18:00:00+00:00'} for d in
+                ('2025-09-01', '2025-12-31', '2026-01-01', '2026-05-29', '2026-08-15', '2026-11-02')]
+        train, test = oca.date_split_masks(rows, '2026-01-01', '2026-07-01')
+        self.assertEqual(train.tolist(), [False, False, True, True, False, False])
+        self.assertEqual(test.tolist(), [False, False, False, False, True, True])
+        self.assertFalse((train & test).any())
+
+    def test_distribution_report_is_nan_aware_and_reports_shift_in_train_sd(self):
+        X = np.array([[1.0], [3.0], [np.nan], [5.0], [7.0]])
+        train = np.array([True, True, True, False, False])
+        test = ~train
+        (name, tm, ts, em, es, sh), = oca.distribution_report(X, ['c'], train, test)
+        self.assertAlmostEqual(tm, 2.0)
+        self.assertAlmostEqual(em, 6.0)
+        self.assertAlmostEqual(sh, (6.0 - 2.0) / ts)
+
+
 class MetricsTest(unittest.TestCase):
 
     def test_logloss_brier_and_ece_on_known_values(self):
